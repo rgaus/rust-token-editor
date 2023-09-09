@@ -5,6 +5,8 @@ use regex::Regex;
 struct TokenMatch {
     start: usize,
     end: usize,
+    global_start: usize,
+    global_end: usize,
     string: String,
 }
 
@@ -35,13 +37,17 @@ struct TokenMatchTemplate {
 }
 
 impl TokenMatchTemplate {
-    fn consume_from_front(
+    fn new(matcher: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplate {
+        TokenMatchTemplate { matcher: matcher }
+    }
+    fn consume_from_offset(
         &self,
         input: &str,
+        initial_offset: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<(usize, Vec<Box<Token>>), String> {
         let mut tokens: Vec<Box<Token>> = vec![];
-        let mut offset: usize = 0;
+        let mut offset = initial_offset;
 
         // Store a reference to the last parsed token so that when adding a new token, this can be
         // assigned as the "previous" token value
@@ -59,18 +65,9 @@ impl TokenMatchTemplate {
                         return Ok((0, vec![]))
                     }
 
-                    // NOTE: add the raw value in to make debugging easier
-                    // I am not sure this should stay here long term
-                    let mut matches = HashMap::new();
-                    matches.insert("_raw".to_string(), TokenMatch {
-                        start: offset,
-                        end: offset + raw.len(),
-                        string: raw.to_string(),
-                    });
-
                     let new_token = Box::new(Token {
                         template: template_matcher.clone(),
-                        matches: matches,
+                        matches: HashMap::new(),
                         next: None,
                         previous: None,//last_token,
                         children: vec![],
@@ -87,12 +84,14 @@ impl TokenMatchTemplate {
 
                     let Ok(
                         (referenced_template_offset, referenced_template_tokens)
-                    ) = referenced_template.consume_from_front(
-                        offsetted_input,
+                    ) = referenced_template.consume_from_offset(
+                        input,
+                        offset,
                         token_match_templates_map,
                     ) else {
                         continue;
                     };
+                    println!("FOO: {} {} {}", offset, referenced_template_offset, reference_name);
 
                     // Only actually store a new token if a match was found
                     if referenced_template_offset == offset {
@@ -109,7 +108,7 @@ impl TokenMatchTemplate {
                     last_token = Some(&new_token);
                     tokens.push(new_token);
 
-                    offset += referenced_template_offset;
+                    offset = referenced_template_offset;
                 }
                 TokenMatchTemplateMatcher::Regex(re) => {
                     // ref: https://stackoverflow.com/a/39239614/4115328
@@ -130,8 +129,10 @@ impl TokenMatchTemplate {
                                 };
 
                                 matches.insert(name.to_string(), TokenMatch {
-                                    start: offset + value.start(),
-                                    end: offset + value.end(),
+                                    start: value.start(),
+                                    end: value.end(),
+                                    global_start: offset + value.start(),
+                                    global_end: offset + value.end(),
                                     string: value.as_str().to_string(),
                                 });
                             }
@@ -159,10 +160,12 @@ impl TokenMatchTemplate {
                             matcher: vec![matcher.clone()],
                         };
 
+                        println!("BAR: {} {}", input, offset);
                         let Ok(
                             (ephemeral_offset, ephemeral_tokens)
-                        ) = ephemeral_template.consume_from_front(
-                            offsetted_input,
+                        ) = ephemeral_template.consume_from_offset(
+                            input,
+                            offset,
                             token_match_templates_map,
                         ) else {
                             continue;
@@ -183,7 +186,7 @@ impl TokenMatchTemplate {
                         last_token = Some(&new_token);
                         tokens.push(new_token);
 
-                        offset += ephemeral_offset;
+                        offset = ephemeral_offset;
                         break;
                     }
                 }
@@ -198,10 +201,12 @@ impl TokenMatchTemplate {
 
                     // Attempt to match the ephemeral template at least `min_repeat` times:
                     for index in 0..*max_repeats {
+                        println!("BAZ: {} {}", input, offset);
                         let Ok(
                             (ephemeral_offset, ephemeral_tokens)
-                        ) = ephemeral_template.consume_from_front(
-                            &input[new_offset..],
+                        ) = ephemeral_template.consume_from_offset(
+                            input,
+                            new_offset,
                             token_match_templates_map,
                         ) else {
                             break;
@@ -252,7 +257,7 @@ impl TokenMatchTemplate {
 
 fn dump_inner(tokens: Vec<Box<Token>>, indent: String) {
     for token in tokens {
-        println!("{}|{:?}| ====> {:?}", indent, token.template, token.matches);
+        println!("{}{:?} ==> {:?}", indent, token.template, token.matches);
         dump_inner(token.children, format!("{}  ", indent));
     }
 }
@@ -262,37 +267,62 @@ fn dump(tokens: Vec<Box<Token>>) {
 
 fn parse(input: &str) {
     let mut token_match_templates_map = HashMap::new();
-    token_match_templates_map.insert("All", TokenMatchTemplate {
-        matcher: vec![
-            TokenMatchTemplateMatcher::Any(vec![
-                TokenMatchTemplateMatcher::Reference("Twelve"),
-                TokenMatchTemplateMatcher::Reference("One"),
-            ]),
-        ],
-    });
-    token_match_templates_map.insert("Twelve", TokenMatchTemplate {
-        matcher: vec![
-            TokenMatchTemplateMatcher::Repeat(
-                Box::new(TokenMatchTemplateMatcher::Reference("One")),
-                1, 3
-            ),
-            TokenMatchTemplateMatcher::Raw("2")
-        ],
-    });
-    token_match_templates_map.insert("One", TokenMatchTemplate {
-        matcher: vec![
-            TokenMatchTemplateMatcher::Regex(
-                Regex::new(r"^(?<one>1)").unwrap(),
-            ),
-        ],
-    });
+    token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Any(vec![
+            TokenMatchTemplateMatcher::Reference("Declaration"),
+        ]),
+    ]));
+
+    token_match_templates_map.insert("Declaration", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Raw("let"),
+        TokenMatchTemplateMatcher::Reference("Whitespace"),
+        TokenMatchTemplateMatcher::Reference("Identifier"),
+        TokenMatchTemplateMatcher::Reference("Whitespace"),
+        TokenMatchTemplateMatcher::Raw("="),
+        TokenMatchTemplateMatcher::Reference("Whitespace"),
+        TokenMatchTemplateMatcher::Reference("Expression"),
+    ]));
+
+    token_match_templates_map.insert("StringLiteral", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Regex(
+            Regex::new(r"^(?<literal>'[^']*')").unwrap(),
+        ),
+    ]));
+    token_match_templates_map.insert("NumberLiteral", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Regex(
+            Regex::new(r"^(?<literal>[0-9]+)").unwrap(),
+        ),
+    ]));
+    token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Reference("Identifier"),
+    ]));
+
+    token_match_templates_map.insert("Expression", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Any(vec![
+            TokenMatchTemplateMatcher::Reference("StringLiteral"),
+            TokenMatchTemplateMatcher::Reference("NumberLiteral"),
+            TokenMatchTemplateMatcher::Reference("Variable"),
+        ]),
+    ]));
+
+    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Regex(
+            Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
+        ),
+    ]));
+
+    token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Regex(
+            Regex::new(r"^\s+").unwrap(),
+        ),
+    ]));
 
 
     let Some(all_template) = token_match_templates_map.get("All") else {
         panic!("No 'All' template found!");
     };
 
-    match all_template.consume_from_front(input, &token_match_templates_map) {
+    match all_template.consume_from_offset(input, 0, &token_match_templates_map) {
         Ok((offset, tokens)) => {
             // println!("RESULT: {:?} {:?}", offset, tokens);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
@@ -311,5 +341,5 @@ fn parse(input: &str) {
 
 
 fn main() {
-    parse("1122");
+    parse("let a = 'aaa'");
 }
