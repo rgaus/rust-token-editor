@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use regex::Regex;
+use uuid::Uuid;
 
 #[derive(Debug)]
 struct TokenMatch {
@@ -12,13 +13,14 @@ struct TokenMatch {
 
 #[derive(Debug)]
 struct Token {
+    id: uuid::Uuid,
     template: TokenMatchTemplateMatcher,
     literal: Option<String>,
     matches: HashMap<String, TokenMatch>,
 
-    next: Option<Box<Token>>,
-    previous: Option<Box<Token>>,
-    children: Vec<Box<Token>>,
+    next_id: Option<uuid::Uuid>,
+    previous_id: Option<uuid::Uuid>,
+    children_ids: Vec<uuid::Uuid>,
 }
 
 #[derive(Debug)]
@@ -46,7 +48,7 @@ impl TokenMatchTemplate {
         &self,
         input: &str,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(usize, Vec<Box<Token>>), String> {
+    ) -> Result<(usize, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
         self.consume_from_offset(input, 0, token_match_templates_map)
     }
     fn consume_from_offset(
@@ -54,36 +56,45 @@ impl TokenMatchTemplate {
         input: &str,
         initial_offset: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(usize, Vec<Box<Token>>), String> {
+    ) -> Result<(usize, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
         let mut tokens: Vec<Box<Token>> = vec![];
         let mut offset = initial_offset;
+        let mut child_ids: Vec<uuid::Uuid> = vec![];
 
-        // Store a reference to the last parsed token so that when adding a new token, this can be
-        // assigned as the "previous" token value
-        let mut last_token: Option<&Box<Token>> = None;
+        let mut last_token_id: Option<uuid::Uuid> = None;
+        let mut next_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
+        let mut previous_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
 
         for template_matcher in &self.matcher {
             if offset > input.len() {
                 break;
-            }
+            };
 
             let offsetted_input = &input[offset..];
             match template_matcher {
                 TokenMatchTemplateMatcher::Raw(raw) => {
                     println!("RAW({}): {} {}", raw, input, offset);
                     if !offsetted_input.starts_with(raw) {
-                        return Ok((initial_offset, vec![]))
+                        return Ok((initial_offset, vec![], vec![]))
                     }
 
                     let new_token = Box::new(Token {
+                        id: Uuid::new_v4(),
                         template: template_matcher.clone(),
                         literal: Some(String::from(*raw)),
                         matches: HashMap::new(),
-                        next: None,
-                        previous: None,//last_token,
-                        children: vec![],
+                        next_id: None,
+                        previous_id: None,
+                        children_ids: vec![],
                     });
-                    last_token = Some(&new_token);
+                    child_ids.push(new_token.id);
+
+                    previous_id_mapping.insert(new_token.id, last_token_id);
+                    if let Some(last_token_id_unwrapped) = last_token_id {
+                        next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                    }
+                    last_token_id = Some(new_token.id);
+
                     tokens.push(new_token);
 
                     offset += raw.len();
@@ -95,7 +106,7 @@ impl TokenMatchTemplate {
                     };
 
                     let Ok(
-                        (referenced_template_offset, referenced_template_tokens)
+                        (referenced_template_offset, referenced_child_ids, referenced_template_tokens)
                     ) = referenced_template.consume_from_offset(
                         input,
                         offset,
@@ -110,14 +121,25 @@ impl TokenMatchTemplate {
                     }
 
                     let new_token = Box::new(Token {
+                        id: Uuid::new_v4(),
                         template: template_matcher.clone(),
                         literal: None,
                         matches: HashMap::new(),
-                        next: None,
-                        previous: None,//last_token,
-                        children: referenced_template_tokens,
+                        next_id: None,
+                        previous_id: None,//last_token,
+                        children_ids: referenced_child_ids,
                     });
-                    last_token = Some(&new_token);
+                    child_ids.push(new_token.id);
+
+                    previous_id_mapping.insert(new_token.id, last_token_id);
+                    if let Some(last_token_id_unwrapped) = last_token_id {
+                        next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                    }
+                    last_token_id = Some(new_token.id);
+
+                    for token in referenced_template_tokens {
+                        tokens.push(token);
+                    }
                     tokens.push(new_token);
 
                     offset = referenced_template_offset;
@@ -151,14 +173,22 @@ impl TokenMatchTemplate {
                             }
 
                             let new_token = Box::new(Token {
+                                id: Uuid::new_v4(),
                                 template: template_matcher.clone(),
                                 literal: Some(String::from(whole_match.as_str())),
                                 matches: matches,
-                                next: None,
-                                previous: None,//last_token,
-                                children: vec![],
+                                next_id: None,
+                                previous_id: None,//last_token,
+                                children_ids: vec![],
                             });
-                            last_token = Some(&new_token);
+                            child_ids.push(new_token.id);
+
+                            previous_id_mapping.insert(new_token.id, last_token_id);
+                            if let Some(last_token_id_unwrapped) = last_token_id {
+                                next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                            }
+                            last_token_id = Some(new_token.id);
+
                             tokens.push(new_token);
 
                             offset += whole_match.len();
@@ -176,7 +206,7 @@ impl TokenMatchTemplate {
                         };
 
                         let Ok(
-                            (ephemeral_offset, ephemeral_tokens)
+                            (ephemeral_offset, ephemeral_child_ids, ephemeral_tokens)
                         ) = ephemeral_template.consume_from_offset(
                             input,
                             offset,
@@ -193,14 +223,25 @@ impl TokenMatchTemplate {
                         }
 
                         let new_token = Box::new(Token {
+                            id: Uuid::new_v4(),
                             template: template_matcher.clone(),
                             literal: None,
                             matches: HashMap::new(),
-                            next: None,
-                            previous: None,//last_token,
-                            children: ephemeral_tokens,
+                            next_id: None,
+                            previous_id: None,//last_token,
+                            children_ids: ephemeral_child_ids,
                         });
-                        last_token = Some(&new_token);
+                        child_ids.push(new_token.id);
+
+                        previous_id_mapping.insert(new_token.id, last_token_id);
+                        if let Some(last_token_id_unwrapped) = last_token_id {
+                            next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                        }
+                        last_token_id = Some(new_token.id);
+
+                        for token in ephemeral_tokens {
+                            tokens.push(token);
+                        }
                         tokens.push(new_token);
 
                         offset = ephemeral_offset;
@@ -220,7 +261,7 @@ impl TokenMatchTemplate {
                     // Attempt to match the ephemeral template at least `min_repeat` times:
                     for index in 0..*max_repeats {
                         let Ok(
-                            (ephemeral_offset, ephemeral_tokens)
+                            (ephemeral_offset, ephemeral_child_ids, ephemeral_tokens)
                         ) = ephemeral_template.consume_from_offset(
                             input,
                             new_offset,
@@ -239,14 +280,25 @@ impl TokenMatchTemplate {
                         new_offset = ephemeral_offset;
 
                         let new_token = Box::new(Token {
+                            id: Uuid::new_v4(),
                             template: template_matcher.clone(),
                             literal: None,
                             matches: HashMap::new(),
-                            next: None,
-                            previous: None,//last_token,
-                            children: ephemeral_tokens,
+                            next_id: None,
+                            previous_id: None,//last_token,
+                            children_ids: ephemeral_child_ids,
                         });
-                        last_token = Some(&new_token);
+                        child_ids.push(new_token.id);
+
+                        previous_id_mapping.insert(new_token.id, last_token_id);
+                        if let Some(last_token_id_unwrapped) = last_token_id {
+                            next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                        }
+                        last_token_id = Some(new_token.id);
+
+                        for token in ephemeral_tokens {
+                            tokens.push(token);
+                        }
                         new_tokens.push(new_token);
                     }
 
@@ -279,7 +331,7 @@ impl TokenMatchTemplate {
 
                     loop {
                         let Ok(
-                            (ephemeral_offset, ephemeral_tokens)
+                            (ephemeral_offset, ephemeral_child_ids, ephemeral_tokens)
                         ) = ephemeral_template.consume_from_offset(
                             input,
                             new_offset,
@@ -298,14 +350,25 @@ impl TokenMatchTemplate {
                         new_offset = ephemeral_offset;
 
                         let new_token = Box::new(Token {
+                            id: Uuid::new_v4(),
                             template: template_matcher.clone(),
                             literal: None,
                             matches: HashMap::new(),
-                            next: None,
-                            previous: None,//last_token,
-                            children: ephemeral_tokens,
+                            next_id: None,
+                            previous_id: None,//last_token,
+                            children_ids: ephemeral_child_ids,
                         });
-                        last_token = Some(&new_token);
+                        child_ids.push(new_token.id);
+
+                        previous_id_mapping.insert(new_token.id, last_token_id);
+                        if let Some(last_token_id_unwrapped) = last_token_id {
+                            next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                        }
+                        last_token_id = Some(new_token.id);
+
+                        for token in ephemeral_tokens {
+                            tokens.push(token);
+                        }
                         new_tokens.push(new_token);
                     }
 
@@ -322,21 +385,34 @@ impl TokenMatchTemplate {
             }
         }
 
-        Ok((offset, tokens))
+        let new_tokens = tokens.into_iter().map(|mut token| {
+            if let Some(next_id) = next_id_mapping.get(&token.id) {
+                token.next_id = *next_id;
+            };
+            if let Some(previous_id) = previous_id_mapping.get(&token.id) {
+                token.previous_id = *previous_id;
+            };
+            token
+        }).collect();
+
+        Ok((offset, child_ids, new_tokens))
     }
 }
 
-fn dump_inner(tokens: Vec<Box<Token>>, indent: String) {
-    for token in tokens {
-        println!("{}{:?}\t_{}_\t==> {:?}", indent, token.template, match token.literal {
+fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: String) {
+    for child_id in child_ids {
+        let Some(token) = tokens.iter().find(|t| t.id == child_id) else {
+            continue;
+        };
+        println!("{}{:?}\t_{}_\t==> {:?}", indent, token.template, match &token.literal {
             Some(n) => n,
-            None => "".to_string(),
+            None => "",
         }, token.matches);
-        dump_inner(token.children, format!("{}  ", indent));
+        dump_inner(tokens, token.children_ids.clone(), format!("{}  ", indent));
     }
 }
-fn dump(tokens: Vec<Box<Token>>) {
-    dump_inner(tokens, "".to_string());
+fn dump(head_id: uuid::Uuid, tokens: Vec<Box<Token>>) {
+    dump_inner(&tokens, vec![head_id], "".to_string());
 }
 
 // fn dump(tokens: Vec<Box<Token>>) {
@@ -431,11 +507,13 @@ fn main() {
         }
     }";
 
+    // let input ="let a = 'aaa'";
+
     match all_template.consume_from_start(input, &token_match_templates_map) {
-        Ok((offset, tokens)) => {
+        Ok((offset, child_ids, tokens)) => {
             // println!("RESULT: {:?} {:?}", offset, tokens);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
-            dump(tokens);
+            dump(child_ids[0], tokens);
         }
         Err(e) => {
             println!("ERROR: {:?}", e);
