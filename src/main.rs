@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 use regex::Regex;
 
 #[derive(Debug)]
@@ -11,14 +12,14 @@ struct TokenMatch {
 }
 
 #[derive(Debug)]
-struct Token {
+struct Token<'a> {
     template: TokenMatchTemplateMatcher,
     literal: Option<String>,
     matches: HashMap<String, TokenMatch>,
 
-    next: Option<Box<Token>>,
-    previous: Option<Box<Token>>,
-    children: Vec<Box<Token>>,
+    next: Option<&'a Rc<Token<'a>>>,
+    previous: Option<&'a Rc<Token<'a>>>,
+    children: Vec<Rc<Token<'a>>>,
 }
 
 #[derive(Debug)]
@@ -34,35 +35,41 @@ enum TokenMatchTemplateMatcher {
 
 #[derive(Debug)]
 #[derive(Clone)]
-struct TokenMatchTemplate {
-    matcher: Vec<TokenMatchTemplateMatcher>
+struct TokenMatchTemplate<'a> {
+    matcher: &'a Vec<TokenMatchTemplateMatcher>
 }
 
-impl TokenMatchTemplate {
-    fn new(matcher: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplate {
+impl<'a> TokenMatchTemplate<'a> {
+    fn new(matcher: &'a Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplate<'a> {
         TokenMatchTemplate { matcher: matcher }
     }
     fn consume_from_start(
-        &self,
+        &'a self,
         input: &str,
-        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(usize, Vec<Box<Token>>), String> {
-        self.consume_from_offset(input, 0, token_match_templates_map)
+        token_match_templates_map: &'a HashMap<&str, TokenMatchTemplate>,
+    ) -> Result<(usize, Vec<Rc<Token>>), String> {
+        self.consume_from_offset(input, 0, None, token_match_templates_map)
     }
     fn consume_from_offset(
-        &self,
+        &'a self,
         input: &str,
         initial_offset: usize,
-        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(usize, Vec<Box<Token>>), String> {
-        let mut tokens: Vec<Box<Token>> = vec![];
+        initial_previous: Option<&'a Rc<Token>>,
+        token_match_templates_map: &'a HashMap<&str, TokenMatchTemplate>,
+    ) -> Result<(usize, Vec<Rc<Token>>), String> {
+        let mut tokens: Vec<Rc<Token::<'a>>> = vec![];
         let mut offset = initial_offset;
 
         // Store a reference to the last parsed token so that when adding a new token, this can be
         // assigned as the "previous" token value
-        let mut last_token: Option<&Box<Token>> = None;
+        let mut new_token: Rc<Token>;
+        let mut last_token: Option<&Rc<Token>> = initial_previous;
 
-        for template_matcher in &self.matcher {
+        let mut consume_from_offset_return: Result<
+            (usize, Vec<Rc<Token::<'a>>>), String
+        >;
+
+        for template_matcher in self.matcher {
             if offset > input.len() {
                 break;
             }
@@ -75,15 +82,15 @@ impl TokenMatchTemplate {
                         return Ok((initial_offset, vec![]))
                     }
 
-                    let new_token = Box::new(Token {
+                    new_token = Rc::new(Token {
                         template: template_matcher.clone(),
                         literal: Some(String::from(*raw)),
                         matches: HashMap::new(),
                         next: None,
-                        previous: None,//last_token,
+                        previous: last_token,
                         children: vec![],
                     });
-                    last_token = Some(&new_token);
+                    // last_token = Some(&new_token);
                     tokens.push(new_token);
 
                     offset += raw.len();
@@ -94,13 +101,16 @@ impl TokenMatchTemplate {
                         return Err(format!("Unknown reference name {} found!", reference_name))
                     };
 
-                    let Ok(
-                        (referenced_template_offset, referenced_template_tokens)
-                    ) = referenced_template.consume_from_offset(
+                    consume_from_offset_return = referenced_template.consume_from_offset(
                         input,
                         offset,
+                        last_token,
                         token_match_templates_map,
-                    ) else {
+                    );
+
+                    let Ok(
+                        (referenced_template_offset, referenced_template_tokens)
+                    ) = consume_from_offset_return else {
                         continue;
                     };
 
@@ -109,7 +119,7 @@ impl TokenMatchTemplate {
                         continue;
                     }
 
-                    let new_token = Box::new(Token {
+                    let new_token = Rc::new(Token {
                         template: template_matcher.clone(),
                         literal: None,
                         matches: HashMap::new(),
@@ -117,7 +127,7 @@ impl TokenMatchTemplate {
                         previous: None,//last_token,
                         children: referenced_template_tokens,
                     });
-                    last_token = Some(&new_token);
+                    // last_token = Some(&new_token);
                     tokens.push(new_token);
 
                     offset = referenced_template_offset;
@@ -150,7 +160,7 @@ impl TokenMatchTemplate {
                                 });
                             }
 
-                            let new_token = Box::new(Token {
+                            let new_token = Rc::new(Token {
                                 template: template_matcher.clone(),
                                 literal: Some(String::from(whole_match.as_str())),
                                 matches: matches,
@@ -158,7 +168,7 @@ impl TokenMatchTemplate {
                                 previous: None,//last_token,
                                 children: vec![],
                             });
-                            last_token = Some(&new_token);
+                            // last_token = Some(&new_token);
                             tokens.push(new_token);
 
                             offset += whole_match.len();
@@ -172,16 +182,19 @@ impl TokenMatchTemplate {
                     println!("ANY: {:?} {}", matchers, offset);
                     for matcher in matchers {
                         let ephemeral_template = TokenMatchTemplate {
-                            matcher: vec![matcher.clone()],
+                            matcher: &vec![matcher.clone()],
                         };
+
+                        consume_from_offset_return = ephemeral_template.consume_from_offset(
+                            input,
+                            offset,
+                            last_token,
+                            token_match_templates_map,
+                        );
 
                         let Ok(
                             (ephemeral_offset, ephemeral_tokens)
-                        ) = ephemeral_template.consume_from_offset(
-                            input,
-                            offset,
-                            token_match_templates_map,
-                        ) else {
+                        ) = consume_from_offset_return else {
                             continue;
                         };
 
@@ -192,7 +205,7 @@ impl TokenMatchTemplate {
                             continue;
                         }
 
-                        let new_token = Box::new(Token {
+                        let new_token = Rc::new(Token {
                             template: template_matcher.clone(),
                             literal: None,
                             matches: HashMap::new(),
@@ -200,7 +213,7 @@ impl TokenMatchTemplate {
                             previous: None,//last_token,
                             children: ephemeral_tokens,
                         });
-                        last_token = Some(&new_token);
+                        // last_token = Some(&new_token);
                         tokens.push(new_token);
 
                         offset = ephemeral_offset;
@@ -209,23 +222,26 @@ impl TokenMatchTemplate {
                 }
                 TokenMatchTemplateMatcher::RepeatCount(boxed_matcher, min_repeats, max_repeats) => {
                     println!("REPEAT: {} {}", input, offset);
-                    let mut new_tokens: Vec<Box<Token>> = vec![];
+                    let mut new_tokens: Vec<Rc<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut repeat_count: usize = 0;
 
                     let ephemeral_template = TokenMatchTemplate {
-                        matcher: vec![*boxed_matcher.clone()],
+                        matcher: &vec![*boxed_matcher.clone()],
                     };
 
                     // Attempt to match the ephemeral template at least `min_repeat` times:
-                    for index in 0..*max_repeats {
-                        let Ok(
-                            (ephemeral_offset, ephemeral_tokens)
-                        ) = ephemeral_template.consume_from_offset(
+                    for _index in 0..*max_repeats {
+                        consume_from_offset_return = ephemeral_template.consume_from_offset(
                             input,
                             new_offset,
+                            last_token,
                             token_match_templates_map,
-                        ) else {
+                        );
+
+                        let Ok(
+                            (ephemeral_offset, ephemeral_tokens)
+                        ) = consume_from_offset_return else {
                             break;
                         };
 
@@ -238,7 +254,7 @@ impl TokenMatchTemplate {
                         repeat_count += 1;
                         new_offset = ephemeral_offset;
 
-                        let new_token = Box::new(Token {
+                        let new_token = Rc::new(Token {
                             template: template_matcher.clone(),
                             literal: None,
                             matches: HashMap::new(),
@@ -246,7 +262,7 @@ impl TokenMatchTemplate {
                             previous: None,//last_token,
                             children: ephemeral_tokens,
                         });
-                        last_token = Some(&new_token);
+                        // last_token = Some(&new_token);
                         new_tokens.push(new_token);
                     }
 
@@ -269,22 +285,25 @@ impl TokenMatchTemplate {
                 }
                 TokenMatchTemplateMatcher::RepeatForever(boxed_matcher) => {
                     println!("FOREVER: {} {}", input, offset);
-                    let mut new_tokens: Vec<Box<Token>> = vec![];
+                    let mut new_tokens: Vec<Rc<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut repeat_count: usize = 0;
 
-                    let ephemeral_template = TokenMatchTemplate {
-                        matcher: vec![*boxed_matcher.clone()],
+                    let ephemeral_template = TokenMatchTemplate::<'a> {
+                        matcher: &vec![*boxed_matcher.clone()],
                     };
 
                     loop {
-                        let Ok(
-                            (ephemeral_offset, ephemeral_tokens)
-                        ) = ephemeral_template.consume_from_offset(
+                        consume_from_offset_return = ephemeral_template.consume_from_offset(
                             input,
                             new_offset,
+                            last_token,
                             token_match_templates_map,
-                        ) else {
+                        );
+
+                        let Ok(
+                            (ephemeral_offset, ephemeral_tokens)
+                        ) = consume_from_offset_return else {
                             break;
                         };
 
@@ -297,7 +316,7 @@ impl TokenMatchTemplate {
                         repeat_count += 1;
                         new_offset = ephemeral_offset;
 
-                        let new_token = Box::new(Token {
+                        let new_token = Rc::new(Token {
                             template: template_matcher.clone(),
                             literal: None,
                             matches: HashMap::new(),
@@ -305,7 +324,7 @@ impl TokenMatchTemplate {
                             previous: None,//last_token,
                             children: ephemeral_tokens,
                         });
-                        last_token = Some(&new_token);
+                        // last_token = Some(&new_token);
                         new_tokens.push(new_token);
                     }
 
@@ -326,20 +345,20 @@ impl TokenMatchTemplate {
     }
 }
 
-fn dump_inner(tokens: Vec<Box<Token>>, indent: String) {
+fn dump_inner(tokens: &Vec<Rc<Token>>, indent: String) {
     for token in tokens {
-        println!("{}{:?}\t_{}_\t==> {:?}", indent, token.template, match token.literal {
+        println!("{}{:?}\t_{}_\t==> {:?}", indent, token.template, match &token.literal {
             Some(n) => n,
-            None => "".to_string(),
+            None => "",
         }, token.matches);
-        dump_inner(token.children, format!("{}  ", indent));
+        dump_inner(&token.children, format!("{}  ", indent));
     }
 }
-fn dump(tokens: Vec<Box<Token>>) {
-    dump_inner(tokens, "".to_string());
+fn dump(tokens: Vec<Rc<Token>>) {
+    dump_inner(&tokens, "".to_string());
 }
 
-// fn dump(tokens: Vec<Box<Token>>) {
+// fn dump(tokens: Vec<Rc<Token>>) {
 // }
 
 
@@ -350,14 +369,14 @@ fn dump(tokens: Vec<Box<Token>>) {
 
 fn main() {
     let mut token_match_templates_map = HashMap::new();
-    token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("All", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Any(vec![
             TokenMatchTemplateMatcher::Reference("Declaration"),
             TokenMatchTemplateMatcher::Reference("Block"),
         ]),
     ]));
 
-    token_match_templates_map.insert("Block", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Block", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Raw("{"),
         TokenMatchTemplateMatcher::RepeatForever(Box::new(
             TokenMatchTemplateMatcher::Any(vec![
@@ -368,14 +387,14 @@ fn main() {
         TokenMatchTemplateMatcher::Raw("}"),
     ]));
 
-    token_match_templates_map.insert("Statement", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Statement", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Any(vec![
             TokenMatchTemplateMatcher::Reference("Declaration"),
             TokenMatchTemplateMatcher::Reference("Expression"),
         ]),
     ]));
 
-    token_match_templates_map.insert("Declaration", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Declaration", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Raw("let"),
         TokenMatchTemplateMatcher::Reference("Whitespace"),
         TokenMatchTemplateMatcher::Reference("Identifier"),
@@ -385,21 +404,21 @@ fn main() {
         TokenMatchTemplateMatcher::Reference("Expression"),
     ]));
 
-    token_match_templates_map.insert("StringLiteral", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("StringLiteral", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Regex(
             Regex::new(r"^(?<literal>'[^']*')").unwrap(),
         ),
     ]));
-    token_match_templates_map.insert("NumberLiteral", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("NumberLiteral", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Regex(
             Regex::new(r"^(?<literal>[0-9]+)").unwrap(),
         ),
     ]));
-    token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Variable", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Reference("Identifier"),
     ]));
 
-    token_match_templates_map.insert("Expression", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Expression", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Any(vec![
             TokenMatchTemplateMatcher::Reference("StringLiteral"),
             TokenMatchTemplateMatcher::Reference("NumberLiteral"),
@@ -408,13 +427,13 @@ fn main() {
         ]),
     ]));
 
-    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Regex(
             Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
         ),
     ]));
 
-    token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(&vec![
         TokenMatchTemplateMatcher::Regex(
             Regex::new(r"^\s+").unwrap(),
         ),
