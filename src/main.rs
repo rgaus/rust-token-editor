@@ -77,7 +77,6 @@ impl TokenMatchTemplate {
         let mut parent_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
 
         for template_matcher in &self.matcher {
-            println!("eGAIN {:?}", template_matcher);
             if offset > input.len() {
                 break;
             };
@@ -140,7 +139,6 @@ impl TokenMatchTemplate {
                         continue;
                     }
 
-                    println!("REF({}): {} {}", reference_name, input, offset);
                     let mut new_token = Box::new(Token {
                         id: Uuid::new_v4(),
                         template: template_matcher.clone(),
@@ -456,9 +454,6 @@ impl TokenMatchTemplate {
                         new_tokens.push(new_token);
                     }
 
-                    if repeat_count == 0 {
-                        break;
-                    }
                     if repeat_count < *min_repeats {
                         break;
                     }
@@ -496,7 +491,6 @@ impl TokenMatchTemplate {
                             children_ids: vec![],
                         });
 
-                        println!("START: {}", new_offset);
                         let Ok((
                             ephemeral_offset,
                             ephemeral_last_token_id,
@@ -512,7 +506,6 @@ impl TokenMatchTemplate {
                             println!("ERR");
                             break;
                         };
-                        println!("END: {}", ephemeral_offset);
 
                         // only actually store a new token if a match was found
                         if ephemeral_offset == new_offset {
@@ -678,15 +671,17 @@ fn stringify(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) -> String {
 fn main() {
     let mut token_match_templates_map = HashMap::new();
     token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Any(vec![
-            // TokenMatchTemplateMatcher::Reference("Declaration"),
-            TokenMatchTemplateMatcher::Reference("Block"),
-        ]),
+        TokenMatchTemplateMatcher::RepeatForever(Box::new(
+            TokenMatchTemplateMatcher::Any(vec![
+                TokenMatchTemplateMatcher::Reference("Whitespace"),
+                TokenMatchTemplateMatcher::Reference("Declaration"),
+                TokenMatchTemplateMatcher::Reference("Block"),
+            ]),
+        )),
     ]));
 
     token_match_templates_map.insert("Block", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::Raw("{"),
-        TokenMatchTemplateMatcher::Reference("Whitespace"),
         TokenMatchTemplateMatcher::RepeatForever(Box::new(
             TokenMatchTemplateMatcher::Any(vec![
                 TokenMatchTemplateMatcher::Reference("Statement"),
@@ -707,9 +702,13 @@ fn main() {
         TokenMatchTemplateMatcher::Raw("let"),
         TokenMatchTemplateMatcher::Reference("Whitespace"),
         TokenMatchTemplateMatcher::Reference("Identifier"),
-        TokenMatchTemplateMatcher::Reference("Whitespace"),
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
+            TokenMatchTemplateMatcher::Reference("Whitespace"),
+        ), 0, 1),
         TokenMatchTemplateMatcher::Raw("="),
-        TokenMatchTemplateMatcher::Reference("Whitespace"),
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
+            TokenMatchTemplateMatcher::Reference("Whitespace"),
+        ), 0, 1),
         TokenMatchTemplateMatcher::Reference("Expression"),
     ]));
 
@@ -744,7 +743,7 @@ fn main() {
 
     token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::Regex(
-            Regex::new(r"^\s*").unwrap(),
+            Regex::new(r"^\s+").unwrap(),
         ),
     ]));
 
@@ -762,7 +761,13 @@ fn main() {
         panic!("No 'All' template found!");
     };
 
-    let input = "{ { let a = 'aaa' } }";
+    let input = "
+let b = 'fff'
+{
+    {
+        let a = 'aaa'
+    }
+}";
 
     // let input = "11";
 
@@ -770,11 +775,21 @@ fn main() {
         Ok((offset, last_token_id, child_ids, tokens)) => {
             // println!("RESULT: {:?} {:?}", offset, tokens);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
+
+            println!("=========");
+            println!("= TOKENS:");
+            println!("=========");
+
             for child_id in &child_ids {
                 dump(*child_id, &tokens);
                 println!("---------");
             }
-            println!("Stringify: {}", stringify(child_ids[0], &tokens));
+
+            println!("=========");
+            println!("= STRINGS:");
+            println!("=========");
+
+            println!("{}", stringify(child_ids[0], &tokens));
         }
         Err(e) => {
             println!("ERROR: {:?}", e);
