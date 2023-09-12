@@ -132,7 +132,7 @@ impl TokenMatchTemplate {
                         depth + 1,
                         token_match_templates_map,
                     ) else {
-                        continue;
+                        break;
                     };
 
                     // Only actually store a new token if a match was found
@@ -209,7 +209,7 @@ impl TokenMatchTemplate {
                     match re.captures(offsetted_input) {
                         Some(captures) => {
                             let Some(whole_match) = captures.get(0) else {
-                                continue;
+                                break;
                             };
 
                             let mut matches = HashMap::new();
@@ -256,12 +256,13 @@ impl TokenMatchTemplate {
                             offset += whole_match.len();
                         }
                         None => {
-                            continue;
+                            break;
                         }
                     }
                 }
                 TokenMatchTemplateMatcher::Any(matchers) => {
                     // println!("ANY: {:?} {}", matchers, offset);
+                    let mut matched_at_least_one = false;
                     for matcher in matchers {
                         let ephemeral_template = TokenMatchTemplate {
                             matcher: vec![matcher.clone()],
@@ -348,6 +349,10 @@ impl TokenMatchTemplate {
                         tokens.push(new_token);
 
                         offset = ephemeral_offset;
+                        matched_at_least_one = true;
+                        break;
+                    }
+                    if matched_at_least_one {
                         break;
                     }
                 }
@@ -452,13 +457,13 @@ impl TokenMatchTemplate {
                     }
 
                     if repeat_count == 0 {
-                        continue;
+                        break;
                     }
                     if repeat_count < *min_repeats {
-                        continue;
+                        break;
                     }
                     if repeat_count > *max_repeats {
-                        continue;
+                        break;
                     }
 
                     // Update the main values with the local cached values
@@ -570,7 +575,7 @@ impl TokenMatchTemplate {
                     }
 
                     if repeat_count == 0 {
-                        continue;
+                        break;
                     }
 
                     // Update the main values with the local cached values
@@ -757,7 +762,7 @@ fn main() {
         panic!("No 'All' template found!");
     };
 
-    let input = "{ let a = 'aaa' }";
+    let input = "{ { let a = 'aaa' } }";
 
     // let input = "11";
 
