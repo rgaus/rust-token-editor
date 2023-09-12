@@ -51,7 +51,7 @@ impl TokenMatchTemplate {
         &self,
         input: &str,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
+    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
         self.consume_from_offset(input, 0, None, 0, token_match_templates_map)
     }
     fn consume_from_offset(
@@ -61,30 +61,51 @@ impl TokenMatchTemplate {
         initial_last_token_id: Option<uuid::Uuid>,
         depth: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
+    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
         let mut tokens: Vec<Box<Token>> = vec![];
         let mut offset = initial_offset;
         let mut child_ids: Vec<uuid::Uuid> = vec![];
 
         if depth > TOKEN_MATCH_TEMPLATE_FOREVER_MAX_DEPTH {
-            return Ok((offset, initial_last_token_id, child_ids, tokens))
+            return Ok((false, offset, initial_last_token_id, child_ids, tokens))
         };
 
+        let mut depth_spaces = String::from("");
+        for _ in 0..depth {
+            // depth_spaces = format!("{}| ", depth_spaces);
+            depth_spaces = format!("{}  ", depth_spaces);
+        }
 
         let mut last_token_id: Option<uuid::Uuid> = initial_last_token_id;
         let mut next_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
         let mut previous_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
         let mut parent_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
 
+        // TODO:
+        // So what seems to be going on right now is after I added the HashLiteral entry, blocks
+        // now sometimes are parsed as HashLiterals. I did a few things:
+        // - I made sure that identifiers didn't contain reserved words
+        //
+        // But I think what is going on now is that when parsing references, the system possibly
+        // only parses half of the reference, and then breaks out of the below loop and returns
+        // back to a previous function invotation, with the reference half parsed. So what I am
+        // thinking is that I need to add a flag that gets set if all tokens are persed, return
+        // that from this function, and then use it to determine when the function is called INSIDE
+        // the loop recursively if the reference has fully parsed sll of its specified tokens, and
+        // if not, then break out before the new reference token and its dependencies gets added to
+        // the tree.
+        let mut matched_token_count = 0;
         for template_matcher in &self.matcher {
-            if offset > input.len() {
+            if offset > input.len()-1 {
+                println!("{}EOF!", depth_spaces);
                 break;
             };
 
             let offsetted_input = &input[offset..];
+            let escaped_offsetted_input = format!("`{}`", offsetted_input.replace("\n", "\\n"));
             match template_matcher {
                 TokenMatchTemplateMatcher::Raw(raw) => {
-                    // println!("RAW({}): {} {}", raw, input, offset);
+                    println!("{}RAW({}): {} {}", depth_spaces, raw, escaped_offsetted_input, offset);
                     if !offsetted_input.starts_with(raw) {
                         break;
                     }
@@ -114,12 +135,13 @@ impl TokenMatchTemplate {
                     offset += raw.len();
                 }
                 TokenMatchTemplateMatcher::Reference(reference_name) => {
-                    println!("REF({}): {} {}", reference_name, input, offset);
+                    println!("{}REF({}): {} {}", depth_spaces, reference_name, escaped_offsetted_input, offset);
                     let Some(referenced_template) = token_match_templates_map.get(reference_name) else {
                         return Err(format!("Unknown reference name {} found!", reference_name))
                     };
 
                     let Ok((
+                        referenced_matched_all_tokens,
                         referenced_template_offset,
                         referenced_last_token_id,
                         referenced_child_ids,
@@ -133,6 +155,10 @@ impl TokenMatchTemplate {
                     ) else {
                         break;
                     };
+                    println!("{}`-- (referenced_matched_all_tokens={})", depth_spaces, referenced_matched_all_tokens);
+                    if !referenced_matched_all_tokens {
+                        break;
+                    }
 
                     let mut new_token = Box::new(Token {
                         id: Uuid::new_v4(),
@@ -197,7 +223,7 @@ impl TokenMatchTemplate {
                     offset = referenced_template_offset;
                 }
                 TokenMatchTemplateMatcher::Regex(re, negated_re) => {
-                    // println!("REGEX({:?}): {} {}", re, input, offset);
+                    println!("{}REGEX({:?}): {} {}", depth_spaces, re, escaped_offsetted_input, offset);
                     // ref: https://stackoverflow.com/a/39239614/4115328
                     match re.captures(offsetted_input) {
                         Some(captures) => {
@@ -264,7 +290,7 @@ impl TokenMatchTemplate {
                     }
                 }
                 TokenMatchTemplateMatcher::Any(matchers) => {
-                    // println!("ANY: {:?} {}", matchers, offset);
+                    println!("{}ANY: {:?} {} {}", depth_spaces, matchers, escaped_offsetted_input, offset);
                     let mut matched_at_least_one = false;
                     for matcher in matchers {
                         let ephemeral_template = TokenMatchTemplate {
@@ -283,6 +309,7 @@ impl TokenMatchTemplate {
                         });
 
                         let Ok((
+                            ephemeral_matched_all_tokens,
                             ephemeral_offset,
                             ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -296,6 +323,10 @@ impl TokenMatchTemplate {
                         ) else {
                             continue;
                         };
+                        // only actually store a new token if a match was found
+                        if !ephemeral_matched_all_tokens {
+                            continue;
+                        }
 
                         // Only actually store a new token if a match was found
                         if ephemeral_offset == offset {
@@ -355,12 +386,13 @@ impl TokenMatchTemplate {
                         matched_at_least_one = true;
                         break;
                     }
-                    if matched_at_least_one {
+                    println!("{}`-- (matched_at_least_one={})", depth_spaces, matched_at_least_one);
+                    if !matched_at_least_one {
                         break;
                     }
                 }
                 TokenMatchTemplateMatcher::RepeatCount(boxed_matcher, min_repeats, max_repeats) => {
-                    // println!("REPEAT({:?}): {} {}", template_matcher, input, offset);
+                    println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
                     let mut new_tokens: Vec<Box<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut new_last_token_id = last_token_id;
@@ -371,6 +403,7 @@ impl TokenMatchTemplate {
                     };
 
                     // Attempt to match the ephemeral template at least `min_repeat` times:
+                    let mut match_failed = false;
                     for _index in 0..*max_repeats {
                         let mut new_token = Box::new(Token {
                             id: Uuid::new_v4(),
@@ -384,6 +417,7 @@ impl TokenMatchTemplate {
                         });
 
                         let Ok((
+                            ephemeral_matched_all_tokens,
                             ephemeral_offset,
                             ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -395,11 +429,12 @@ impl TokenMatchTemplate {
                             depth + 1,
                             token_match_templates_map,
                         ) else {
+                            match_failed = true;
                             break;
                         };
-
-                        // Only actually store a new token if a match was found
-                        if ephemeral_offset == new_offset {
+                        // only actually store a new token if a match was found
+                        if !ephemeral_matched_all_tokens {
+                            match_failed = true;
                             break;
                         }
 
@@ -458,7 +493,13 @@ impl TokenMatchTemplate {
                         }
                         new_tokens.push(new_token);
                     }
-                    // println!("REPEAT({:?}): {} {} => {}", template_matcher, input, offset, repeat_count);
+                    println!("{}`-- (match_failed={} repeat_count={})", depth_spaces, match_failed, repeat_count);
+
+                    // NOTE: if the repeat count can be zero and the match fails, that is totally
+                    // fine
+                    if *min_repeats != 0 && match_failed {
+                        break;
+                    }
 
                     if repeat_count < *min_repeats {
                         break;
@@ -475,7 +516,7 @@ impl TokenMatchTemplate {
                     last_token_id = new_last_token_id;
                 }
                 TokenMatchTemplateMatcher::RepeatForever(boxed_matcher) => {
-                    // println!("FOREVER: {} {}", input, offset);
+                    println!("{}FOREVER: {} {}", depth_spaces, escaped_offsetted_input, offset);
                     let mut new_tokens: Vec<Box<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut new_last_token_id = last_token_id;
@@ -498,6 +539,7 @@ impl TokenMatchTemplate {
                         });
 
                         let Ok((
+                            ephemeral_matched_all_tokens,
                             ephemeral_offset,
                             ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -514,7 +556,7 @@ impl TokenMatchTemplate {
                         };
 
                         // only actually store a new token if a match was found
-                        if ephemeral_offset == new_offset {
+                        if !ephemeral_matched_all_tokens {
                             break;
                         }
 
@@ -572,6 +614,7 @@ impl TokenMatchTemplate {
                         }
                         new_tokens.push(new_token);
                     }
+                    println!("{}`-- (offset={} repeat_count={})", depth_spaces, offset, repeat_count);
 
                     if repeat_count == 0 {
                         break;
@@ -585,6 +628,7 @@ impl TokenMatchTemplate {
                     last_token_id = new_last_token_id;
                 }
             }
+            matched_token_count += 1;
         }
 
         let parented_tokens: Vec<Box<Token>> = tokens.into_iter().map(|mut token| {
@@ -603,7 +647,9 @@ impl TokenMatchTemplate {
             token
         }).collect();
 
-        Ok((offset, last_token_id, child_ids, parented_tokens))
+        let matched_all_tokens = matched_token_count == self.matcher.len();
+        println!("{}`-- matched_all_tokens={}", depth_spaces, matched_all_tokens);
+        Ok((matched_all_tokens, offset, last_token_id, child_ids, parented_tokens))
     }
 }
 
@@ -708,24 +754,30 @@ fn main() {
     token_match_templates_map.insert("HashLiteral", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::Raw("{"),
         TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        // TokenMatchTemplateMatcher::RepeatForever(Box::new(
+        TokenMatchTemplateMatcher::RepeatForever(Box::new(
+            TokenMatchTemplateMatcher::Reference("HashLiteralEntryComma"),
+        )),
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
             TokenMatchTemplateMatcher::Reference("HashLiteralEntry"),
-        // )),
+        ), 0, 1),
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
+            TokenMatchTemplateMatcher::Raw(","),
+        ), 0, 1),
         TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::Raw("}"),
     ]));
+    token_match_templates_map.insert("HashLiteralEntryComma", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Reference("HashLiteralEntry"),
+        TokenMatchTemplateMatcher::Raw(","),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+    ]));
     token_match_templates_map.insert("HashLiteralEntry", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::Reference("Expression"),
-        // TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::Raw(":"),
         TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::Reference("Expression"),
         TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        // TokenMatchTemplateMatcher::RepeatCount(Box::new(
-        //     TokenMatchTemplateMatcher::Reference("Whitespace"),
-        // ), 0, 1),
-        TokenMatchTemplateMatcher::Raw(","),
-        // TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
     ]));
 
     token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
@@ -766,31 +818,47 @@ fn main() {
     ]));
 
     // token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::RepeatCount(Box::new(
-    //         TokenMatchTemplateMatcher::RepeatForever(Box::new(
-    //             TokenMatchTemplateMatcher::Any(vec![
-    //                 TokenMatchTemplateMatcher::Raw("1"),
-    //             ]),
-    //         )),
-    //     ), 1, 3),
+    //     TokenMatchTemplateMatcher::RepeatForever(Box::new(
+    //         TokenMatchTemplateMatcher::Any(vec![
+    //             TokenMatchTemplateMatcher::Reference("OptionB"),
+    //             TokenMatchTemplateMatcher::Reference("OptionA"),
+    //         ]),
+    //     )),
+    // ]));
+    //
+    // token_match_templates_map.insert("OptionA", TokenMatchTemplate::new(vec![
+    //     TokenMatchTemplateMatcher::Raw("1"),
+    //     TokenMatchTemplateMatcher::RepeatForever(Box::new(
+    //         TokenMatchTemplateMatcher::Raw("a"),
+    //     )),
+    // ]));
+    //
+    // token_match_templates_map.insert("OptionB", TokenMatchTemplate::new(vec![
+    //     TokenMatchTemplateMatcher::Raw("1"),
+    //     TokenMatchTemplateMatcher::RepeatForever(Box::new(
+    //         TokenMatchTemplateMatcher::Raw("b"),
+    //     )),
     // ]));
 
     let Some(all_template) = token_match_templates_map.get("All") else {
         panic!("No 'All' template found!");
     };
 
+// NOTE: for some reason, the below won't parse when put into the first line of input. Figure out
+// why.
+// let b = { 1 : 2 , }
     let input = "
-let b = {1: 2,}
+let b = {1: 2, 3: 'foo' }
 {
     {
         let a = 'aaa'
     }
 }";
 
-    // let input = "11";
+    // let input = "1aa1bb";
 
     match all_template.consume_from_start(input, &token_match_templates_map) {
-        Ok((offset, last_token_id, child_ids, tokens)) => {
+        Ok((_matched_all, offset, last_token_id, child_ids, tokens)) => {
             // println!("RESULT: {:?} {:?}", offset, tokens);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
 
@@ -807,7 +875,9 @@ let b = {1: 2,}
             println!("= STRINGS:");
             println!("=========");
 
-            println!("{}", stringify(child_ids[0], &tokens));
+            if !child_ids.is_empty() {
+                println!("{}", stringify(child_ids[0], &tokens));
+            }
         }
         Err(e) => {
             println!("ERROR: {:?}", e);
