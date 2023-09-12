@@ -791,6 +791,30 @@ fn main() {
         TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
     ]));
 
+    token_match_templates_map.insert("ArrayLiteral", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Raw("["),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::RepeatZeroToForever(Box::new(
+            TokenMatchTemplateMatcher::Reference("ArrayLiteralEntryComma"),
+        )),
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
+            TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry"),
+        ), 0, 1),
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
+            TokenMatchTemplateMatcher::Raw(","),
+        ), 0, 1),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::Raw("]"),
+    ]));
+    token_match_templates_map.insert("ArrayLiteralEntryComma", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry"),
+        TokenMatchTemplateMatcher::Raw(","),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+    ]));
+    token_match_templates_map.insert("ArrayLiteralEntry", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Reference("Expression"),
+    ]));
+
     token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::Reference("Identifier"),
     ]));
@@ -800,6 +824,7 @@ fn main() {
             TokenMatchTemplateMatcher::Reference("StringLiteral"),
             TokenMatchTemplateMatcher::Reference("NumberLiteral"),
             TokenMatchTemplateMatcher::Reference("HashLiteral"),
+            TokenMatchTemplateMatcher::Reference("ArrayLiteral"),
             TokenMatchTemplateMatcher::Reference("Variable"),
             TokenMatchTemplateMatcher::Reference("Block"),
         ]),
@@ -855,11 +880,13 @@ fn main() {
         panic!("No 'All' template found!");
     };
 
-// NOTE: for some reason, the below won't parse when put into the first line of input. Figure out
-// why.
-// let b = { 1 : 2 , }
     let input = "
-let b = {1: 2, 3: 'foo' }
+let b = {
+    'foo': 2,
+    'nested': {
+        'again': [5, 6]
+    }
+}
 {
     {
         let a = 'aaa'
