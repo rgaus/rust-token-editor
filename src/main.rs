@@ -702,13 +702,9 @@ fn main() {
         TokenMatchTemplateMatcher::Raw("let"),
         TokenMatchTemplateMatcher::Reference("Whitespace"),
         TokenMatchTemplateMatcher::Reference("Identifier"),
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Reference("Whitespace"),
-        ), 0, 1),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::Raw("="),
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Reference("Whitespace"),
-        ), 0, 1),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::Reference("Expression"),
     ]));
 
@@ -722,6 +718,26 @@ fn main() {
             Regex::new(r"^(?<literal>[0-9]+)").unwrap(),
         ),
     ]));
+    token_match_templates_map.insert("HashLiteral", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Raw("{"),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::RepeatForever(Box::new(
+            TokenMatchTemplateMatcher::Reference("HashLiteralEntry"),
+        )),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::Raw("}"),
+    ]));
+    token_match_templates_map.insert("HashLiteralEntry", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::Reference("Expression"),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::Raw(":"),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::Reference("Expression"),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::Raw(","),
+        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+    ]));
+
     token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::Reference("Identifier"),
     ]));
@@ -730,6 +746,7 @@ fn main() {
         TokenMatchTemplateMatcher::Any(vec![
             TokenMatchTemplateMatcher::Reference("StringLiteral"),
             TokenMatchTemplateMatcher::Reference("NumberLiteral"),
+            TokenMatchTemplateMatcher::Reference("HashLiteral"),
             TokenMatchTemplateMatcher::Reference("Variable"),
             TokenMatchTemplateMatcher::Reference("Block"),
         ]),
@@ -739,6 +756,12 @@ fn main() {
         TokenMatchTemplateMatcher::Regex(
             Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
         ),
+    ]));
+
+    token_match_templates_map.insert("OptionalWhitespace", TokenMatchTemplate::new(vec![
+        TokenMatchTemplateMatcher::RepeatCount(Box::new(
+            TokenMatchTemplateMatcher::Reference("Whitespace"),
+        ), 0, 1),
     ]));
 
     token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
@@ -762,7 +785,7 @@ fn main() {
     };
 
     let input = "
-let b = 'fff'
+let b = { 'foo': 'bar' }
 {
     {
         let a = 'aaa'
