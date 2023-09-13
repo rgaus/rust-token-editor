@@ -104,6 +104,7 @@ enum TokenMatchTemplateMatcher {
     Reference(&'static str, Option<TokenEvents>),
     Regex(regex::Regex, Option<regex::Regex>, Option<TokenEvents>),
     Any(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
+    Sequence(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
     RepeatCount(Box<TokenMatchTemplateMatcher>, usize, usize, Option<TokenEvents>),
     RepeatOnceToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
     RepeatZeroToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
@@ -143,6 +144,13 @@ impl TokenMatchTemplateMatcher {
     }
     fn any_with_events(tokens: Vec<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
         TokenMatchTemplateMatcher::Any(tokens, Some(events))
+    }
+
+    fn sequence(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Sequence(tokens, None)
+    }
+    fn sequence_with_events(tokens: Vec<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Sequence(tokens, Some(events))
     }
 
     fn repeat_count(token: Box<TokenMatchTemplateMatcher>, min_repeats: usize, max_repeats: usize) -> TokenMatchTemplateMatcher {
@@ -553,6 +561,132 @@ impl TokenMatchTemplate {
                         break;
                     }
                 }
+                TokenMatchTemplateMatcher::Sequence(matchers, events) => {
+                    println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
+                    let mut new_tokens: Vec<Box<Token>> = vec![];
+                    let mut new_offset = offset;
+                    let mut new_last_token_id = last_token_id;
+                    let mut repeat_count: usize = 0;
+
+                    // An empty sequence should be treated as a no-op
+                    if matchers.len() == 0 {
+                        continue;
+                    }
+
+                    // Attempt to match the ephemeral template at least `min_repeat` times:
+                    let mut match_failed = false;
+                    for matcher in matchers {
+                        let ephemeral_template = TokenMatchTemplate::new(
+                            vec![matcher.clone()],
+                        );
+
+                        let mut new_token = Box::new(Token {
+                            id: Uuid::new_v4(),
+                            template: template_matcher.clone(),
+                            literal: None,
+                            matches: HashMap::new(),
+                            effects: vec![],
+                            events: match events {
+                                Some(events) => events.clone(),
+                                None => TokenEvents::new_empty(),
+                            },
+                            next_id: None,
+                            previous_id: None,
+                            parent_id: None,
+                            children_ids: vec![],
+                        });
+                        if let Some(on_enter) = new_token.events.on_enter {
+                            on_enter(&mut new_token);
+                        }
+
+                        let Ok((
+                            ephemeral_matched_all_tokens,
+                            ephemeral_offset,
+                            ephemeral_last_token_id,
+                            ephemeral_child_ids,
+                            ephemeral_tokens
+                        )) = ephemeral_template.consume_from_offset(
+                            input,
+                            new_offset,
+                            Some(new_token.id),
+                            depth + 1,
+                            token_match_templates_map,
+                        ) else {
+                            match_failed = true;
+                            break;
+                        };
+                        // only actually store new tokens if a match was found
+                        if !ephemeral_matched_all_tokens {
+                            match_failed = true;
+                            break;
+                        }
+
+                        // Another match was found, so store another generated token
+                        repeat_count += 1;
+                        new_offset = ephemeral_offset;
+
+                        // Link the new token's next_id to the first child
+                        if let Some(first_ephemeral_child_id) = ephemeral_child_ids.first() {
+                            // println!("RC: {:?} -> {:?}", new_token.id, Some(*first_ephemeral_child_id));
+                            next_id_mapping.insert(new_token.id, Some(*first_ephemeral_child_id));
+                        }
+
+                        // println!("RC: {:?} <- {:?}", new_token.id, new_last_token_id);
+                        previous_id_mapping.insert(new_token.id, new_last_token_id);
+                        if let Some(last_token_id_unwrapped) = new_last_token_id {
+                            // println!("RC: {:?} -> {:?}", last_token_id_unwrapped, Some(new_token.id));
+                            next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                        }
+
+                        // Find the deepest last child in the ephemeral token hierarchy
+                        let mut deep_last_ephemeral_child_id = ephemeral_child_ids.last();
+                        loop {
+                            let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
+                                break;
+                            };
+                            let Some(child_token) = ephemeral_tokens.iter().find(
+                                |t| t.id == *deep_last_ephemeral_child_id_unwrapped
+                            ) else {
+                                break;
+                            };
+                            let Some(result) = child_token.children_ids.last() else {
+                                break;
+                            };
+                            deep_last_ephemeral_child_id = Some(result);
+                        }
+                        new_last_token_id = if let Some(deep_last_ephemeral_child_id) = deep_last_ephemeral_child_id {
+                            // The next "last token" should be the last child
+                            Some(*deep_last_ephemeral_child_id)
+                        } else {
+                            // The next "last token" should be the token that was just added
+                            Some(new_token.id)
+                        };
+                        // println!("RC: new_last_token_id={:?} foo={:?}", new_last_token_id, ephemeral_child_ids);
+
+                        new_token.children_ids = ephemeral_child_ids;
+                        child_ids.push(new_token.id);
+
+                        for token in ephemeral_tokens {
+                            if token.parent_id == None {
+                                parent_id_mapping.insert(token.id, Some(new_token.id));
+                            }
+                            tokens.push(token);
+                        }
+                        new_tokens.push(new_token);
+                    }
+                    println!("{}`-- (match_failed={}", depth_spaces, match_failed);
+
+                    if match_failed {
+                        break;
+                    }
+
+                    // Update the main values with the local cached values
+                    for new_token in new_tokens {
+                        tokens.push(new_token);
+                    }
+                    offset = new_offset;
+                    last_token_id = new_last_token_id;
+                }
                 TokenMatchTemplateMatcher::RepeatCount(boxed_matcher, min_repeats, max_repeats, events) => {
                     println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
                     let mut new_tokens: Vec<Box<Token>> = vec![];
@@ -951,7 +1085,11 @@ fn main() {
         TokenMatchTemplateMatcher::raw("{"),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
-            TokenMatchTemplateMatcher::reference("HashLiteralEntryComma"),
+            TokenMatchTemplateMatcher::sequence(vec![
+                TokenMatchTemplateMatcher::reference("HashLiteralEntry"),
+                TokenMatchTemplateMatcher::raw(","),
+                TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+            ]),
         )),
         TokenMatchTemplateMatcher::repeat_count(Box::new(
             TokenMatchTemplateMatcher::reference("HashLiteralEntry"),
@@ -961,11 +1099,6 @@ fn main() {
         ), 0, 1),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::raw("}"),
-    ]));
-    token_match_templates_map.insert("HashLiteralEntryComma", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::reference("HashLiteralEntry"),
-        TokenMatchTemplateMatcher::raw(","),
-        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
     ]));
     token_match_templates_map.insert("HashLiteralEntry", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::reference("Expression"),
@@ -980,7 +1113,11 @@ fn main() {
         TokenMatchTemplateMatcher::raw("["),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
-            TokenMatchTemplateMatcher::reference("ArrayLiteralEntryComma"),
+            TokenMatchTemplateMatcher::sequence(vec![
+                TokenMatchTemplateMatcher::reference("ArrayLiteralEntry"),
+                TokenMatchTemplateMatcher::raw(","),
+                TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+            ]),
         )),
         TokenMatchTemplateMatcher::repeat_count(Box::new(
             TokenMatchTemplateMatcher::reference("ArrayLiteralEntry"),
@@ -990,11 +1127,6 @@ fn main() {
         ), 0, 1),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::raw("]"),
-    ]));
-    token_match_templates_map.insert("ArrayLiteralEntryComma", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::reference("ArrayLiteralEntry"),
-        TokenMatchTemplateMatcher::raw(","),
-        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
     ]));
     token_match_templates_map.insert("ArrayLiteralEntry", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::reference("Expression"),
