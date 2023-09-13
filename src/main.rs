@@ -102,72 +102,75 @@ struct Token {
 #[derive(Debug)]
 #[derive(Clone)]
 enum TokenMatchTemplateMatcher {
-    TokenRaw(&'static str, Option<TokenEvents>),
-    TokenReference(&'static str, Option<TokenEvents>),
-    TokenRegex(regex::Regex, Option<regex::Regex>, Option<TokenEvents>),
-    TokenAny(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
-    TokenRepeatCount(Box<TokenMatchTemplateMatcher>, usize, usize, Option<TokenEvents>),
-    TokenRepeatOnceToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
-    TokenRepeatZeroToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
+    Raw(&'static str, Option<TokenEvents>),
+    Reference(&'static str, Option<TokenEvents>),
+    Regex(regex::Regex, Option<regex::Regex>, Option<TokenEvents>),
+    Any(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
+    RepeatCount(Box<TokenMatchTemplateMatcher>, usize, usize, Option<TokenEvents>),
+    RepeatOnceToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
+    RepeatZeroToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
 }
 
 impl TokenMatchTemplateMatcher {
-    fn Raw(text: &'static str) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRaw(text, None)
+    fn raw(text: &'static str) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Raw(text, None)
     }
-    fn RawWithEvents(text: &'static str, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRaw(text, Some(events))
-    }
-
-    fn Reference(name: &'static str) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenReference(name, None)
-    }
-    fn ReferenceWithEvents(name: &'static str, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenReference(name, Some(events))
+    fn raw_with_events(text: &'static str, events: TokenEvents) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Raw(text, Some(events))
     }
 
-    fn Regex(regex: regex::Regex, negated_regex: Option<regex::Regex>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRegex(regex, negated_regex, None)
+    fn reference(name: &'static str) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Reference(name, None)
     }
-    fn RegexWithEvents(
+    fn reference_with_events(name: &'static str, events: TokenEvents) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Reference(name, Some(events))
+    }
+
+    fn regex(regex: regex::Regex) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Regex(regex, None, None)
+    }
+    fn regex_and_negation(regex: regex::Regex, negated_regex: regex::Regex) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Regex(regex, Some(negated_regex), None)
+    }
+    fn regex_with_events(
         regex: regex::Regex,
         negated_regex: Option<regex::Regex>,
         events: TokenEvents,
     ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRegex(regex, negated_regex, Some(events))
+        TokenMatchTemplateMatcher::Regex(regex, negated_regex, Some(events))
     }
 
-    fn Any(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenAny(tokens, None)
+    fn any(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Any(tokens, None)
     }
-    fn AnyWithEvents(tokens: Vec<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenAny(tokens, Some(events))
+    fn any_with_events(tokens: Vec<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Any(tokens, Some(events))
     }
 
-    fn RepeatCount(token: Box<TokenMatchTemplateMatcher>, min_repeats: usize, max_repeats: usize) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRepeatCount(token, min_repeats, max_repeats, None)
+    fn repeat_count(token: Box<TokenMatchTemplateMatcher>, min_repeats: usize, max_repeats: usize) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::RepeatCount(token, min_repeats, max_repeats, None)
     }
-    fn RepeatCountWithEvents(
+    fn repeat_count_with_events(
         token: Box<TokenMatchTemplateMatcher>,
         min_repeats: usize,
         max_repeats: usize,
         events: TokenEvents,
     ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRepeatCount(token, min_repeats, max_repeats, Some(events))
+        TokenMatchTemplateMatcher::RepeatCount(token, min_repeats, max_repeats, Some(events))
     }
 
-    fn RepeatOnceToForever(token: Box<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRepeatOnceToForever(token, None)
+    fn repeat_once_to_forever(token: Box<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::RepeatOnceToForever(token, None)
     }
-    fn RepeatOnceToForeverWithEvents(token: Box<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRepeatOnceToForever(token, Some(events))
+    fn repeat_once_to_forever_with_events(token: Box<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::RepeatOnceToForever(token, Some(events))
     }
 
-    fn RepeatZeroToForever(token: Box<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRepeatZeroToForever(token, None)
+    fn repeat_zero_to_forever(token: Box<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::RepeatZeroToForever(token, None)
     }
-    fn RepeatZeroToForeverWithEvents(token: Box<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::TokenRepeatZeroToForever(token, Some(events))
+    fn repeat_zero_to_forever_with_events(token: Box<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::RepeatZeroToForever(token, Some(events))
     }
 }
 
@@ -231,7 +234,7 @@ impl TokenMatchTemplate {
             let offsetted_input = &input[offset..];
             let escaped_offsetted_input = format!("`{}`", offsetted_input.replace("\n", "\\n"));
             match template_matcher {
-                TokenMatchTemplateMatcher::TokenRaw(raw, events) => {
+                TokenMatchTemplateMatcher::Raw(raw, events) => {
                     println!("{}RAW({}): {} {}", depth_spaces, raw, escaped_offsetted_input, offset);
                     if !offsetted_input.starts_with(raw) {
                         break;
@@ -266,7 +269,7 @@ impl TokenMatchTemplate {
 
                     offset += raw.len();
                 }
-                TokenMatchTemplateMatcher::TokenReference(reference_name, events) => {
+                TokenMatchTemplateMatcher::Reference(reference_name, events) => {
                     println!("{}REF({}): {} {}", depth_spaces, reference_name, escaped_offsetted_input, offset);
                     let Some(referenced_template) = token_match_templates_map.get(reference_name) else {
                         return Err(format!("Unknown reference name {} found!", reference_name))
@@ -363,7 +366,7 @@ impl TokenMatchTemplate {
 
                     offset = referenced_template_offset;
                 }
-                TokenMatchTemplateMatcher::TokenRegex(re, negated_re, events) => {
+                TokenMatchTemplateMatcher::Regex(re, negated_re, events) => {
                     println!("{}REGEX({:?}): {} {}", depth_spaces, re, escaped_offsetted_input, offset);
                     // ref: https://stackoverflow.com/a/39239614/4115328
                     match re.captures(offsetted_input) {
@@ -435,7 +438,7 @@ impl TokenMatchTemplate {
                         }
                     }
                 }
-                TokenMatchTemplateMatcher::TokenAny(matchers, events) => {
+                TokenMatchTemplateMatcher::Any(matchers, events) => {
                     println!("{}ANY: {:?} {} {}", depth_spaces, matchers, escaped_offsetted_input, offset);
                     let mut matched_at_least_one = false;
                     for matcher in matchers {
@@ -542,7 +545,7 @@ impl TokenMatchTemplate {
                         break;
                     }
                 }
-                TokenMatchTemplateMatcher::TokenRepeatCount(boxed_matcher, min_repeats, max_repeats, events) => {
+                TokenMatchTemplateMatcher::RepeatCount(boxed_matcher, min_repeats, max_repeats, events) => {
                     println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
                     let mut new_tokens: Vec<Box<Token>> = vec![];
                     let mut new_offset = offset;
@@ -671,11 +674,11 @@ impl TokenMatchTemplate {
                     offset = new_offset;
                     last_token_id = new_last_token_id;
                 }
-                TokenMatchTemplateMatcher::TokenRepeatOnceToForever(boxed_matcher, events) |
-                TokenMatchTemplateMatcher::TokenRepeatZeroToForever(boxed_matcher, events) => {
+                TokenMatchTemplateMatcher::RepeatOnceToForever(boxed_matcher, events) |
+                TokenMatchTemplateMatcher::RepeatZeroToForever(boxed_matcher, events) => {
                     let min_repeats = match template_matcher {
-                        TokenMatchTemplateMatcher::TokenRepeatOnceToForever(_, _) => 1,
-                        TokenMatchTemplateMatcher::TokenRepeatZeroToForever(_, _) => 0,
+                        TokenMatchTemplateMatcher::RepeatOnceToForever(_, _) => 1,
+                        TokenMatchTemplateMatcher::RepeatZeroToForever(_, _) => 0,
                         _ => 0, // NOTE: this should never be hit
                     };
                     println!("{}FOREVER: {} {} {}", depth_spaces, escaped_offsetted_input, offset, min_repeats);
@@ -872,17 +875,17 @@ fn stringify(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) -> String {
 fn main() {
     let mut token_match_templates_map = HashMap::new();
     token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::RepeatZeroToForever(Box::new(
-            TokenMatchTemplateMatcher::Any(vec![
-                TokenMatchTemplateMatcher::Reference("Whitespace"),
-                TokenMatchTemplateMatcher::Reference("Declaration"),
-                TokenMatchTemplateMatcher::Reference("Block"),
+        TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Whitespace"),
+                TokenMatchTemplateMatcher::reference("Declaration"),
+                TokenMatchTemplateMatcher::reference("Block"),
             ]),
         )),
     ]));
 
     token_match_templates_map.insert("Block", TokenMatchTemplate::new_with_events(vec![
-        TokenMatchTemplateMatcher::RawWithEvents("{", TokenEvents {
+        TokenMatchTemplateMatcher::raw_with_events("{", TokenEvents {
             on_enter: None,
             // on_enter: Some(|token| {
             //     token.effects.push(TokenEffect::DeclareLexicalScope);
@@ -890,11 +893,11 @@ fn main() {
             // }),
             on_leave: None,
         }),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::RepeatOnceToForever(Box::new(
-            TokenMatchTemplateMatcher::Reference("StatementWithWhitespace")
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
+            TokenMatchTemplateMatcher::reference("StatementWithWhitespace")
         )),
-        TokenMatchTemplateMatcher::Raw("}"),
+        TokenMatchTemplateMatcher::raw("}"),
     ], TokenEvents {
         on_enter: Some(|token| {
             token.effects.push(TokenEffect::DeclareLexicalScope);
@@ -904,152 +907,148 @@ fn main() {
     }));
 
     token_match_templates_map.insert("StatementWithWhitespace", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Any(vec![
-            TokenMatchTemplateMatcher::Reference("Statement"),
-            TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::any(vec![
+            TokenMatchTemplateMatcher::reference("Statement"),
+            TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         ]),
     ]));
 
     token_match_templates_map.insert("Statement", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Any(vec![
-            TokenMatchTemplateMatcher::Reference("Declaration"),
-            TokenMatchTemplateMatcher::Reference("Expression"),
+        TokenMatchTemplateMatcher::any(vec![
+            TokenMatchTemplateMatcher::reference("Declaration"),
+            TokenMatchTemplateMatcher::reference("Expression"),
         ]),
     ]));
 
     token_match_templates_map.insert("Declaration", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Raw("let"),
-        TokenMatchTemplateMatcher::Reference("Whitespace"),
-        TokenMatchTemplateMatcher::Reference("Identifier"),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::Raw("="),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::Reference("Expression"),
+        TokenMatchTemplateMatcher::raw("let"),
+        TokenMatchTemplateMatcher::reference("Whitespace"),
+        TokenMatchTemplateMatcher::reference("Identifier"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::raw("="),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::reference("Expression"),
     ]));
 
     token_match_templates_map.insert("StringLiteral", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Regex(
+        TokenMatchTemplateMatcher::regex(
             Regex::new(r"^(?<literal>'[^']*')").unwrap(),
-            None,
         ),
     ]));
     token_match_templates_map.insert("NumberLiteral", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Regex(
+        TokenMatchTemplateMatcher::regex(
             Regex::new(r"^(?<literal>[0-9]+)").unwrap(),
-            None,
         ),
     ]));
     token_match_templates_map.insert("HashLiteral", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Raw("{"),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::RepeatZeroToForever(Box::new(
-            TokenMatchTemplateMatcher::Reference("HashLiteralEntryComma"),
+        TokenMatchTemplateMatcher::raw("{"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
+            TokenMatchTemplateMatcher::reference("HashLiteralEntryComma"),
         )),
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Reference("HashLiteralEntry"),
+        TokenMatchTemplateMatcher::repeat_count(Box::new(
+            TokenMatchTemplateMatcher::reference("HashLiteralEntry"),
         ), 0, 1),
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Raw(","),
+        TokenMatchTemplateMatcher::repeat_count(Box::new(
+            TokenMatchTemplateMatcher::raw(","),
         ), 0, 1),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::Raw("}"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::raw("}"),
     ]));
     token_match_templates_map.insert("HashLiteralEntryComma", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Reference("HashLiteralEntry"),
-        TokenMatchTemplateMatcher::Raw(","),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::reference("HashLiteralEntry"),
+        TokenMatchTemplateMatcher::raw(","),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
     ]));
     token_match_templates_map.insert("HashLiteralEntry", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Reference("Expression"),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::Raw(":"),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::Reference("Expression"),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::reference("Expression"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::raw(":"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::reference("Expression"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
     ]));
 
     token_match_templates_map.insert("ArrayLiteral", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Raw("["),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::RepeatZeroToForever(Box::new(
-            TokenMatchTemplateMatcher::Reference("ArrayLiteralEntryComma"),
+        TokenMatchTemplateMatcher::raw("["),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
+            TokenMatchTemplateMatcher::reference("ArrayLiteralEntryComma"),
         )),
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry"),
+        TokenMatchTemplateMatcher::repeat_count(Box::new(
+            TokenMatchTemplateMatcher::reference("ArrayLiteralEntry"),
         ), 0, 1),
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Raw(","),
+        TokenMatchTemplateMatcher::repeat_count(Box::new(
+            TokenMatchTemplateMatcher::raw(","),
         ), 0, 1),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
-        TokenMatchTemplateMatcher::Raw("]"),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::raw("]"),
     ]));
     token_match_templates_map.insert("ArrayLiteralEntryComma", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry"),
-        TokenMatchTemplateMatcher::Raw(","),
-        TokenMatchTemplateMatcher::Reference("OptionalWhitespace"),
+        TokenMatchTemplateMatcher::reference("ArrayLiteralEntry"),
+        TokenMatchTemplateMatcher::raw(","),
+        TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
     ]));
     token_match_templates_map.insert("ArrayLiteralEntry", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Reference("Expression"),
+        TokenMatchTemplateMatcher::reference("Expression"),
     ]));
 
     token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Reference("Identifier"),
+        TokenMatchTemplateMatcher::reference("Identifier"),
     ]));
 
     token_match_templates_map.insert("Expression", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Any(vec![
-            TokenMatchTemplateMatcher::Reference("StringLiteral"),
-            TokenMatchTemplateMatcher::Reference("NumberLiteral"),
-            TokenMatchTemplateMatcher::Reference("HashLiteral"),
-            TokenMatchTemplateMatcher::Reference("ArrayLiteral"),
-            TokenMatchTemplateMatcher::Reference("Variable"),
-            TokenMatchTemplateMatcher::Reference("Block"),
+        TokenMatchTemplateMatcher::any(vec![
+            TokenMatchTemplateMatcher::reference("StringLiteral"),
+            TokenMatchTemplateMatcher::reference("NumberLiteral"),
+            TokenMatchTemplateMatcher::reference("HashLiteral"),
+            TokenMatchTemplateMatcher::reference("ArrayLiteral"),
+            TokenMatchTemplateMatcher::reference("Variable"),
+            TokenMatchTemplateMatcher::reference("Block"),
         ]),
     ]));
 
     token_match_templates_map.insert("Identifier", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Regex(
+        TokenMatchTemplateMatcher::regex_and_negation(
             Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
-            Some(Regex::new(r"^(let)$").unwrap()),
+            Regex::new(r"^(let)$").unwrap(),
         ),
     ]));
 
     token_match_templates_map.insert("OptionalWhitespace", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::RepeatCount(Box::new(
-            TokenMatchTemplateMatcher::Regex(
+        TokenMatchTemplateMatcher::repeat_count(Box::new(
+            TokenMatchTemplateMatcher::regex(
                 Regex::new(r"^\s+").unwrap(),
-                None,
             ),
         ), 0, 1),
     ]));
 
     token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::Regex(
+        TokenMatchTemplateMatcher::regex(
             Regex::new(r"^\s+").unwrap(),
-            None,
         ),
     ]));
 
     // token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::RepeatOnceToForever(Box::new(
-    //         TokenMatchTemplateMatcher::Any(vec![
-    //             TokenMatchTemplateMatcher::Reference("OptionB", None),
-    //             TokenMatchTemplateMatcher::Reference("OptionA", None),
+    //     TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
+    //         TokenMatchTemplateMatcher::any(vec![
+    //             TokenMatchTemplateMatcher::reference("OptionB", None),
+    //             TokenMatchTemplateMatcher::reference("OptionA", None),
     //         ]),
     //     )),
     // ]));
     //
     // token_match_templates_map.insert("OptionA", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::Raw("1", None),
-    //     TokenMatchTemplateMatcher::RepeatOnceToForever(Box::new(
-    //         TokenMatchTemplateMatcher::Raw("a", None),
+    //     TokenMatchTemplateMatcher::raw("1", None),
+    //     TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
+    //         TokenMatchTemplateMatcher::raw("a", None),
     //     )),
     // ]));
     //
     // token_match_templates_map.insert("OptionB", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::Raw("1", None),
-    //     TokenMatchTemplateMatcher::RepeatOnceToForever(Box::new(
-    //         TokenMatchTemplateMatcher::Raw("b", None),
+    //     TokenMatchTemplateMatcher::raw("1", None),
+    //     TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
+    //         TokenMatchTemplateMatcher::raw("b", None),
     //     )),
     // ]));
 
