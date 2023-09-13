@@ -22,8 +22,6 @@ enum TokenEffect {
 #[derive(Debug)]
 #[derive(Clone)]
 struct TokenEvents {
-    // on_enter: Option<fn(token: &mut Box<Token>)>,
-    // on_leave: Option<fn(token: &mut Box<Token>)>,
     on_enter: Option<fn(token: &mut Box<Token>)>,
     on_leave: Option<fn(token: &mut Box<Token>)>,
 }
@@ -255,6 +253,10 @@ impl TokenMatchTemplate {
                         parent_id: None,
                         children_ids: vec![],
                     });
+                    if let Some(on_enter) = new_token.events.on_enter {
+                        on_enter(&mut new_token);
+                    }
+
                     child_ids.push(new_token.id);
 
                     // println!("RW: {:?} <- {:?}", new_token.id, last_token_id);
@@ -310,6 +312,9 @@ impl TokenMatchTemplate {
                         parent_id: None,
                         children_ids: vec![],
                     });
+                    if let Some(on_enter) = new_token.events.on_enter {
+                        on_enter(&mut new_token);
+                    }
 
                     // Link the new token's next_id to the first child
                     if let Some(first_referenced_child_id) = referenced_child_ids.first() {
@@ -461,6 +466,9 @@ impl TokenMatchTemplate {
                             parent_id: None,
                             children_ids: vec![],
                         });
+                        if let Some(on_enter) = new_token.events.on_enter {
+                            on_enter(&mut new_token);
+                        }
 
                         let Ok((
                             ephemeral_matched_all_tokens,
@@ -574,6 +582,9 @@ impl TokenMatchTemplate {
                             parent_id: None,
                             children_ids: vec![],
                         });
+                        if let Some(on_enter) = new_token.events.on_enter {
+                            on_enter(&mut new_token);
+                        }
 
                         let Ok((
                             ephemeral_matched_all_tokens,
@@ -707,6 +718,9 @@ impl TokenMatchTemplate {
                             parent_id: None,
                             children_ids: vec![],
                         });
+                        if let Some(on_enter) = new_token.events.on_enter {
+                            on_enter(&mut new_token);
+                        }
 
                         let Ok((
                             ephemeral_matched_all_tokens,
@@ -885,14 +899,7 @@ fn main() {
     ]));
 
     token_match_templates_map.insert("Block", TokenMatchTemplate::new_with_events(vec![
-        TokenMatchTemplateMatcher::raw_with_events("{", TokenEvents {
-            on_enter: None,
-            // on_enter: Some(|token| {
-            //     token.effects.push(TokenEffect::DeclareLexicalScope);
-            //     println!("TOKEN: {:?}", token);
-            // }),
-            on_leave: None,
-        }),
+        TokenMatchTemplateMatcher::raw("{"),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
             TokenMatchTemplateMatcher::reference("StatementWithWhitespace")
@@ -1029,29 +1036,6 @@ fn main() {
         ),
     ]));
 
-    // token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
-    //         TokenMatchTemplateMatcher::any(vec![
-    //             TokenMatchTemplateMatcher::reference("OptionB", None),
-    //             TokenMatchTemplateMatcher::reference("OptionA", None),
-    //         ]),
-    //     )),
-    // ]));
-    //
-    // token_match_templates_map.insert("OptionA", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::raw("1", None),
-    //     TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
-    //         TokenMatchTemplateMatcher::raw("a", None),
-    //     )),
-    // ]));
-    //
-    // token_match_templates_map.insert("OptionB", TokenMatchTemplate::new(vec![
-    //     TokenMatchTemplateMatcher::raw("1", None),
-    //     TokenMatchTemplateMatcher::repeat_once_to_forever(Box::new(
-    //         TokenMatchTemplateMatcher::raw("b", None),
-    //     )),
-    // ]));
-
     let Some(all_template) = token_match_templates_map.get("All") else {
         panic!("No 'All' template found!");
     };
@@ -1077,7 +1061,7 @@ let b = {
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
 
             println!("=========");
-            println!("= TOKENS:");
+            println!("= TOKENS: {} {}", tokens.len(), input.len());
             println!("=========");
 
             for child_id in &child_ids {
