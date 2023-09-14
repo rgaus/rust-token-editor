@@ -373,7 +373,7 @@ impl TokenMatchTemplate {
 
                     for token in referenced_template_tokens {
                         if token.parent_id == None {
-                            parent_id_mapping.insert(token.id, Some(new_token.id));
+                            token.parent_id = Some(new_token.id);
                         }
                         tokens.push(token);
                     }
@@ -555,7 +555,7 @@ impl TokenMatchTemplate {
 
                         for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                parent_id_mapping.insert(token.id, Some(new_token.id));
+                                token.parent_id = Some(new_token.id);
                             }
                             tokens.push(token);
                         }
@@ -680,7 +680,7 @@ impl TokenMatchTemplate {
 
                         for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                parent_id_mapping.insert(token.id, Some(new_token.id));
+                                token.parent_id = Some(new_token.id);
                             }
                             tokens.push(token);
                         }
@@ -807,7 +807,7 @@ impl TokenMatchTemplate {
 
                         for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                parent_id_mapping.insert(token.id, Some(new_token.id));
+                                token.parent_id = Some(new_token.id);
                             }
                             tokens.push(token);
                         }
@@ -944,7 +944,7 @@ impl TokenMatchTemplate {
 
                         for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                parent_id_mapping.insert(token.id, Some(new_token.id));
+                                token.parent_id = Some(new_token.id);
                             }
                             tokens.push(token);
                         }
@@ -971,10 +971,6 @@ impl TokenMatchTemplate {
         }
 
         let parented_tokens: Vec<Box<Token>> = tokens.into_iter().map(|mut token| {
-            if let Some(parent_id) = parent_id_mapping.get(&token.id) {
-                token.parent_id = *parent_id;
-            };
-
             if let Some(next_id) = next_id_mapping.get(&token.id) {
                 // println!("  NEXT SET: {} {:?}", token.id, next_id);
                 token.next_id = *next_id;
