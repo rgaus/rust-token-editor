@@ -23,7 +23,10 @@ enum TokenEffect {
 #[derive(Clone)]
 struct TokenEvents {
     on_enter: Option<fn(token: &mut Box<Token>)>,
-    on_leave: Option<fn(token: &mut Box<Token>)>,
+    on_leave: Option<fn(
+        token: &mut Box<Token>,
+        tokens: &mut Vec<Box<Token>>,
+    )>,
 }
 
 impl TokenEvents {
@@ -276,7 +279,7 @@ impl TokenMatchTemplate {
                     last_token_id = Some(new_token.id);
 
                     if let Some(on_leave) = new_token.events.on_leave {
-                        on_leave(&mut new_token);
+                        on_leave(&mut new_token, &mut tokens);
                     }
                     tokens.push(new_token);
 
@@ -376,7 +379,7 @@ impl TokenMatchTemplate {
                     }
 
                     if let Some(on_leave) = new_token.events.on_leave {
-                        on_leave(&mut new_token);
+                        on_leave(&mut new_token, &mut tokens);
                     }
                     tokens.push(new_token);
 
@@ -446,7 +449,7 @@ impl TokenMatchTemplate {
                             last_token_id = Some(new_token.id);
 
                             if let Some(on_leave) = new_token.events.on_leave {
-                                on_leave(&mut new_token);
+                                on_leave(&mut new_token, &mut tokens);
                             }
                             tokens.push(new_token);
 
@@ -557,7 +560,7 @@ impl TokenMatchTemplate {
                             tokens.push(token);
                         }
                         if let Some(on_leave) = new_token.events.on_leave {
-                            on_leave(&mut new_token);
+                            on_leave(&mut new_token, &mut tokens);
                         }
                         tokens.push(new_token);
 
@@ -682,9 +685,6 @@ impl TokenMatchTemplate {
                             tokens.push(token);
                         }
 
-                        if let Some(on_leave) = new_token.events.on_leave {
-                            on_leave(&mut new_token);
-                        }
                         new_tokens.push(new_token);
                     }
                     println!("{}`-- (match_failed={}", depth_spaces, match_failed);
@@ -696,7 +696,7 @@ impl TokenMatchTemplate {
                     // Update the main values with the local cached values
                     for mut new_token in new_tokens {
                         if let Some(on_leave) = new_token.events.on_leave {
-                            on_leave(&mut new_token);
+                            on_leave(&mut new_token, &mut tokens);
                         }
                         tokens.push(new_token);
                     }
@@ -831,7 +831,7 @@ impl TokenMatchTemplate {
                     // Update the main values with the local cached values
                     for mut new_token in new_tokens {
                         if let Some(on_leave) = new_token.events.on_leave {
-                            on_leave(&mut new_token);
+                            on_leave(&mut new_token, &mut tokens);
                         }
                         tokens.push(new_token);
                     }
@@ -959,7 +959,7 @@ impl TokenMatchTemplate {
                     // Update the main values with the local cached values
                     for mut new_token in new_tokens {
                         if let Some(on_leave) = new_token.events.on_leave {
-                            on_leave(&mut new_token);
+                            on_leave(&mut new_token, &mut tokens);
                         }
                         tokens.push(new_token);
                     }
