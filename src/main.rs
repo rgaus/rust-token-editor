@@ -12,10 +12,12 @@ struct TokenMatch {
 }
 
 #[derive(Debug)]
+#[derive(Clone)]
 enum TokenEffect {
-    // DeclareIdentifier { name: String, datatype: String },
+    DeclareExpression(String),
+    DeclareIdentifier(String),
     // DeclareContainer,
-    // DeclareMember { name: String, datatype: String },
+    DeclareMember { name: String, value: String },
     DeclareLexicalScope,
 }
 
@@ -38,25 +40,14 @@ impl TokenEvents {
             (None, None) => None,
             (Some(a_on_enter), None) => Some(a_on_enter),
             (None, Some(b_on_enter)) => Some(b_on_enter),
-            // (Some(a_on_enter), Some(b_on_enter)) => Some(|&mut token| {
-            //     a_on_enter(token);
-            //     b_on_enter(token);
-            // }),
+            // FIXME: right now, b overrides a. However, ideally, this would run both!
             (Some(_), Some(b_on_enter)) => Some(b_on_enter),
         };
         let on_leave = match (a.on_leave, b.on_leave) {
             (None, None) => None,
             (Some(a_on_leave), None) => Some(a_on_leave),
             (None, Some(b_on_leave)) => Some(b_on_leave),
-            // (Some(a_on_leave), Some(b_on_leave)) => {
-            //     let combined_on_leave: fn(token: &mut Box<Token>) = move |&mut token| {
-            //         println!("A: {:?}", a_on_leave);
-            //         println!("B: {:?}", b_on_leave);
-            //         // a_on_leave(&mut token);
-            //         // b_on_leave(&mut token);
-            //     };
-            //     Some(combined_on_leave)
-            // },
+            // FIXME: right now, b overrides a. However, ideally, this would run both!
             (Some(_), Some(b_on_leave)) => Some(b_on_leave),
         };
 
@@ -100,6 +91,83 @@ struct Token {
     children_ids: Vec<uuid::Uuid>,
 }
 
+impl Token {
+    fn next<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<&Box<Token>> {
+        let Some(next_id) = self.next_id else {
+            return None;
+        };
+        let Some(next_token) = tokens.into_iter().find(|t| t.id == next_id) else {
+            return None;
+        };
+        Some(next_token)
+    }
+    fn previous<'a>(&'a self, tokens: &'a mut Vec<Box<Token>>) -> Option<&mut Box<Token>> {
+        let Some(previous_id) = self.previous_id else {
+            return None;
+        };
+        let Some(previous_token) = tokens.into_iter().find(|t| t.id == previous_id) else {
+            return None;
+        };
+        Some(previous_token)
+    }
+    fn parent<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<&Box<Token>> {
+        let Some(parent_id) = self.parent_id else {
+            return None;
+        };
+        let Some(parent_token) = tokens.into_iter().find(|t| t.id == parent_id) else {
+            return None;
+        };
+        Some(parent_token)
+    }
+    fn mut_parent<'a>(&'a self, tokens: &'a mut Vec<Box<Token>>) -> Option<&mut Box<Token>> {
+        let Some(parent_id) = self.parent_id else {
+            return None;
+        };
+        let Some(parent_token) = tokens.into_iter().find(|t| t.id == parent_id) else {
+            return None;
+        };
+        Some(parent_token)
+    }
+    fn children<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<Vec<&Box<Token>>> {
+        let mut children: Vec<&Box<Token>> = vec![];
+        for child_id in &self.children_ids {
+            let Some(child) = tokens.iter().find(|t| t.id == *child_id) else {
+                continue;
+            };
+            children.push(&child);
+        }
+        Some(children)
+    }
+    fn child_effects<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<Vec<&TokenEffect>> {
+        let mut child_effects: Vec<&TokenEffect> = vec![];
+        let Some(children) = &self.children(tokens) else {
+            return Some(child_effects);
+        };
+        for child in children {
+            for effect in &child.effects {
+                child_effects.push(effect);
+            }
+        }
+        Some(child_effects)
+    }
+    fn find_child_effect<'a>(
+        &'a self,
+        tokens: &'a Vec<Box<Token>>,
+        matcher: fn(e: &TokenEffect) -> bool,
+    ) -> Option<&TokenEffect> {
+        let Some(effects) = &self.child_effects(tokens) else {
+            return None;
+        };
+
+        for effect in effects {
+            if matcher(effect) {
+                return Some(effect);
+            };
+        };
+        None
+    }
+}
+
 #[derive(Debug)]
 #[derive(Clone)]
 enum TokenMatchTemplateMatcher {
@@ -136,10 +204,16 @@ impl TokenMatchTemplateMatcher {
     }
     fn regex_with_events(
         regex: regex::Regex,
-        negated_regex: Option<regex::Regex>,
         events: TokenEvents,
     ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, negated_regex, Some(events))
+        TokenMatchTemplateMatcher::Regex(regex, None, Some(events))
+    }
+    fn regex_and_negation_with_events(
+        regex: regex::Regex,
+        negated_regex: regex::Regex,
+        events: TokenEvents,
+    ) -> TokenMatchTemplateMatcher {
+        TokenMatchTemplateMatcher::Regex(regex, Some(negated_regex), Some(events))
     }
 
     fn any(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
@@ -290,7 +364,7 @@ impl TokenMatchTemplate {
                     let Ok((
                         referenced_matched_all_tokens,
                         referenced_template_offset,
-                        referenced_last_token_id,
+                        _referenced_last_token_id,
                         referenced_child_ids,
                         referenced_template_tokens,
                     )) = referenced_template.consume_from_offset(
@@ -370,12 +444,22 @@ impl TokenMatchTemplate {
                     let new_token_id = new_token.id;
                     tokens.push(new_token);
 
-                    for mut token in referenced_template_tokens {
+                    let mut temp_referenced_template_tokens_without_parents: Vec<Box<Token>> = vec![];
+                    // Add all tokens to the tokens array that don't have parents
+                    for token in referenced_template_tokens {
                         if token.parent_id == None {
-                            token.parent_id = Some(new_token_id);
-                            if let Some(on_leave) = token.events.on_leave {
-                                on_leave(&mut token, &mut tokens);
-                            }
+                            temp_referenced_template_tokens_without_parents.push(token);
+                            continue
+                        };
+                        tokens.push(token);
+                    }
+                    // Then add all the tokens with parents AFTER so that when `on_leave` is
+                    // called, all the child tokens (that are already parented) will be present
+                    // in `tokens` first
+                    for mut token in temp_referenced_template_tokens_without_parents {
+                        token.parent_id = Some(new_token_id);
+                        if let Some(on_leave) = token.events.on_leave {
+                            on_leave(&mut token, &mut tokens);
                         }
                         tokens.push(token);
                     }
@@ -420,7 +504,7 @@ impl TokenMatchTemplate {
                                 });
                             }
 
-                            let mut new_token = Box::new(Token {
+                            let new_token = Box::new(Token {
                                 id: Uuid::new_v4(),
                                 template: template_matcher.clone(),
                                 literal: Some(String::from(literal)),
@@ -484,7 +568,7 @@ impl TokenMatchTemplate {
                         let Ok((
                             ephemeral_matched_all_tokens,
                             ephemeral_offset,
-                            ephemeral_last_token_id,
+                            _ephemeral_last_token_id,
                             ephemeral_child_ids,
                             ephemeral_tokens
                         )) = ephemeral_template.consume_from_offset(
@@ -550,12 +634,22 @@ impl TokenMatchTemplate {
                         let new_token_id = new_token.id;
                         tokens.push(new_token);
 
-                        for mut token in ephemeral_tokens {
+                        let mut temp_ephemeral_tokens_without_parents: Vec<Box<Token>> = vec![];
+                        // Add all tokens to the tokens array that don't have parents
+                        for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                token.parent_id = Some(new_token_id);
-                                if let Some(on_leave) = token.events.on_leave {
-                                    on_leave(&mut token, &mut tokens);
-                                }
+                                temp_ephemeral_tokens_without_parents.push(token);
+                                continue
+                            };
+                            tokens.push(token);
+                        }
+                        // Then add all the tokens with parents AFTER so that when `on_leave` is
+                        // called, all the child tokens (that are already parented) will be present
+                        // in `tokens` first
+                        for mut token in temp_ephemeral_tokens_without_parents {
+                            token.parent_id = Some(new_token_id);
+                            if let Some(on_leave) = token.events.on_leave {
+                                on_leave(&mut token, &mut tokens);
                             }
                             tokens.push(token);
                         }
@@ -571,10 +665,9 @@ impl TokenMatchTemplate {
                 }
                 TokenMatchTemplateMatcher::Sequence(matchers, events) => {
                     println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
-                    let mut new_tokens: Vec<Box<Token>> = vec![];
+                    let new_tokens: Vec<Box<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut new_last_token_id = last_token_id;
-                    let mut repeat_count: usize = 0;
 
                     // An empty sequence should be treated as a no-op
                     if matchers.len() == 0 {
@@ -610,7 +703,7 @@ impl TokenMatchTemplate {
                         let Ok((
                             ephemeral_matched_all_tokens,
                             ephemeral_offset,
-                            ephemeral_last_token_id,
+                            _ephemeral_last_token_id,
                             ephemeral_child_ids,
                             ephemeral_tokens
                         )) = ephemeral_template.consume_from_offset(
@@ -630,7 +723,6 @@ impl TokenMatchTemplate {
                         }
 
                         // Another match was found, so store another generated token
-                        repeat_count += 1;
                         new_offset = ephemeral_offset;
 
                         // Link the new token's next_id to the first child
@@ -677,14 +769,23 @@ impl TokenMatchTemplate {
                         let new_token_id = new_token.id;
                         tokens.push(new_token);
 
-                        for mut token in ephemeral_tokens {
+                        let mut temp_ephemeral_tokens_without_parents: Vec<Box<Token>> = vec![];
+                        // Add all tokens to the tokens array that don't have parents
+                        for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                token.parent_id = Some(new_token_id);
-                                if let Some(on_leave) = token.events.on_leave {
-                                    on_leave(&mut token, &mut tokens);
-                                }
-                            }
+                                temp_ephemeral_tokens_without_parents.push(token);
+                                continue
+                            };
                             tokens.push(token);
+                        }
+                        // Then add all the tokens with parents AFTER so that when `on_leave` is
+                        // called, all the child tokens (that are already parented) will be present
+                        // in `tokens` first
+                        for mut token in temp_ephemeral_tokens_without_parents {
+                            token.parent_id = Some(new_token_id);
+                            if let Some(on_leave) = token.events.on_leave {
+                                on_leave(&mut token, &mut tokens);
+                            }
                         }
                     }
                     println!("{}`-- (match_failed={}", depth_spaces, match_failed);
@@ -694,7 +795,7 @@ impl TokenMatchTemplate {
                     }
 
                     // Update the main values with the local cached values
-                    for mut new_token in new_tokens {
+                    for new_token in new_tokens {
                         tokens.push(new_token);
                     }
                     offset = new_offset;
@@ -702,7 +803,7 @@ impl TokenMatchTemplate {
                 }
                 TokenMatchTemplateMatcher::RepeatCount(boxed_matcher, min_repeats, max_repeats, events) => {
                     println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
-                    let mut new_tokens: Vec<Box<Token>> = vec![];
+                    let new_tokens: Vec<Box<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut new_last_token_id = last_token_id;
                     let mut repeat_count: usize = 0;
@@ -736,7 +837,7 @@ impl TokenMatchTemplate {
                         let Ok((
                             ephemeral_matched_all_tokens,
                             ephemeral_offset,
-                            ephemeral_last_token_id,
+                            _ephemeral_last_token_id,
                             ephemeral_child_ids,
                             ephemeral_tokens
                         )) = ephemeral_template.consume_from_offset(
@@ -805,12 +906,22 @@ impl TokenMatchTemplate {
                         let new_token_id = new_token.id;
                         tokens.push(new_token);
 
-                        for mut token in ephemeral_tokens {
+                        let mut temp_ephemeral_tokens_without_parents: Vec<Box<Token>> = vec![];
+                        // Add all tokens to the tokens array that don't have parents
+                        for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                token.parent_id = Some(new_token_id);
-                                if let Some(on_leave) = token.events.on_leave {
-                                    on_leave(&mut token, &mut tokens);
-                                }
+                                temp_ephemeral_tokens_without_parents.push(token);
+                                continue
+                            };
+                            tokens.push(token);
+                        }
+                        // Then add all the tokens with parents AFTER so that when `on_leave` is
+                        // called, all the child tokens (that are already parented) will be present
+                        // in `tokens` first
+                        for mut token in temp_ephemeral_tokens_without_parents {
+                            token.parent_id = Some(new_token_id);
+                            if let Some(on_leave) = token.events.on_leave {
+                                on_leave(&mut token, &mut tokens);
                             }
                             tokens.push(token);
                         }
@@ -831,7 +942,7 @@ impl TokenMatchTemplate {
                     }
 
                     // Update the main values with the local cached values
-                    for mut new_token in new_tokens {
+                    for new_token in new_tokens {
                         tokens.push(new_token);
                     }
                     offset = new_offset;
@@ -845,7 +956,7 @@ impl TokenMatchTemplate {
                         _ => 0, // NOTE: this should never be hit
                     };
                     println!("{}FOREVER: {} {} {}", depth_spaces, escaped_offsetted_input, offset, min_repeats);
-                    let mut new_tokens: Vec<Box<Token>> = vec![];
+                    let new_tokens: Vec<Box<Token>> = vec![];
                     let mut new_offset = offset;
                     let mut new_last_token_id = last_token_id;
                     let mut repeat_count: usize = 0;
@@ -877,7 +988,7 @@ impl TokenMatchTemplate {
                         let Ok((
                             ephemeral_matched_all_tokens,
                             ephemeral_offset,
-                            ephemeral_last_token_id,
+                            _ephemeral_last_token_id,
                             ephemeral_child_ids,
                             ephemeral_tokens,
                         )) = ephemeral_template.consume_from_offset(
@@ -944,12 +1055,22 @@ impl TokenMatchTemplate {
                         let new_token_id = new_token.id;
                         tokens.push(new_token);
 
-                        for mut token in ephemeral_tokens {
+                        let mut temp_ephemeral_tokens_without_parents: Vec<Box<Token>> = vec![];
+                        // Add all tokens to the tokens array that don't have parents
+                        for token in ephemeral_tokens {
                             if token.parent_id == None {
-                                token.parent_id = Some(new_token_id);
-                                if let Some(on_leave) = token.events.on_leave {
-                                    on_leave(&mut token, &mut tokens);
-                                }
+                                temp_ephemeral_tokens_without_parents.push(token);
+                                continue
+                            };
+                            tokens.push(token);
+                        }
+                        // Then add all the tokens with parents AFTER so that when `on_leave` is
+                        // called, all the child tokens (that are already parented) will be present
+                        // in `tokens` first
+                        for mut token in temp_ephemeral_tokens_without_parents {
+                            token.parent_id = Some(new_token_id);
+                            if let Some(on_leave) = token.events.on_leave {
+                                on_leave(&mut token, &mut tokens);
                             }
                             tokens.push(token);
                         }
@@ -961,7 +1082,7 @@ impl TokenMatchTemplate {
                     }
 
                     // Update the main values with the local cached values
-                    for mut new_token in new_tokens {
+                    for new_token in new_tokens {
                         tokens.push(new_token);
                     }
                     offset = new_offset;
@@ -971,7 +1092,7 @@ impl TokenMatchTemplate {
             matched_token_count += 1;
         }
 
-        let mut parented_tokens: Vec<Box<Token>> = tokens.into_iter().map(|mut token| {
+        let parented_tokens: Vec<Box<Token>> = tokens.into_iter().map(|mut token| {
             if let Some(next_id) = next_id_mapping.get(&token.id) {
                 // println!("  NEXT SET: {} {:?}", token.id, next_id);
                 token.next_id = *next_id;
@@ -983,11 +1104,12 @@ impl TokenMatchTemplate {
             token
         }).collect();
 
-        // if depth == 0 {
-        //     for mut token in &mut parented_tokens {
-        //         if let Some(on_leave) = token.events.on_leave {
-        //             on_leave(&mut token, &mut tokens);
-        //         }
+        // for mut token in &mut parented_tokens {
+        //     if token.parent_id == None {
+        //         continue;
+        //     }
+        //     if let Some(on_leave) = token.events.on_leave {
+        //         on_leave(&mut token, &mut parented_tokens);
         //     }
         // }
 
@@ -1006,10 +1128,11 @@ fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: Stri
         //     Some(n) => n,
         //     None => "",
         // }, token.matches);
-        println!("{}{:?} \t_{}_\t==> {:?}", indent, token.template, match &token.literal {
-            Some(n) => n,
-            None => "",
-        }, token.matches);
+        // println!("{}{:?} \t_{}_\t==> {:?} {:?}", indent, token.template, match &token.literal {
+        //     Some(n) => n,
+        //     None => "",
+        // }, token.matches, token.effects);
+        println!("{}{:?} => {:?}", indent, token.template, token.effects);
         dump_inner(tokens, token.children_ids.clone(), format!("{}  ", indent));
     }
 }
@@ -1066,16 +1189,17 @@ fn main() {
         on_enter: Some(|token| {
             token.effects.push(TokenEffect::DeclareLexicalScope);
         }),
-        on_leave: Some(|token, tokens| {
-            let Some(parent_id) = token.parent_id else {
-                return;
-            };
-            println!("DETAILS ID: {:?}", parent_id);
-            let Some(parent_token) = tokens.iter().find(|t| t.id == parent_id) else {
-                return;
-            };
-            println!("DETAILS: {:?}", parent_token);
-        }),
+        on_leave: None,
+        // on_leave: Some(|token, tokens| {
+        //     let Some(parent_id) = token.parent_id else {
+        //         return;
+        //     };
+        //     println!("DETAILS ID: {:?}", parent_id);
+        //     let Some(parent_token) = tokens.iter().find(|t| t.id == parent_id) else {
+        //         return;
+        //     };
+        //     println!("DETAILS: {:?}", parent_token);
+        // }),
     }));
 
     token_match_templates_map.insert("StatementWithWhitespace", TokenMatchTemplate::new(vec![
@@ -1092,7 +1216,7 @@ fn main() {
         ]),
     ]));
 
-    token_match_templates_map.insert("Declaration", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Declaration", TokenMatchTemplate::new_with_events(vec![
         TokenMatchTemplateMatcher::raw("let"),
         TokenMatchTemplateMatcher::reference("Whitespace"),
         TokenMatchTemplateMatcher::reference("Identifier"),
@@ -1100,11 +1224,38 @@ fn main() {
         TokenMatchTemplateMatcher::raw("="),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::reference("Expression"),
-    ]));
+    ], TokenEvents {
+        on_enter: None,
+        on_leave: Some(|token, tokens| {
+            let Some(TokenEffect::DeclareIdentifier(identifier)) = token.find_child_effect(tokens, |e| {
+                if let TokenEffect::DeclareIdentifier(_) = e { true } else { false }
+            }) else { return; };
+
+            let Some(TokenEffect::DeclareExpression(expression)) = token.find_child_effect(tokens, |e| {
+                if let TokenEffect::DeclareExpression(_) = e { true } else { false }
+            }) else { return; };
+
+            token.effects.push(TokenEffect::DeclareMember {
+                name: identifier.clone(),
+                value: expression.clone(),
+            });
+        }),
+    }));
 
     token_match_templates_map.insert("StringLiteral", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::regex(
+        TokenMatchTemplateMatcher::regex_with_events(
             Regex::new(r"^(?<literal>'[^']*')").unwrap(),
+            TokenEvents {
+                on_enter: None,
+                on_leave: Some(|token, tokens| {
+                    let Some(parent) = token.mut_parent(tokens) else {
+                        return;
+                    };
+                    parent.effects.push(TokenEffect::DeclareExpression(
+                        token.matches.get("literal").unwrap().string.clone(),
+                    ));
+                }),
+            },
         ),
     ]));
     token_match_templates_map.insert("NumberLiteral", TokenMatchTemplate::new(vec![
@@ -1167,7 +1318,7 @@ fn main() {
         TokenMatchTemplateMatcher::reference("Identifier"),
     ]));
 
-    token_match_templates_map.insert("Expression", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("Expression", TokenMatchTemplate::new_with_events(vec![
         TokenMatchTemplateMatcher::any(vec![
             TokenMatchTemplateMatcher::reference("StringLiteral"),
             TokenMatchTemplateMatcher::reference("NumberLiteral"),
@@ -1176,14 +1327,43 @@ fn main() {
             TokenMatchTemplateMatcher::reference("Variable"),
             TokenMatchTemplateMatcher::reference("Block"),
         ]),
-    ]));
+    ], TokenEvents {
+        on_enter: None,
+        on_leave: Some(|token, tokens| {
+            let Some(next) = token.next(tokens) else {
+                return;
+            };
 
-    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::regex_and_negation(
+            let expression = next.find_child_effect(tokens, |e| {
+                if let TokenEffect::DeclareExpression(_) = e { true } else { false }
+            }).unwrap();
+
+            token.effects.push(expression.clone());
+        }),
+    }));
+
+    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new_with_events(vec![
+        // TokenMatchTemplateMatcher::regex_and_negation(
+        //     Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
+        //     Regex::new(r"^(let)$").unwrap(),
+        // ),
+
+        TokenMatchTemplateMatcher::regex_and_negation_with_events(
             Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
             Regex::new(r"^(let)$").unwrap(),
+            TokenEvents {
+                on_enter: None,
+                on_leave: Some(|token, tokens| {
+                    let Some(parent) = token.mut_parent(tokens) else {
+                        return;
+                    };
+                    parent.effects.push(TokenEffect::DeclareIdentifier(
+                        token.matches.get("value").unwrap().string.clone(),
+                    ));
+                }),
+            },
         ),
-    ]));
+    ], TokenEvents { on_enter: None, on_leave: None }));
 
     token_match_templates_map.insert("OptionalWhitespace", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::repeat_count(Box::new(
@@ -1203,23 +1383,25 @@ fn main() {
         panic!("No 'All' template found!");
     };
 
-    let input = "
-let b = {
-    'foo': 2,
-    'nested': {
-        'again': [5, 6]
-    }
-}
-{
-    {
-        let a = 'aaa'
-    }
-}";
+//     let input = "
+// let b = {
+//     'foo': 2,
+//     'nested': {
+//         'again': [5, 6]
+//     }
+// }
+// {
+//     {
+//         let a = 'aaa'
+//     }
+// }";
+
+    let input = "{let a = 'aaa'}";
 
     // let input = "1aa1bb";
 
     match all_template.consume_from_start(input, &token_match_templates_map) {
-        Ok((_matched_all, offset, last_token_id, child_ids, tokens)) => {
+        Ok((_matched_all, offset, _last_token_id, child_ids, tokens)) => {
             // println!("RESULT: {:?} {:?}", offset, tokens);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
 
