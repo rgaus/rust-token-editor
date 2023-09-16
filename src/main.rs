@@ -2,260 +2,8 @@ use std::collections::HashMap;
 use regex::Regex;
 use uuid::Uuid;
 
-#[derive(Debug)]
-struct TokenMatch {
-    start: usize,
-    end: usize,
-    global_start: usize,
-    global_end: usize,
-    string: String,
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-enum TokenEffect {
-    DeclareExpression(String),
-    DeclareIdentifier(String),
-    // DeclareContainer,
-    DeclareMember { name: String, value: String },
-    DeclareLexicalScope,
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-struct TokenEvents {
-    on_enter: Option<fn(token: &mut Box<Token>)>,
-    on_leave: Option<fn(
-        token: &mut Box<Token>,
-        tokens: &mut Vec<Box<Token>>,
-    )>,
-}
-
-impl TokenEvents {
-    fn new_empty() -> TokenEvents {
-        TokenEvents { on_enter: None, on_leave: None }
-    }
-    fn combine(a: TokenEvents, b: TokenEvents) -> TokenEvents {
-        let on_enter = match (a.on_enter, b.on_enter) {
-            (None, None) => None,
-            (Some(a_on_enter), None) => Some(a_on_enter),
-            (None, Some(b_on_enter)) => Some(b_on_enter),
-            // FIXME: right now, b overrides a. However, ideally, this would run both!
-            (Some(_), Some(b_on_enter)) => Some(b_on_enter),
-        };
-        let on_leave = match (a.on_leave, b.on_leave) {
-            (None, None) => None,
-            (Some(a_on_leave), None) => Some(a_on_leave),
-            (None, Some(b_on_leave)) => Some(b_on_leave),
-            // FIXME: right now, b overrides a. However, ideally, this would run both!
-            (Some(_), Some(b_on_leave)) => Some(b_on_leave),
-        };
-
-        TokenEvents {
-            on_enter: on_enter,
-            on_leave: on_leave,
-        }
-    }
-    fn combine_from_optionals(a: Option<TokenEvents>, b: Option<TokenEvents>) -> TokenEvents {
-        // If either one is None, then return the other one
-        let Some(a) = a else {
-            if let Some(b) = b {
-                return b;
-            } else {
-                return TokenEvents::new_empty();
-            }
-        };
-        let Some(b) = b else {
-            return a;
-        };
-
-        // Otherwise, merge them
-        TokenEvents::combine(a, b)
-    }
-}
-
-#[derive(Debug)]
-struct Token {
-    id: uuid::Uuid,
-    template: TokenMatchTemplateMatcher,
-    literal: Option<String>,
-    matches: HashMap<String, TokenMatch>,
-
-    events: TokenEvents,
-
-    effects: Vec<TokenEffect>,
-
-    next_id: Option<uuid::Uuid>,
-    previous_id: Option<uuid::Uuid>,
-    parent_id: Option<uuid::Uuid>,
-    children_ids: Vec<uuid::Uuid>,
-}
-
-impl Token {
-    fn next<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<&Box<Token>> {
-        let Some(next_id) = self.next_id else {
-            return None;
-        };
-        let Some(next_token) = tokens.into_iter().find(|t| t.id == next_id) else {
-            return None;
-        };
-        Some(next_token)
-    }
-    fn previous<'a>(&'a self, tokens: &'a mut Vec<Box<Token>>) -> Option<&mut Box<Token>> {
-        let Some(previous_id) = self.previous_id else {
-            return None;
-        };
-        let Some(previous_token) = tokens.into_iter().find(|t| t.id == previous_id) else {
-            return None;
-        };
-        Some(previous_token)
-    }
-    fn parent<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<&Box<Token>> {
-        let Some(parent_id) = self.parent_id else {
-            return None;
-        };
-        let Some(parent_token) = tokens.into_iter().find(|t| t.id == parent_id) else {
-            return None;
-        };
-        Some(parent_token)
-    }
-    fn mut_parent<'a>(&'a self, tokens: &'a mut Vec<Box<Token>>) -> Option<&mut Box<Token>> {
-        let Some(parent_id) = self.parent_id else {
-            return None;
-        };
-        let Some(parent_token) = tokens.into_iter().find(|t| t.id == parent_id) else {
-            return None;
-        };
-        Some(parent_token)
-    }
-    fn children<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<Vec<&Box<Token>>> {
-        let mut children: Vec<&Box<Token>> = vec![];
-        for child_id in &self.children_ids {
-            let Some(child) = tokens.iter().find(|t| t.id == *child_id) else {
-                continue;
-            };
-            children.push(&child);
-        }
-        Some(children)
-    }
-    fn child_effects<'a>(&'a self, tokens: &'a Vec<Box<Token>>) -> Option<Vec<&TokenEffect>> {
-        let mut child_effects: Vec<&TokenEffect> = vec![];
-        let Some(children) = &self.children(tokens) else {
-            return Some(child_effects);
-        };
-        for child in children {
-            for effect in &child.effects {
-                child_effects.push(effect);
-            }
-        }
-        Some(child_effects)
-    }
-    fn find_child_effect<'a>(
-        &'a self,
-        tokens: &'a Vec<Box<Token>>,
-        matcher: fn(e: &TokenEffect) -> bool,
-    ) -> Option<&TokenEffect> {
-        let Some(effects) = &self.child_effects(tokens) else {
-            return None;
-        };
-
-        for effect in effects {
-            if matcher(effect) {
-                return Some(effect);
-            };
-        };
-        None
-    }
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-enum TokenMatchTemplateMatcher {
-    Raw(&'static str, Option<TokenEvents>),
-    Reference(&'static str, Option<TokenEvents>),
-    Regex(regex::Regex, Option<regex::Regex>, Option<TokenEvents>),
-    Any(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
-    Sequence(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
-    RepeatCount(Box<TokenMatchTemplateMatcher>, usize, usize, Option<TokenEvents>),
-    RepeatOnceToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
-    RepeatZeroToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
-}
-
-impl TokenMatchTemplateMatcher {
-    fn raw(text: &'static str) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Raw(text, None)
-    }
-    fn raw_with_events(text: &'static str, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Raw(text, Some(events))
-    }
-
-    fn reference(name: &'static str) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Reference(name, None)
-    }
-    fn reference_with_events(name: &'static str, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Reference(name, Some(events))
-    }
-
-    fn regex(regex: regex::Regex) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, None, None)
-    }
-    fn regex_and_negation(regex: regex::Regex, negated_regex: regex::Regex) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, Some(negated_regex), None)
-    }
-    fn regex_with_events(
-        regex: regex::Regex,
-        events: TokenEvents,
-    ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, None, Some(events))
-    }
-    fn regex_and_negation_with_events(
-        regex: regex::Regex,
-        negated_regex: regex::Regex,
-        events: TokenEvents,
-    ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, Some(negated_regex), Some(events))
-    }
-
-    fn any(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Any(tokens, None)
-    }
-    fn any_with_events(tokens: Vec<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Any(tokens, Some(events))
-    }
-
-    fn sequence(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Sequence(tokens, None)
-    }
-    fn sequence_with_events(tokens: Vec<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Sequence(tokens, Some(events))
-    }
-
-    fn repeat_count(token: Box<TokenMatchTemplateMatcher>, min_repeats: usize, max_repeats: usize) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::RepeatCount(token, min_repeats, max_repeats, None)
-    }
-    fn repeat_count_with_events(
-        token: Box<TokenMatchTemplateMatcher>,
-        min_repeats: usize,
-        max_repeats: usize,
-        events: TokenEvents,
-    ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::RepeatCount(token, min_repeats, max_repeats, Some(events))
-    }
-
-    fn repeat_once_to_forever(token: Box<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::RepeatOnceToForever(token, None)
-    }
-    fn repeat_once_to_forever_with_events(token: Box<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::RepeatOnceToForever(token, Some(events))
-    }
-
-    fn repeat_zero_to_forever(token: Box<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::RepeatZeroToForever(token, None)
-    }
-    fn repeat_zero_to_forever_with_events(token: Box<TokenMatchTemplateMatcher>, events: TokenEvents) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::RepeatZeroToForever(token, Some(events))
-    }
-}
+mod token;
+use token::*;
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -277,7 +25,7 @@ impl TokenMatchTemplate {
         &self,
         input: &str,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
+    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensBag), String> {
         self.consume_from_offset(input, 0, None, 0, token_match_templates_map)
     }
     fn consume_from_offset(
@@ -287,7 +35,7 @@ impl TokenMatchTemplate {
         initial_last_token_id: Option<uuid::Uuid>,
         depth: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, Vec<Box<Token>>), String> {
+    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensBag), String> {
         let mut tokens: Vec<Box<Token>> = vec![];
         let mut offset = initial_offset;
         let mut child_ids: Vec<uuid::Uuid> = vec![];
@@ -1172,7 +920,7 @@ fn main() {
         TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
             TokenMatchTemplateMatcher::any(vec![
                 TokenMatchTemplateMatcher::reference("Whitespace"),
-                TokenMatchTemplateMatcher::reference("Declaration"),
+                TokenMatchTemplateMatcher::reference("Statement"),
                 TokenMatchTemplateMatcher::reference("Block"),
             ]),
         )),
@@ -1330,15 +1078,15 @@ fn main() {
     ], TokenEvents {
         on_enter: None,
         on_leave: Some(|token, tokens| {
-            let Some(next) = token.next(tokens) else {
-                return;
-            };
-
-            let expression = next.find_child_effect(tokens, |e| {
-                if let TokenEffect::DeclareExpression(_) = e { true } else { false }
-            }).unwrap();
-
-            token.effects.push(expression.clone());
+            // let Some(next) = token.next(tokens) else {
+            //     return;
+            // };
+            //
+            // let expression = next.find_child_effect(tokens, |e| {
+            //     if let TokenEffect::DeclareExpression(_) = e { true } else { false }
+            // }).unwrap();
+            //
+            // token.effects.push(expression.clone());
         }),
     }));
 
@@ -1396,12 +1144,13 @@ fn main() {
 //     }
 // }";
 
-    let input = "{let a = 'aaa'}";
+    // let input = "{let a = 'aaa'}";
+    let input = "456";
 
     // let input = "1aa1bb";
 
     match all_template.consume_from_start(input, &token_match_templates_map) {
-        Ok((_matched_all, offset, _last_token_id, child_ids, tokens)) => {
+        Ok((_matched_all, offset, _last_token_id, child_ids, mut tokens)) => {
             // println!("RESULT: {:?} {:?}", offset, tokens);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
 
