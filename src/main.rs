@@ -167,8 +167,8 @@ impl TokenMatchTemplate {
                         let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
                             break;
                         };
-                        let Some(child_token) = referenced_template_tokens.tokens.iter().find(
-                            |t| t.id == *deep_last_referenced_child_id_unwrapped
+                        let Some(child_token) = referenced_template_tokens.get_by_id(
+                            *deep_last_referenced_child_id_unwrapped
                         ) else {
                             break;
                         };
@@ -357,8 +357,8 @@ impl TokenMatchTemplate {
                             let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
                                 break;
                             };
-                            let Some(child_token) = ephemeral_tokens.tokens.iter().find(
-                                |t| t.id == *deep_last_ephemeral_child_id_unwrapped
+                            let Some(child_token) = ephemeral_tokens.get_by_id(
+                                *deep_last_ephemeral_child_id_unwrapped
                             ) else {
                                 break;
                             };
@@ -492,8 +492,8 @@ impl TokenMatchTemplate {
                             let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
                                 break;
                             };
-                            let Some(child_token) = ephemeral_tokens.tokens.iter().find(
-                                |t| t.id == *deep_last_ephemeral_child_id_unwrapped
+                            let Some(child_token) = ephemeral_tokens.get_by_id(
+                                *deep_last_ephemeral_child_id_unwrapped
                             ) else {
                                 break;
                             };
@@ -629,8 +629,8 @@ impl TokenMatchTemplate {
                             let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
                                 break;
                             };
-                            let Some(child_token) = ephemeral_tokens.tokens.iter().find(
-                                |t| t.id == *deep_last_ephemeral_child_id_unwrapped
+                            let Some(child_token) = ephemeral_tokens.get_by_id(
+                                *deep_last_ephemeral_child_id_unwrapped
                             ) else {
                                 break;
                             };
@@ -777,8 +777,8 @@ impl TokenMatchTemplate {
                             let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
                                 break;
                             };
-                            let Some(child_token) = ephemeral_tokens.tokens.iter().find(
-                                |t| t.id == *deep_last_ephemeral_child_id_unwrapped
+                            let Some(child_token) = ephemeral_tokens.get_by_id(
+                                *deep_last_ephemeral_child_id_unwrapped
                             ) else {
                                 break;
                             };
@@ -1071,12 +1071,14 @@ fn main() {
             TokenEvents {
                 on_enter: None,
                 on_leave: Some(|token, tokens_collection| {
-                    // let Some(parent) = token.mut_parent(tokens_collection) else {
-                    //     return;
-                    // };
-                    // parent.effects.push(TokenEffect::DeclareExpression(
-                    //     token.matches.get("literal").unwrap().string.clone(),
-                    // ));
+                    let Some(parent_id) = token.parent_id else {
+                        return;
+                    };
+                    tokens_collection.get_by_id_mut(parent_id, |parent| {
+                        parent.effects.push(TokenEffect::DeclareExpression(
+                            token.matches.get("literal").unwrap().string.clone(),
+                        ));
+                    });
                 }),
             },
         ),

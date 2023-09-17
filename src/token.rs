@@ -14,6 +14,29 @@ impl TokensCollection {
     pub fn push(&mut self, token: Box<Token>) {
         self.tokens.push(token);
     }
+
+    pub fn get_by_id<'a>(&'a self, id: uuid::Uuid) -> Option<&'a Box<Token>> {
+        self.tokens.iter().find(|t| t.id == id)
+    }
+
+    pub fn get_by_id_mut<'a, F>(&'a mut self, id: uuid::Uuid, mut closure: F) where F: FnMut(&mut Box<Token>) {
+        for mut token in &mut self.tokens {
+            if token.id == id {
+                closure(&mut token);
+            }
+        }
+    }
+    // pub fn get_by_ids_mut<'a>(&'a mut self, ids: Vec<uuid::Uuid>, closure: fn(tokens: &mut Vec<&mut Box<Token>>)) {
+    //     let mut tokens: Vec<&mut Box<Token>> = vec![];
+    //     for mut token in &mut self.tokens {
+    //         if ids.contains(&token.id) {
+    //             tokens.push(&mut token);
+    //         }
+    //     }
+    //     if tokens.len() == ids.len() {
+    //         closure(&mut tokens);
+    //     }
+    // }
 }
 
 pub fn get_mut_token_in_tokensbag<'a>(
@@ -221,28 +244,20 @@ impl Token {
         let Some(next_id) = self.next_id else {
             return None;
         };
-        let Some(next_token) = tokens_collection.tokens.iter().find(|t| t.id == next_id) else {
-            return None;
-        };
-        Some(&next_token)
+
+        tokens_collection.get_by_id(next_id)
     }
     pub fn previous<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> Option<&Box<Token>> {
         let Some(previous_id) = self.previous_id else {
             return None;
         };
-        let Some(mut previous_token) = tokens_collection.tokens.iter().find(|t| t.id == previous_id) else {
-            return None;
-        };
-        Some(&previous_token)
+        tokens_collection.get_by_id(previous_id)
     }
     pub fn parent<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<&Box<Token>> {
         let Some(parent_id) = self.parent_id else {
             return None;
         };
-        let Some(parent_token) = tokens_collection.tokens.iter().find(|t| t.id == parent_id) else {
-            return None;
-        };
-        Some(&parent_token)
+        tokens_collection.get_by_id(parent_id)
     }
     // pub fn mut_parent<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> Option<&mut Box<Token>> {
     //     let Some(parent_id) = self.parent_id else {
@@ -256,7 +271,7 @@ impl Token {
     pub fn children<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<Vec<&Box<Token>>> {
         let mut children: Vec<&Box<Token>> = vec![];
         for child_id in &self.children_ids {
-            let Some(child) = tokens_collection.tokens.iter().find(|t| t.id == *child_id) else {
+            let Some(child) = tokens_collection.get_by_id(*child_id) else {
                 continue;
             };
             children.push(&child);
@@ -270,7 +285,7 @@ impl Token {
             let Some(parent_id) = pointer.parent_id else {
                 return depth;
             };
-            let Some(parent) = tokens_collection.tokens.iter().find(|t| t.id == parent_id) else {
+            let Some(parent) = tokens_collection.get_by_id(parent_id) else {
                 return depth;
             };
             *pointer = parent;
