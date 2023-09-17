@@ -534,6 +534,7 @@ impl TokenMatchTemplate {
                             if let Some(on_leave) = token.events.on_leave {
                                 on_leave(&mut token, &mut tokens);
                             }
+                            tokens.push(token);
                         }
                     }
                     println!("{}`-- (match_failed={}", depth_spaces, match_failed);
@@ -1222,18 +1223,18 @@ fn main() {
         panic!("No 'All' template found!");
     };
 
-//     let input = "
-// let b = {
-//     'foo': 2,
-//     'nested': {
-//         'again': [5, 6]
-//     }
-// }
-// {
-//     {
-//         let a = 'aaa'
-//     }
-// }";
+    let input = "
+let b = {
+    'foo': 2,
+    'nested': {
+        'again': [5, 6]
+    }
+}
+{
+    {
+        let a = 'aaa'
+    }
+}";
 
     let input = "{let a = ['aaa', 1]}";
     // let input = "456";
