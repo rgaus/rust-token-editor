@@ -897,27 +897,29 @@ fn stringify(
     let mut pointer_id = head_id;
     loop {
         let Some(mut pointer) = tokens.iter().find(|t| t.id == pointer_id) else {
-            continue;
+            println!("BAD POINTER! {:?} {:?}", pointer_id, tokens);
+            break;
         };
         if let Some(literal_text) = &pointer.literal {
-            if literal_text == "456" {
-                let (Some(mut_pointer), mut tokens) = get_mut_token_in_tokensbag(tokens, pointer_id) else {
-                    continue;
-                };
-                change_token_literal_text(
-                    mut_pointer,
-                    result.len(),
-                    "a a".to_string(),
-                    &mut tokens,
-                    token_match_templates_map,
-                );
-                break;
-            }
+            // if literal_text == "456" {
+            //     let (Some(mut_pointer), mut tokens) = get_mut_token_in_tokensbag(tokens, pointer_id) else {
+            //         continue;
+            //     };
+            //     change_token_literal_text(
+            //         mut_pointer,
+            //         result.len(),
+            //         "a a".to_string(),
+            //         &mut tokens,
+            //         token_match_templates_map,
+            //     );
+            //     break;
+            // }
             result = format!("{}{}", result, literal_text);
         };
         if let Some(next_pointer_id) = pointer.next_id {
             pointer_id = next_pointer_id;
         } else {
+            println!("FAIL!");
             break;
         }
     }
