@@ -2,6 +2,25 @@ use std::collections::HashMap;
 
 pub type TokensBag = Vec<Box<Token>>;
 
+pub fn get_mut_token_in_tokensbag<'a>(
+    tokens: &'a mut TokensBag,
+    token_id: uuid::Uuid,
+) -> (Option<&'a mut Box<Token>>, Vec<Box<Token>>) {
+    let mut new_tokens: Vec<Box<Token>> = vec![];
+    let mut matched_token: Option<&mut Box<Token>> = None;
+
+    for mut token in tokens {
+        if token.id != token_id {
+            new_tokens.push(token.clone());
+            continue;
+        };
+        matched_token = Some(token);
+    };
+
+    (matched_token, new_tokens)
+}
+
+
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum TokenMatchTemplateMatcher {

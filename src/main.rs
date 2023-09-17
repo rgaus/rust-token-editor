@@ -888,14 +888,31 @@ fn dump(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) {
     dump_inner(tokens, vec![head_id], "".to_string());
 }
 
-fn stringify(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) -> String {
+fn stringify(
+    head_id: uuid::Uuid,
+    tokens: &mut Vec<Box<Token>>,
+    token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
+) -> String {
     let mut result = String::from("");
     let mut pointer_id = head_id;
     loop {
-        let Some(pointer) = tokens.iter().find(|t| t.id == pointer_id) else {
+        let Some(mut pointer) = tokens.iter().find(|t| t.id == pointer_id) else {
             continue;
         };
         if let Some(literal_text) = &pointer.literal {
+            if literal_text == "456" {
+                let (Some(mut_pointer), mut tokens) = get_mut_token_in_tokensbag(tokens, pointer_id) else {
+                    continue;
+                };
+                change_token_literal_text(
+                    mut_pointer,
+                    result.len(),
+                    "a a".to_string(),
+                    &mut tokens,
+                    token_match_templates_map,
+                );
+                break;
+            }
             result = format!("{}{}", result, literal_text);
         };
         if let Some(next_pointer_id) = pointer.next_id {
@@ -908,6 +925,62 @@ fn stringify(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) -> String {
     result
 }
 
+
+fn change_token_literal_text<'a>(
+    token: &'a mut Box<Token>,
+    token_offset: usize,
+    new_text: String,
+    tokens: &'a mut TokensBag,
+    token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
+) {
+    token.literal = Some(new_text.clone());
+
+    let mut depth = token.depth(tokens);
+    
+    let mut working_token: Box<Token> = token.clone();
+    let mut working_template = TokenMatchTemplate::new(
+        vec![token.template.clone()],
+    );
+
+    loop {
+        println!("offset {}", token_offset);
+        match working_template.consume_from_offset(
+            &new_text,
+            token_offset,
+            working_token.previous_id,
+            depth,
+            token_match_templates_map,
+        ) {
+            Ok((matched_all, offset, _last_token_id, child_ids, mut new_tokens)) => {
+                println!("MATCHED ALL? {} {}", offset, matched_all);
+                if matched_all {
+                    println!("MATCHED ALL!");
+                    break;
+                }
+
+                let Some(parent) = working_token.parent(&tokens) else {
+                    println!("NO PARENT!");
+                    break;
+                };
+
+                working_template = TokenMatchTemplate::new(
+                    vec![parent.template.clone()],
+                );
+                working_token = parent.clone();
+            }
+            Err(e) => {
+                println!("ERROR: {:?}", e);
+                break;
+            }
+        }
+    }
+    // If the match fails, then go up a level to the parent token
+    // And then try to match again
+    //
+    // NOTE: another thing to do here could be to increase the index by one and attempt
+    // to match it again - this would disregard bogus characters and potentially allow
+    // a string with a trantient error to reparse efficiently
+}
 
 
 
@@ -1168,7 +1241,7 @@ fn main() {
             println!("=========");
 
             if !child_ids.is_empty() {
-                println!("{}", stringify(child_ids[0], &tokens));
+                println!("{}", stringify(child_ids[0], &mut tokens, &token_match_templates_map));
             }
         }
         Err(e) => {
