@@ -1074,11 +1074,11 @@ fn main() {
                     let Some(parent_id) = token.parent_id else {
                         return;
                     };
-                    tokens_collection.get_by_id_mut(parent_id, |parent| {
+                    if let Some(parent) = tokens_collection.get_by_id_mut(parent_id) {
                         parent.effects.push(TokenEffect::DeclareExpression(
                             token.matches.get("literal").unwrap().string.clone(),
                         ));
-                    });
+                    }
                 }),
             },
         ),
@@ -1116,7 +1116,7 @@ fn main() {
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
     ]));
 
-    token_match_templates_map.insert("ArrayLiteral", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("ArrayLiteral", TokenMatchTemplate::new_with_events(vec![
         TokenMatchTemplateMatcher::raw("["),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
@@ -1134,7 +1134,19 @@ fn main() {
         ), 0, 1),
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::raw("]"),
-    ]));
+    ], TokenEvents {
+        on_enter: None,
+        on_leave: Some(|token, tokens_collection| {
+            // parent.effects.push(TokenEffect::DeclareExpression(
+            //     token.matches.get("literal").unwrap().string.clone(),
+            // ));
+            // for effect in token.child_effects(tokens_collection) {
+            //
+            // }
+            // if let Some(token) = tokens_collection.get_by_id_mut(token.id) {
+            // }
+        }),
+    }));
     token_match_templates_map.insert("ArrayLiteralEntry", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::reference("Expression"),
     ]));
@@ -1155,15 +1167,15 @@ fn main() {
     ], TokenEvents {
         on_enter: None,
         on_leave: Some(|token, tokens_collection| {
-            // let Some(next) = token.next(tokens_collection.tokens) else {
-            //     return;
-            // };
-            //
-            // let expression = next.find_child_effect(tokens_collection.tokens, |e| {
-            //     if let TokenEffect::DeclareExpression(_) = e { true } else { false }
-            // }).unwrap();
-            //
-            // token.effects.push(expression.clone());
+            let Some(next) = token.next(tokens_collection) else {
+                return;
+            };
+
+            let Some(expression) = next.find_child_effect(tokens_collection, |e| {
+                if let TokenEffect::DeclareExpression(_) = e { true } else { false }
+            }) else { return; };
+
+            token.effects.push(expression.clone());
         }),
     }));
 
@@ -1179,12 +1191,14 @@ fn main() {
             TokenEvents {
                 on_enter: None,
                 on_leave: Some(|token, tokens_collection| {
-                    // let Some(parent) = token.mut_parent(tokens_collection) else {
-                    //     return;
-                    // };
-                    // parent.effects.push(TokenEffect::DeclareIdentifier(
-                    //     token.matches.get("value").unwrap().string.clone(),
-                    // ));
+                    let Some(parent_id) = token.parent_id else {
+                        return;
+                    };
+                    if let Some(parent) = tokens_collection.get_by_id_mut(parent_id) {
+                        parent.effects.push(TokenEffect::DeclareIdentifier(
+                            token.matches.get("value").unwrap().string.clone(),
+                        ));
+                    }
                 }),
             },
         ),
@@ -1221,7 +1235,7 @@ fn main() {
 //     }
 // }";
 
-    let input = "{let a = 'aaa'}";
+    let input = "{let a = ['aaa', 1]}";
     // let input = "456";
 
     // let input = "1aa1bb";

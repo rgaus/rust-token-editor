@@ -19,24 +19,14 @@ impl TokensCollection {
         self.tokens.iter().find(|t| t.id == id)
     }
 
-    pub fn get_by_id_mut<'a, F>(&'a mut self, id: uuid::Uuid, mut closure: F) where F: FnMut(&mut Box<Token>) {
+    pub fn get_by_id_mut<'a>(&'a mut self, id: uuid::Uuid) -> Option<&mut Box<Token>> {
         for mut token in &mut self.tokens {
             if token.id == id {
-                closure(&mut token);
+                return Some(token);
             }
-        }
+        };
+        None
     }
-    // pub fn get_by_ids_mut<'a>(&'a mut self, ids: Vec<uuid::Uuid>, closure: fn(tokens: &mut Vec<&mut Box<Token>>)) {
-    //     let mut tokens: Vec<&mut Box<Token>> = vec![];
-    //     for mut token in &mut self.tokens {
-    //         if ids.contains(&token.id) {
-    //             tokens.push(&mut token);
-    //         }
-    //     }
-    //     if tokens.len() == ids.len() {
-    //         closure(&mut tokens);
-    //     }
-    // }
 }
 
 pub fn get_mut_token_in_tokensbag<'a>(
