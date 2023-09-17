@@ -268,6 +268,94 @@ impl Token {
         }
         Some(children)
     }
+    pub fn find_child<'a, F>(
+        &'a self,
+        tokens_collection: &'a TokensCollection,
+        mut matcher: F
+    ) -> Option<&Box<Token>> where F: FnMut(&Token) -> bool {
+        let Some(children) = &self.children(tokens_collection) else {
+            return None;
+        };
+
+        for child in children {
+            if matcher(child) {
+                return Some(child);
+            };
+        };
+        None
+    }
+    pub fn find_children<'a, F>(
+        &'a self,
+        tokens_collection: &'a TokensCollection,
+        mut matcher: F
+    ) -> Vec<&Box<Token>> where F: FnMut(&Token) -> bool {
+        let Some(children) = &self.children(tokens_collection) else {
+            return vec![];
+        };
+
+        let mut matches = vec![];
+        for child in children {
+            if matcher(*child) {
+                matches.push(*child);
+            };
+        };
+        matches
+    }
+    pub fn deep_children<'a>(&'a self, tokens_collection: &'a TokensCollection, max_depth: usize) -> Option<Vec<&Box<Token>>> {
+        let mut children: Vec<&Box<Token>> = vec![];
+        for child_id in &self.children_ids {
+            let Some(child) = tokens_collection.get_by_id(*child_id) else {
+                continue;
+            };
+            children.push(&child);
+
+            if max_depth == 0 {
+                continue;
+            };
+
+            let Some(deep_children) = child.deep_children(tokens_collection, max_depth-1) else {
+                continue;
+            };
+            children.extend(&deep_children);
+        }
+        Some(children)
+    }
+    pub fn find_deep_child<'a, F>(
+        &'a self,
+        tokens_collection: &'a TokensCollection,
+        max_depth: usize,
+        mut matcher: F
+    ) -> Option<&Box<Token>> where F: FnMut(&Token) -> bool {
+        let Some(children) = &self.deep_children(tokens_collection, max_depth) else {
+            return None;
+        };
+
+        for child in children {
+            if matcher(child) {
+                return Some(child);
+            };
+        };
+        None
+    }
+    pub fn find_deep_children<'a, F>(
+        &'a self,
+        tokens_collection: &'a TokensCollection,
+        max_depth: usize,
+        mut matcher: F
+    ) -> Vec<&Box<Token>> where F: FnMut(&Token) -> bool {
+        let Some(children) = &self.deep_children(tokens_collection, max_depth) else {
+            return vec![];
+        };
+
+        let mut matches = vec![];
+        for child in children {
+            if matcher(*child) {
+                matches.push(*child);
+            };
+        };
+        matches
+    }
+
     pub fn depth<'a>(&'a self, tokens_collection: &'a TokensCollection) -> usize {
         let mut pointer = Box::new(self);
         let mut depth = 0;

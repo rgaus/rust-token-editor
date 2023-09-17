@@ -920,7 +920,6 @@ fn stringify(
         if let Some(next_pointer_id) = pointer.next_id {
             pointer_id = next_pointer_id;
         } else {
-            println!("FAIL!");
             break;
         }
     }
@@ -1138,19 +1137,38 @@ fn main() {
     ], TokenEvents {
         on_enter: None,
         on_leave: Some(|token, tokens_collection| {
-            // parent.effects.push(TokenEffect::DeclareExpression(
-            //     token.matches.get("literal").unwrap().string.clone(),
-            // ));
-            // for effect in token.child_effects(tokens_collection) {
-            //
-            // }
-            // if let Some(token) = tokens_collection.get_by_id_mut(token.id) {
-            // }
+            let entries = token.find_deep_children(tokens_collection, 4, |token| match token.template {
+                TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry", None) => true,
+                _ => false,
+            });
+
+            let mut expression_literals = vec![];
+            for entry in entries {
+                for effect in &entry.effects {
+                    let TokenEffect::DeclareExpression(literal) = effect else {
+                        continue;
+                    };
+                    expression_literals.push(String::from(literal));
+                }
+            };
+            token.effects.push(TokenEffect::DeclareExpression(
+                format!("[{}]", expression_literals.join(", "))
+            ));
         }),
     }));
-    token_match_templates_map.insert("ArrayLiteralEntry", TokenMatchTemplate::new(vec![
+    token_match_templates_map.insert("ArrayLiteralEntry", TokenMatchTemplate::new_with_events(vec![
         TokenMatchTemplateMatcher::reference("Expression"),
-    ]));
+    ], TokenEvents {
+        on_enter: None,
+        on_leave: Some(|token, tokens_collection| {
+            let Some(expression) = token.find_child_effect(tokens_collection, |e| match e {
+                TokenEffect::DeclareExpression(_) => true,
+                _ => false,
+            }) else { return; };
+
+            token.effects.push(expression.clone());
+        }),
+    }));
 
     token_match_templates_map.insert("Variable", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::reference("Identifier"),
@@ -1223,20 +1241,20 @@ fn main() {
         panic!("No 'All' template found!");
     };
 
-    let input = "
-let b = {
-    'foo': 2,
-    'nested': {
-        'again': [5, 6]
-    }
-}
-{
-    {
-        let a = 'aaa'
-    }
-}";
+//     let input = "
+// let b = {
+//     'foo': 2,
+//     'nested': {
+//         'again': [5, 6]
+//     }
+// }
+// {
+//     {
+//         let a = 'aaa'
+//     }
+// }";
 
-    let input = "{let a = ['aaa', 1]}";
+    let input = "{let a = ['aaa', ['cc', 'bbb']]}";
     // let input = "456";
 
     // let input = "1aa1bb";
