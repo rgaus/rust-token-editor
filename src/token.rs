@@ -1,23 +1,37 @@
 use std::collections::HashMap;
 
-pub type TokensBag = Vec<Box<Token>>;
+pub struct TokensCollection {
+    pub tokens: Vec<Box<Token>>,
+}
+
+impl TokensCollection {
+    pub fn new(tokens: Vec<Box<Token>>) -> TokensCollection {
+        TokensCollection { tokens: tokens }
+    }
+    pub fn new_empty() -> TokensCollection {
+        TokensCollection::new(vec![])
+    }
+    pub fn push(&mut self, token: Box<Token>) {
+        self.tokens.push(token);
+    }
+}
 
 pub fn get_mut_token_in_tokensbag<'a>(
-    tokens: &'a mut TokensBag,
+    tokens_collection: &'a mut TokensCollection,
     token_id: uuid::Uuid,
-) -> (Option<&'a mut Box<Token>>, Vec<Box<Token>>) {
+) -> (Option<&'a mut Box<Token>>, TokensCollection) {
     let mut new_tokens: Vec<Box<Token>> = vec![];
     let mut matched_token: Option<&mut Box<Token>> = None;
 
-    for mut token in tokens {
+    for mut token in &mut tokens_collection.tokens {
         if token.id != token_id {
             new_tokens.push(token.clone());
             continue;
         };
-        matched_token = Some(token);
+        matched_token = Some(&mut *token);
     };
 
-    (matched_token, new_tokens)
+    (matched_token, TokensCollection::new(new_tokens))
 }
 
 
@@ -137,7 +151,7 @@ pub struct TokenEvents {
     pub on_enter: Option<fn(token: &mut Box<Token>)>,
     pub on_leave: Option<fn(
         token: &mut Box<Token>,
-        tokens: &mut TokensBag,
+        tokens_collection: &mut TokensCollection,
     )>,
 }
 
@@ -203,69 +217,69 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn next<'a>(&'a self, tokens: &'a TokensBag) -> Option<&Box<Token>> {
+    pub fn next<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<&Box<Token>> {
         let Some(next_id) = self.next_id else {
             return None;
         };
-        let Some(next_token) = tokens.into_iter().find(|t| t.id == next_id) else {
+        let Some(next_token) = tokens_collection.tokens.iter().find(|t| t.id == next_id) else {
             return None;
         };
-        Some(next_token)
+        Some(&next_token)
     }
-    pub fn previous<'a>(&'a self, tokens: &'a mut TokensBag) -> Option<&mut Box<Token>> {
+    pub fn previous<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> Option<&Box<Token>> {
         let Some(previous_id) = self.previous_id else {
             return None;
         };
-        let Some(previous_token) = tokens.into_iter().find(|t| t.id == previous_id) else {
+        let Some(mut previous_token) = tokens_collection.tokens.iter().find(|t| t.id == previous_id) else {
             return None;
         };
-        Some(previous_token)
+        Some(&previous_token)
     }
-    pub fn parent<'a>(&'a self, tokens: &'a TokensBag) -> Option<&Box<Token>> {
+    pub fn parent<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<&Box<Token>> {
         let Some(parent_id) = self.parent_id else {
             return None;
         };
-        let Some(parent_token) = tokens.into_iter().find(|t| t.id == parent_id) else {
+        let Some(parent_token) = tokens_collection.tokens.iter().find(|t| t.id == parent_id) else {
             return None;
         };
-        Some(parent_token)
+        Some(&parent_token)
     }
-    pub fn mut_parent<'a>(&'a self, tokens: &'a mut TokensBag) -> Option<&mut Box<Token>> {
-        let Some(parent_id) = self.parent_id else {
-            return None;
-        };
-        let Some(parent_token) = tokens.into_iter().find(|t| t.id == parent_id) else {
-            return None;
-        };
-        Some(parent_token)
-    }
-    pub fn children<'a>(&'a self, tokens: &'a TokensBag) -> Option<Vec<&Box<Token>>> {
+    // pub fn mut_parent<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> Option<&mut Box<Token>> {
+    //     let Some(parent_id) = self.parent_id else {
+    //         return None;
+    //     };
+    //     let Some(parent_token) = tokens_collection.tokens.into_iter().find(|t| t.id == parent_id) else {
+    //         return None;
+    //     };
+    //     Some(&mut parent_token)
+    // }
+    pub fn children<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<Vec<&Box<Token>>> {
         let mut children: Vec<&Box<Token>> = vec![];
         for child_id in &self.children_ids {
-            let Some(child) = tokens.iter().find(|t| t.id == *child_id) else {
+            let Some(child) = tokens_collection.tokens.iter().find(|t| t.id == *child_id) else {
                 continue;
             };
             children.push(&child);
         }
         Some(children)
     }
-    pub fn depth<'a>(&'a self, tokens: &'a TokensBag) -> usize {
+    pub fn depth<'a>(&'a self, tokens_collection: &'a TokensCollection) -> usize {
         let mut pointer = Box::new(self);
         let mut depth = 0;
         loop {
             let Some(parent_id) = pointer.parent_id else {
                 return depth;
             };
-            let Some(parent) = tokens.iter().find(|t| t.id == parent_id) else {
+            let Some(parent) = tokens_collection.tokens.iter().find(|t| t.id == parent_id) else {
                 return depth;
             };
             *pointer = parent;
             depth += 1;
         }
     }
-    pub fn child_effects<'a>(&'a self, tokens: &'a TokensBag) -> Option<Vec<&TokenEffect>> {
+    pub fn child_effects<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<Vec<&TokenEffect>> {
         let mut child_effects: Vec<&TokenEffect> = vec![];
-        let Some(children) = &self.children(tokens) else {
+        let Some(children) = &self.children(tokens_collection) else {
             return Some(child_effects);
         };
         for child in children {
@@ -277,10 +291,10 @@ impl Token {
     }
     pub fn find_child_effect<'a>(
         &'a self,
-        tokens: &'a TokensBag,
+        tokens_collection: &'a TokensCollection,
         matcher: fn(e: &TokenEffect) -> bool,
     ) -> Option<&TokenEffect> {
-        let Some(effects) = &self.child_effects(tokens) else {
+        let Some(effects) = &self.child_effects(tokens_collection) else {
             return None;
         };
 
