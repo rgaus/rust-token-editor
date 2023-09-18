@@ -1377,36 +1377,38 @@ fn main() {
                     println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
                 }
 
-                println!("=========");
-                println!("= MUTATION:");
-                println!("=========");
+                println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
 
-                let token_id = {
-                    let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
-                    let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
-                        Token { literal: Some(text), .. } if text == "'aaa'" => true,
-                        _ => false,
-                    }).unwrap();
-                    token.id
-                };
-
-                let new_subtree_token_id = change_token_literal_text(
-                    token_id,
-                    0,
-                    "aba".to_string(),
-                    &mut tokens_collection,
-                    &token_match_templates_map,
-                ).unwrap();
-
-                println!("--------- {}", new_subtree_token_id);
-                // dump(new_subtree_token_id, &tokens_collection.tokens);
-                for child_id in &child_ids {
-                    dump(*child_id, &tokens_collection.tokens);
-                    println!("---------");
-                }
-                {
-                    println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
-                }
+                // println!("=========");
+                // println!("= MUTATION:");
+                // println!("=========");
+                //
+                // let token_id = {
+                //     let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
+                //     let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
+                //         Token { literal: Some(text), .. } if text == "'aaa'" => true,
+                //         _ => false,
+                //     }).unwrap();
+                //     token.id
+                // };
+                //
+                // let new_subtree_token_id = change_token_literal_text(
+                //     token_id,
+                //     0,
+                //     "aba".to_string(),
+                //     &mut tokens_collection,
+                //     &token_match_templates_map,
+                // ).unwrap();
+                //
+                // println!("--------- {}", new_subtree_token_id);
+                // // dump(new_subtree_token_id, &tokens_collection.tokens);
+                // for child_id in &child_ids {
+                //     dump(*child_id, &tokens_collection.tokens);
+                //     println!("---------");
+                // }
+                // {
+                //     println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
+                // }
             }
         }
         Err(e) => {

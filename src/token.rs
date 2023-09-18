@@ -1,13 +1,25 @@
 use std::collections::HashMap;
+use rangemap::RangeInclusiveMap;
 
 pub struct TokensCollection {
     pub tokens: Vec<Box<Token>>,
-    pub offset_cache: HashMap<uuid::Uuid, usize>,
+
+    // A cache that stores the character offset of each token's start and end in the final output
+    // string, mapped FORWARDS. Use this to figure out where a token will be in the output.
+    offset_cache: HashMap<uuid::Uuid, (usize, usize)>,
+
+    // A cache that stores the character offset of each token's start and end in the final output
+    // string, mapped BACKWARDS. Use this to query for a token at a specific character offset.
+    tokens_by_start_offset_cache: RangeInclusiveMap<usize, uuid::Uuid>,
 }
 
 impl TokensCollection {
     pub fn new(tokens: Vec<Box<Token>>) -> TokensCollection {
-        TokensCollection { tokens: tokens, offset_cache: HashMap::new() }
+        TokensCollection {
+            tokens: tokens,
+            offset_cache: HashMap::new(),
+            tokens_by_start_offset_cache: RangeInclusiveMap::new(),
+        }
     }
     pub fn new_empty() -> TokensCollection {
         TokensCollection::new(vec![])
@@ -89,39 +101,141 @@ impl TokensCollection {
         true
     }
 
-    // pub fn compute_offset<'a>(
-    //     &'a mut self,
-    //     id: uuid::Uuid,
-    // ) -> usize {
-    //     0
-    //     // if let Some(cached_offset) = self.offset_cache.get(&self.id) {
-    //     //     return *cached_offset;
-    //     // }
-    //     //
-    //     // let Some(token) = tokens_collection.get_by_id(id) else {
-    //     //     return 0;
-    //     // };
-    //     // let Some(previous_id) = self.previous_id else {
-    //     //     return 0;
-    //     // };
-    //     // let Some(previous) = tokens_collection.get_by_id(previous_id) else {
-    //     //     return 0;
-    //     // };
-    //     //
-    //     // let previous_length = match &previous.literal {
-    //     //     Some(literal) => literal.len(),
-    //     //     None => 0,
-    //     // };
-    //     //
-    //     // // The current offset is equal to the previous offset plus the length of the previous token
-    //     // let previous_offset = {
-    //     //     previous.compute_offset(tokens_collection)
-    //     // };
-    //     // let offset = previous_offset + previous_length;
-    //     //
-    //     // tokens_collection.offset_cache.insert(self.id, offset);
-    //     // offset
-    // }
+    // Returns the node at the very top / start of the token collection.
+    // NOTE: This node is guaranteed to have an offset of 0.
+    pub fn get_first_root_node(&self) -> Option<&Box<Token>> {
+        for token in &self.tokens {
+            if token.previous_id == None {
+                return Some(token);
+            }
+        }
+        None
+    }
+
+    // Queries the token collection and returns the Box<Token> that covers the `input_offset` specified,
+    // or None. If a token is found, the offset from the start of the token that `input_offset`
+    // refers to is also returned.`
+    pub fn get_by_offset(&mut self, input_offset: usize) -> Option<(&Box<Token>, usize)> {
+        if let Some((offset_range, token_id)) = self.tokens_by_start_offset_cache.get_key_value(&input_offset) {
+            let offset_into_token = input_offset - offset_range.start();
+            let Some(token) = self.get_by_id(*token_id) else {
+                return None;
+            };
+            return Some((token, offset_into_token));
+        }
+
+        // Prior to searching for a matching node, make sure the cache has at least one item in it
+        // first as a base case. The root node is always at zero so it will always be before any
+        // other node.
+        if self.tokens_by_start_offset_cache.is_empty() {
+            let Some(first_root_node) = self.get_first_root_node() else {
+                return None;
+            };
+            let first_root_node_length = match &first_root_node.literal {
+                Some(literal) => literal.len(),
+                None => 0,
+            };
+            self.tokens_by_start_offset_cache.insert(0..=first_root_node_length, first_root_node.id);
+        }
+
+        // If a pre-cached value wasn't found, then figure out the next earliest token that is
+        // cached, and start computing from there
+        let Some(last_gap) = self.tokens_by_start_offset_cache.gaps(&(0..=input_offset)).last() else {
+            // NOTE: the below return should be impossible, since there should always be at least
+            // one token in the cache since that's what the code right above does!
+            panic!("No last gap found in tokens_by_start_offset_cache but at least one token inside! input_offset={}", input_offset);
+        };
+
+        let last_gap_start = last_gap.start();
+        let previous_cached_token_start = last_gap_start - 1;
+        let Some(previous_cached_token_id) = self.tokens_by_start_offset_cache.get(&previous_cached_token_start) else {
+            return None;
+        };
+        let Some(previous_cached_token) = self.get_by_id(*previous_cached_token_id) else {
+            return None;
+        };
+
+        let mut pointer_id = previous_cached_token.next_id;
+        let mut offset = *last_gap_start;
+        // println!("STARTING AT: {:?}", offset);
+        loop {
+            let Some(pointer_id_unwrapped) = pointer_id else {
+                return None;
+            };
+            let (range, pointer_length, pointer_next_id) = {
+                let Some(pointer) = self.get_by_id(pointer_id_unwrapped) else {
+                    return None;
+                };
+                let pointer_length = match &pointer.literal {
+                    Some(literal) => literal.len(),
+                    None => 0,
+                };
+                let end_offset = offset + pointer_length;
+                (offset..=end_offset-1, pointer_length, pointer.next_id)
+            };
+
+            // Exclude adding zero length tokens to the cache, since those are not indexable by
+            // offset since it's impossible to be "inside" them
+            if !range.is_empty() {
+                // println!("INSERT: {:?} {:?}", range, pointer_id_unwrapped);
+                self.tokens_by_start_offset_cache.insert(range, pointer_id_unwrapped);
+            };
+
+            // Once the offset gets to the offset that the user was looking for, we're done
+            if (offset + pointer_length) > input_offset {
+                break;
+            };
+
+            pointer_id = pointer_next_id;
+            offset += pointer_length;
+        };
+
+        // The token has been found!
+        let Some(pointer_id_unwrapped) = pointer_id else {
+            return None;
+        };
+        let offset_into_token = input_offset - offset;
+        let Some(token) = self.get_by_id(pointer_id_unwrapped) else {
+            return None;
+        };
+        return Some((token, offset_into_token));
+    }
+
+    pub fn compute_offset(&mut self, id: uuid::Uuid) -> usize {
+        if let Some((cached_offset_start, _)) = self.offset_cache.get(&id) {
+            return *cached_offset_start;
+        }
+
+        let (token_length, previous_id, previous_length) = {
+            let Some(token) = self.get_by_id(id) else {
+                return 0;
+            };
+            let token_length = match &token.literal {
+                Some(literal) => literal.len(),
+                None => 0,
+            };
+            let Some(previous_id) = token.previous_id else {
+                return 0;
+            };
+            let Some(previous) = self.get_by_id(previous_id) else {
+                return 0;
+            };
+
+            let previous_length = match &previous.literal {
+                Some(literal) => literal.len(),
+                None => 0,
+            };
+
+            (token_length, previous_id, previous_length)
+        };
+
+        // The current offset is equal to the previous offset plus the length of the previous token
+        let previous_offset = self.compute_offset(previous_id);
+        let offset = previous_offset + previous_length;
+
+        self.offset_cache.insert(id, (offset, offset + token_length));
+        offset
+    }
 }
 
 
@@ -469,7 +583,7 @@ impl Token {
         None
     }
 
-    // pub fn compute_offset<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> usize {
-    //     tokens_collection.compute_offset(self.id)
-    // }
+    pub fn compute_offset<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> usize {
+        tokens_collection.compute_offset(self.id)
+    }
 }
