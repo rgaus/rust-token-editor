@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 pub struct TokensCollection {
     pub tokens: Vec<Box<Token>>,
+    pub offset_cache: HashMap<uuid::Uuid, usize>,
 }
 
 impl TokensCollection {
     pub fn new(tokens: Vec<Box<Token>>) -> TokensCollection {
-        TokensCollection { tokens: tokens }
+        TokensCollection { tokens: tokens, offset_cache: HashMap::new() }
     }
     pub fn new_empty() -> TokensCollection {
         TokensCollection::new(vec![])
@@ -19,32 +20,108 @@ impl TokensCollection {
         self.tokens.iter().find(|t| t.id == id)
     }
 
-    pub fn get_by_id_mut<'a>(&'a mut self, id: uuid::Uuid) -> Option<&mut Box<Token>> {
+    pub fn get_by_id_mut<'a, F>(
+        &'a mut self,
+        id: uuid::Uuid,
+        mut closure: F,
+    ) where F: FnMut(&mut Token) {
         for mut token in &mut self.tokens {
             if token.id == id {
-                return Some(token);
+                closure(&mut token);
+            }
+        }
+    }
+
+    pub fn replace<'a>(
+        &'a mut self,
+        id: uuid::Uuid,
+        new_token: Box<Token>,
+    ) -> bool {
+        let index_or_none = {
+            let mut found = false;
+            let mut index = 0;
+            for mut token in &self.tokens {
+                println!("TOKEN? {} {}", token.id, id);
+                if token.id == id {
+                    found = true;
+                    break;
+                };
+                index += 0;
+            };
+
+            if found {
+                Some(index)
+            } else {
+                None
             }
         };
-        None
-    }
-}
-
-pub fn get_mut_token_in_tokensbag<'a>(
-    tokens_collection: &'a mut TokensCollection,
-    token_id: uuid::Uuid,
-) -> (Option<&'a mut Box<Token>>, TokensCollection) {
-    let mut new_tokens: Vec<Box<Token>> = vec![];
-    let mut matched_token: Option<&mut Box<Token>> = None;
-
-    for mut token in &mut tokens_collection.tokens {
-        if token.id != token_id {
-            new_tokens.push(token.clone());
-            continue;
+        let Some(index) = index_or_none else {
+            return false;
         };
-        matched_token = Some(&mut *token);
-    };
 
-    (matched_token, TokensCollection::new(new_tokens))
+        self.tokens[index] = new_token;
+        true
+    }
+
+    pub fn remove(&mut self, id: uuid::Uuid) -> bool {
+        let index_or_none = {
+            let mut found = false;
+            let mut index = 0;
+            for mut token in &self.tokens {
+                if token.id == id {
+                    found = true;
+                    break;
+                };
+                index += 1;
+            };
+
+            if found {
+                Some(index)
+            } else {
+                None
+            }
+        };
+        let Some(index) = index_or_none else {
+            return false;
+        };
+
+        self.tokens.remove(index);
+        true
+    }
+
+    // pub fn compute_offset<'a>(
+    //     &'a mut self,
+    //     id: uuid::Uuid,
+    // ) -> usize {
+    //     0
+    //     // if let Some(cached_offset) = self.offset_cache.get(&self.id) {
+    //     //     return *cached_offset;
+    //     // }
+    //     //
+    //     // let Some(token) = tokens_collection.get_by_id(id) else {
+    //     //     return 0;
+    //     // };
+    //     // let Some(previous_id) = self.previous_id else {
+    //     //     return 0;
+    //     // };
+    //     // let Some(previous) = tokens_collection.get_by_id(previous_id) else {
+    //     //     return 0;
+    //     // };
+    //     //
+    //     // let previous_length = match &previous.literal {
+    //     //     Some(literal) => literal.len(),
+    //     //     None => 0,
+    //     // };
+    //     //
+    //     // // The current offset is equal to the previous offset plus the length of the previous token
+    //     // let previous_offset = {
+    //     //     previous.compute_offset(tokens_collection)
+    //     // };
+    //     // let offset = previous_offset + previous_length;
+    //     //
+    //     // tokens_collection.offset_cache.insert(self.id, offset);
+    //     // offset
+    // }
 }
 
 
@@ -249,15 +326,7 @@ impl Token {
         };
         tokens_collection.get_by_id(parent_id)
     }
-    // pub fn mut_parent<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> Option<&mut Box<Token>> {
-    //     let Some(parent_id) = self.parent_id else {
-    //         return None;
-    //     };
-    //     let Some(parent_token) = tokens_collection.tokens.into_iter().find(|t| t.id == parent_id) else {
-    //         return None;
-    //     };
-    //     Some(&mut parent_token)
-    // }
+
     pub fn children<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<Vec<&Box<Token>>> {
         let mut children: Vec<&Box<Token>> = vec![];
         for child_id in &self.children_ids {
@@ -370,6 +439,7 @@ impl Token {
             depth += 1;
         }
     }
+
     pub fn child_effects<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<Vec<&TokenEffect>> {
         let mut child_effects: Vec<&TokenEffect> = vec![];
         let Some(children) = &self.children(tokens_collection) else {
@@ -398,4 +468,8 @@ impl Token {
         };
         None
     }
+
+    // pub fn compute_offset<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> usize {
+    //     tokens_collection.compute_offset(self.id)
+    // }
 }

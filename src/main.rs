@@ -871,17 +871,18 @@ impl TokenMatchTemplate {
 fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: String) {
     for child_id in child_ids {
         let Some(token) = tokens.iter().find(|t| t.id == child_id) else {
+            println!("CHILD NOT FOUND! {}", child_id);
             continue;
         };
-        // println!("{}{:?} id:{} next:{:?} prev:{:?} \t_{}_\t==> {:?}", indent, token.template, token.id, token.next_id, token.previous_id, match &token.literal {
-        //     Some(n) => n,
-        //     None => "",
-        // }, token.matches);
+        println!("{}{:?} id:{} next:{:?} prev:{:?} parent:{:?} \t_{}_\t==> {:?}", indent, token.template, token.id, token.next_id, token.previous_id, token.parent_id, match &token.literal {
+            Some(n) => n,
+            None => "",
+        }, token.matches);
         // println!("{}{:?} \t_{}_\t==> {:?} {:?}", indent, token.template, match &token.literal {
         //     Some(n) => n,
         //     None => "",
         // }, token.matches, token.effects);
-        println!("{}{:?} => {:?}", indent, token.template, token.effects);
+        // println!("{}{:?} => {:?}", indent, token.template, token.effects);
         dump_inner(tokens, token.children_ids.clone(), format!("{}  ", indent));
     }
 }
@@ -898,23 +899,10 @@ fn stringify(
     let mut pointer_id = head_id;
     loop {
         let Some(mut pointer) = tokens.iter().find(|t| t.id == pointer_id) else {
-            println!("BAD POINTER! {:?} {:?}", pointer_id, tokens);
+            println!("BAD POINTER! {:?}", pointer_id);
             break;
         };
         if let Some(literal_text) = &pointer.literal {
-            // if literal_text == "456" {
-            //     let (Some(mut_pointer), mut tokens) = get_mut_token_in_tokensbag(tokens, pointer_id) else {
-            //         continue;
-            //     };
-            //     change_token_literal_text(
-            //         mut_pointer,
-            //         result.len(),
-            //         "a a".to_string(),
-            //         &mut tokens,
-            //         token_match_templates_map,
-            //     );
-            //     break;
-            // }
             result = format!("{}{}", result, literal_text);
         };
         if let Some(next_pointer_id) = pointer.next_id {
@@ -928,22 +916,35 @@ fn stringify(
 }
 
 
+// If the match fails, then go up a level to the parent token
+// And then try to match again
+//
+// NOTE: another thing to do here could be to increase the index by one and attempt
+// to match it again - this would disregard bogus characters and potentially allow
+// a string with a trantient error to reparse efficiently
 fn change_token_literal_text<'a>(
-    token: &'a mut Box<Token>,
+    token_id: uuid::Uuid,
     token_offset: usize,
     new_text: String,
     tokens_collection: &'a mut TokensCollection,
     token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-) {
-    token.literal = Some(new_text.clone());
+) -> Option<uuid::Uuid> {
+    let Some(old_token) = tokens_collection.get_by_id(token_id) else {
+        return None;
+    };
 
-    let mut depth = token.depth(tokens_collection);
-    
-    let mut working_token: Box<Token> = token.clone();
+    // Create a clone of the token to modify in-memory
+    let mut working_token = old_token.clone();
+    working_token.literal = Some(new_text.clone());
+
+    let mut depth = working_token.depth(tokens_collection);
+
     let mut working_template = TokenMatchTemplate::new(
-        vec![token.template.clone()],
+        vec![working_token.template.clone()],
     );
 
+    // Second, re-match the token now that is had been changed
+    let mut match_iterations = 0;
     loop {
         println!("offset {}", token_offset);
         match working_template.consume_from_offset(
@@ -953,11 +954,108 @@ fn change_token_literal_text<'a>(
             depth,
             token_match_templates_map,
         ) {
-            Ok((matched_all, offset, _last_token_id, child_ids, mut new_tokens)) => {
-                println!("MATCHED ALL? {} {}", offset, matched_all);
+            Ok((matched_all, offset, last_token_id, child_ids, mut new_tokens)) => {
+                println!("MATCHED ALL? {:?} {:?}", working_token, match_iterations);
                 if matched_all {
                     println!("MATCHED ALL!");
-                    break;
+
+                    // Before doing the token swap, figure out the token that is the final "next" token in the
+                    // token tree
+                    let mut deep_last_referenced_child_id = Some(working_token.id);
+                    loop {
+                        let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
+                            break;
+                        };
+                        let Some(child_token) = tokens_collection.get_by_id(
+                            deep_last_referenced_child_id_unwrapped
+                        ) else {
+                            break;
+                        };
+                        if let Some(result) = child_token.children_ids.last() {
+                            deep_last_referenced_child_id = Some(*result);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let next_token_id = if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
+                        if let Some(deep_last_referenced_child) = tokens_collection.get_by_id(deep_last_referenced_child_id) {
+                            deep_last_referenced_child.next_id
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Third, Remove all tokens in the subtree underneath the matching working token
+                    let subtree_children_ids = match working_token.deep_children(tokens_collection, match_iterations) {
+                        Some(subtree_children) => {
+                            subtree_children.iter().map(|t| t.id).collect()
+                        },
+                        _ => vec![],
+                    };
+                    for child_id in subtree_children_ids {
+                        println!("REMOVE TOKEN! {:?} {}", child_id,
+                        tokens_collection.remove(child_id)
+                        );
+                    };
+                    println!("REMOVE TOKEN! {:?} {}", working_token.id,
+                    tokens_collection.remove(working_token.id)
+                    );
+
+                    // Fouth, substitute in the new subtree into where the old subtree went
+                    for new_token in new_tokens.tokens {
+                        println!("ADD NEW TOKEN! {:?}", new_token);
+                        tokens_collection.push(new_token);
+                    };
+
+                    // Link the matching working node to the first child
+                    for child_id in &child_ids {
+                        tokens_collection.get_by_id_mut(*child_id, |child| {
+                            child.parent_id = working_token.parent_id;
+                            println!("CHILD: {:?}", child);
+                        });
+                    };
+
+                    let (
+                        Some(parent_id), // FIXME: it might be wrong to bail if parent_id is None?
+                        Some(first_child_id),
+                        Some(last_child_id),
+                    ) = (working_token.parent_id, child_ids.first(), child_ids.last()) else {
+                        return None;
+                    };
+
+                    let parent = tokens_collection.get_by_id(parent_id) else {
+                        return None;
+                    };
+
+
+                    tokens_collection.get_by_id_mut(parent_id, |parent| {
+                        parent.children_ids = child_ids.clone();
+                        parent.next_id = Some(*first_child_id);
+                        println!("PARENT: {:?}", parent);
+                    });
+                    tokens_collection.get_by_id_mut(*first_child_id, |first_child| {
+                        first_child.previous_id = working_token.parent_id;
+                    });
+
+                    if let Some(last_token_id) = last_token_id {
+                        tokens_collection.get_by_id_mut(last_token_id, |deep_last_child| {
+                            deep_last_child.next_id = next_token_id;
+                        });
+                    };
+                    if let Some(next_token_id) = next_token_id {
+                        tokens_collection.get_by_id_mut(next_token_id, |next_token| {
+                            next_token.previous_id = last_token_id;
+                        });
+                    };
+
+                    // Fifth, add in the updated token
+                    println!("TOK: {:?}", working_token);
+                    // let first_child = tokens_collection.get_by_id(*first_child_id).unwrap();
+                    // return first_child.parent_id;
+                    return Some(*first_child_id)
                 }
 
                 let Some(parent) = working_token.parent(&tokens_collection) else {
@@ -965,6 +1063,7 @@ fn change_token_literal_text<'a>(
                     break;
                 };
 
+                match_iterations += 1;
                 working_template = TokenMatchTemplate::new(
                     vec![parent.template.clone()],
                 );
@@ -976,12 +1075,8 @@ fn change_token_literal_text<'a>(
             }
         }
     }
-    // If the match fails, then go up a level to the parent token
-    // And then try to match again
-    //
-    // NOTE: another thing to do here could be to increase the index by one and attempt
-    // to match it again - this would disregard bogus characters and potentially allow
-    // a string with a trantient error to reparse efficiently
+
+    None
 }
 
 
@@ -1074,11 +1169,11 @@ fn main() {
                     let Some(parent_id) = token.parent_id else {
                         return;
                     };
-                    if let Some(parent) = tokens_collection.get_by_id_mut(parent_id) {
+                    tokens_collection.get_by_id_mut(parent_id, |parent| {
                         parent.effects.push(TokenEffect::DeclareExpression(
                             token.matches.get("literal").unwrap().string.clone(),
                         ));
-                    }
+                    });
                 }),
             },
         ),
@@ -1213,11 +1308,11 @@ fn main() {
                     let Some(parent_id) = token.parent_id else {
                         return;
                     };
-                    if let Some(parent) = tokens_collection.get_by_id_mut(parent_id) {
+                    tokens_collection.get_by_id_mut(parent_id, |parent| {
                         parent.effects.push(TokenEffect::DeclareIdentifier(
                             token.matches.get("value").unwrap().string.clone(),
                         ));
-                    }
+                    });
                 }),
             },
         ),
@@ -1278,7 +1373,40 @@ fn main() {
             println!("=========");
 
             if !child_ids.is_empty() {
-                println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
+                {
+                    println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
+                }
+
+                println!("=========");
+                println!("= MUTATION:");
+                println!("=========");
+
+                let token_id = {
+                    let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
+                    let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
+                        Token { literal: Some(text), .. } if text == "'aaa'" => true,
+                        _ => false,
+                    }).unwrap();
+                    token.id
+                };
+
+                let new_subtree_token_id = change_token_literal_text(
+                    token_id,
+                    0,
+                    "aba".to_string(),
+                    &mut tokens_collection,
+                    &token_match_templates_map,
+                ).unwrap();
+
+                println!("--------- {}", new_subtree_token_id);
+                // dump(new_subtree_token_id, &tokens_collection.tokens);
+                for child_id in &child_ids {
+                    dump(*child_id, &tokens_collection.tokens);
+                    println!("---------");
+                }
+                {
+                    println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
+                }
             }
         }
         Err(e) => {
