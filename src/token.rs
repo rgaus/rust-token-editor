@@ -135,7 +135,9 @@ impl TokensCollection {
                 Some(literal) => literal.len(),
                 None => 0,
             };
-            self.tokens_by_start_offset_cache.insert(0..=first_root_node_length, first_root_node.id);
+            let first_root_node_id = first_root_node.id;
+            self.tokens_by_start_offset_cache.insert(0..=first_root_node_length, first_root_node_id);
+            self.offset_cache.insert(first_root_node_id, (0, first_root_node_length));
         }
 
         // If a pre-cached value wasn't found, then figure out the next earliest token that is
@@ -162,7 +164,7 @@ impl TokensCollection {
             let Some(pointer_id_unwrapped) = pointer_id else {
                 return None;
             };
-            let (range, pointer_length, pointer_next_id) = {
+            let (range_start, range_end, pointer_length, pointer_next_id) = {
                 let Some(pointer) = self.get_by_id(pointer_id_unwrapped) else {
                     return None;
                 };
@@ -171,14 +173,16 @@ impl TokensCollection {
                     None => 0,
                 };
                 let end_offset = offset + pointer_length;
-                (offset..=end_offset-1, pointer_length, pointer.next_id)
+                (offset, end_offset-1, pointer_length, pointer.next_id)
             };
 
             // Exclude adding zero length tokens to the cache, since those are not indexable by
             // offset since it's impossible to be "inside" them
+            let range = range_start..=range_end;
             if !range.is_empty() {
                 // println!("INSERT: {:?} {:?}", range, pointer_id_unwrapped);
                 self.tokens_by_start_offset_cache.insert(range, pointer_id_unwrapped);
+                self.offset_cache.insert(pointer_id_unwrapped, (range_start, range_end));
             };
 
             // Once the offset gets to the offset that the user was looking for, we're done
@@ -234,6 +238,7 @@ impl TokensCollection {
         let offset = previous_offset + previous_length;
 
         self.offset_cache.insert(id, (offset, offset + token_length));
+        self.tokens_by_start_offset_cache.insert(offset..=offset + token_length, id);
         offset
     }
 }
