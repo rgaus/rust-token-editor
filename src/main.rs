@@ -562,7 +562,7 @@ impl TokenMatchTemplate {
                     );
 
                     // Attempt to match the ephemeral template at least `min_repeat` times:
-                    let mut match_failed = false;
+                    let mut matched_at_least_once = false;
                     for _index in 0..*max_repeats {
                         let mut new_token = Box::new(Token {
                             id: Uuid::new_v4(),
@@ -596,14 +596,13 @@ impl TokenMatchTemplate {
                             depth + 1,
                             token_match_templates_map,
                         ) else {
-                            match_failed = true;
                             break;
                         };
                         // only actually store a new token if a match was found
                         if !ephemeral_matched_all_tokens {
-                            match_failed = true;
                             break;
                         }
+                        matched_at_least_once = true;
 
                         // Another match was found, so store another generated token
                         repeat_count += 1;
@@ -675,11 +674,11 @@ impl TokenMatchTemplate {
                             tokens.push(token);
                         }
                     }
-                    println!("{}`-- (match_failed={} repeat_count={})", depth_spaces, match_failed, repeat_count);
+                    println!("{}`-- (matched_at_least_once={} repeat_count={})", depth_spaces, matched_at_least_once, repeat_count);
 
                     // NOTE: if the repeat count can be zero and the match fails, that is totally
                     // fine
-                    if *min_repeats != 0 && match_failed {
+                    if *min_repeats != 0 && !matched_at_least_once {
                         break;
                     }
 
