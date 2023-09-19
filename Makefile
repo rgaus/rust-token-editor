@@ -5,3 +5,6 @@ build:
 
 run:
 	./target/debug/rust-token-editor
+
+test:
+	cargo test

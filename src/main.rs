@@ -1416,3 +1416,54 @@ fn main() {
         }
     }
 }
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let a = TokensCollection::new_empty();
+        let result = 2 + 2;
+        assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn it_parses_a_mini_language() {
+        let mut token_match_templates_map = HashMap::new();
+        token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Twelve"),
+                TokenMatchTemplateMatcher::reference("One"),
+            ]),
+        ]));
+        token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::repeat_count(
+                Box::new(TokenMatchTemplateMatcher::reference("One")),
+                1, 3
+            ),
+            TokenMatchTemplateMatcher::raw("2"),
+        ]));
+        token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::regex(
+                Regex::new(r"^(?<one>1)").unwrap(),
+            ),
+        ]));
+
+        let Some(all_template) = token_match_templates_map.get("All") else {
+            panic!("No 'All' template found!");
+        };
+
+        let Ok(result) = all_template.consume_from_start("112", &token_match_templates_map) else {
+            panic!("Not Ok!");
+        };
+        assert_eq!(result.0, true); // matched_all
+        assert_eq!(result.1, 1); // offset
+        assert_eq!(result.3.len(), 1); // child_ids
+        assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+        dump(result.3[0], &result.4.tokens);
+            // Ok((_matched_all, offset, _last_token_id, child_ids, mut tokens_collection)) => {
+    }
+}
