@@ -245,6 +245,56 @@ impl TokensCollection {
         offset
     }
 
+    pub fn reset_caches_for_and_after(&mut self, token_id: uuid::Uuid) -> bool {
+        // Walk through the token collection, removing all cached elements at and after `token_id`
+        // from `self.offset_cache`
+        let mut pointer_id = token_id;
+        loop {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
+                break;
+            };
+
+            let mut should_break = true;
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+                should_break = false;
+            };
+
+            self.offset_cache.remove(&pointer_id);
+
+            if should_break {
+                break;
+            };
+        };
+
+        // Delete the whole range of data starting at `offset` and going all the way to the end of
+        // `tokens_by_start_offset_cache`.
+        {
+            let offset = self.compute_offset(token_id);
+            let maximum_cached_offset = {
+                let result_range = self.tokens_by_start_offset_cache
+                    .iter()
+                    .map(|(range, _)| range)
+                    .fold(
+                        0..=offset,
+                        |rangea, rangeb| {
+                            let rangea_end = rangea.end();
+                            if rangea_end.max(rangeb.end()) == rangea_end {
+                                rangea
+                            } else {
+                                rangeb.clone()
+                            }
+                        },
+                    );
+                *result_range.end()
+            };
+
+            self.tokens_by_start_offset_cache.remove(offset..=maximum_cached_offset);
+        };
+
+        true
+    }
+
     // When called, modifies the token with the given id to contain the new `literal` value
     // specified as a parameter.
     //
@@ -269,6 +319,9 @@ impl TokensCollection {
         // Create a clone of the token to modify in-memory
         let mut working_token = old_token.clone();
         working_token.literal = Some(new_text.clone());
+
+        // Clear all caches of data at or after this token
+        self.reset_caches_for_and_after(working_token.id);
 
         let mut depth = working_token.depth(self);
 
@@ -439,7 +492,10 @@ impl TokensCollection {
     // When called with a token node id, walks along through all `next_id` links,
     // concatenating all literal values in each token to generate the contents of
     // the document until AT LEAST `at_least_offset` characters have been
-    // generated, or the end of the document is reached
+    // generated, or the end of the document is reached.
+    //
+    // An example use case of this function may be to get the currently visible region of a
+    // document to show to a user.
     pub fn stringify_for_offset(&self, starting_token_id: uuid::Uuid, at_least_offset: usize) -> String {
         let mut result = String::from("");
         let mut pointer_id = starting_token_id;

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use regex::Regex;
 use uuid::Uuid;
 
 use crate::token::*;
