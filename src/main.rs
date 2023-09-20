@@ -44,6 +44,11 @@ impl TokenMatchTemplate {
             return Ok((false, offset, initial_last_token_id, child_ids, tokens))
         };
 
+        // An empty input should fail to parse
+        if input.len() == 0 {
+            return Ok((false, offset, initial_last_token_id, child_ids, tokens))
+        };
+
         let mut depth_spaces = String::from("");
         for _ in 0..depth {
             // depth_spaces = format!("{}| ", depth_spaces);
@@ -1419,32 +1424,8 @@ fn main() {
 
 
 #[cfg(test)]
-mod tests {
+mod test_parsing {
     use super::*;
-
-    fn initialize_mini_language_a() -> HashMap<&'static str, TokenMatchTemplate> {
-        let mut token_match_templates_map = HashMap::new();
-        token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-            TokenMatchTemplateMatcher::any(vec![
-                TokenMatchTemplateMatcher::reference("Twelve"),
-                TokenMatchTemplateMatcher::reference("One"),
-            ]),
-        ]));
-        token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
-            TokenMatchTemplateMatcher::repeat_count(
-                Box::new(TokenMatchTemplateMatcher::reference("One")),
-                1, 3
-            ),
-            TokenMatchTemplateMatcher::raw("2"),
-        ]));
-        token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
-            TokenMatchTemplateMatcher::regex(
-                Regex::new(r"^(?<one>1)").unwrap(),
-            ),
-        ]));
-
-        token_match_templates_map
-    }
 
     #[test]
     fn it_works() {
@@ -1453,16 +1434,289 @@ mod tests {
         assert_eq!(result, 4);
     }
 
+
+    mod mini_language_twelve {
+        use super::*;
+
+        // This mini language is either:
+        // - A single `1`
+        // - Between 1 to 3 `1`s, followed by a `2`
+        fn initialize_mini_language_twelve() -> HashMap<&'static str, TokenMatchTemplate> {
+            let mut token_match_templates_map = HashMap::new();
+            token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::any(vec![
+                    TokenMatchTemplateMatcher::reference("Twelve"),
+                    TokenMatchTemplateMatcher::reference("One"),
+                ]),
+            ]));
+            token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::repeat_count(
+                    Box::new(TokenMatchTemplateMatcher::reference("One")),
+                    1, 3
+                ),
+                TokenMatchTemplateMatcher::raw("2"),
+            ]));
+            token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^(?<one>1)").unwrap(),
+                ),
+            ]));
+
+            token_match_templates_map
+        }
+
+        #[test]
+        fn it_fully_parses_1() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 1); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_fully_parses_12() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("12", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 2); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 6); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_fully_parses_112() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("112", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 3); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 9); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_fully_parses_1112() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1112", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 4); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 12); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_starts_to_parse_1112aa() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1112aa", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 4); // offset - NOTE: not the whole string!
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 12); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_parses_11112_as_just_1() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("11112", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 1); // offset - NOTE: not the whole string!
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_doesnt_parse_333() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("333", &template_map).unwrap();
+            assert_eq!(result.0, false); // matched_all
+            assert_eq!(result.1, 0); // offset - NOTE: not the whole string!
+            assert_eq!(result.3.len(), 0); // child_ids
+            assert_eq!(result.4.tokens.len(), 0); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_doesnt_parse_empty_string() {
+            let template_map = initialize_mini_language_twelve();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("", &template_map).unwrap();
+            assert_eq!(result.0, false); // matched_all
+            assert_eq!(result.1, 0); // offset - NOTE: not the whole string!
+            assert_eq!(result.3.len(), 0); // child_ids
+            assert_eq!(result.4.tokens.len(), 0); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+    }
+
+    mod mini_language_math {
+        use super::*;
+
+        // This mini language implements a four function math expression parser with parenthesis
+        // for grouping.
+        fn initialize_mini_language_math() -> HashMap<&'static str, TokenMatchTemplate> {
+            let mut token_match_templates_map = HashMap::new();
+            token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::any(vec![
+                    TokenMatchTemplateMatcher::reference("Addition"),
+                    TokenMatchTemplateMatcher::reference("Subtraction"),
+                    TokenMatchTemplateMatcher::reference("Multiplication"),
+                    TokenMatchTemplateMatcher::reference("Division"),
+                    TokenMatchTemplateMatcher::reference("Integer"),
+                ]),
+            ]));
+            token_match_templates_map.insert("Expression", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::any(vec![
+                    TokenMatchTemplateMatcher::reference("Integer"),
+                    TokenMatchTemplateMatcher::reference("Group"),
+                ]),
+            ]));
+            token_match_templates_map.insert("Group", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::raw("("),
+                TokenMatchTemplateMatcher::any(vec![
+                    TokenMatchTemplateMatcher::reference("Addition"),
+                    TokenMatchTemplateMatcher::reference("Subtraction"),
+                    TokenMatchTemplateMatcher::reference("Multiplication"),
+                    TokenMatchTemplateMatcher::reference("Division"),
+                    TokenMatchTemplateMatcher::reference("Integer"),
+                ]),
+                TokenMatchTemplateMatcher::raw(")"),
+            ]));
+            token_match_templates_map.insert("Addition", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::reference("Expression"),
+                TokenMatchTemplateMatcher::raw("+"),
+                TokenMatchTemplateMatcher::reference("Expression"),
+            ]));
+            token_match_templates_map.insert("Subtraction", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::reference("Expression"),
+                TokenMatchTemplateMatcher::raw("-"),
+                TokenMatchTemplateMatcher::reference("Expression"),
+            ]));
+            token_match_templates_map.insert("Multiplication", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::reference("Expression"),
+                TokenMatchTemplateMatcher::raw("*"),
+                TokenMatchTemplateMatcher::reference("Expression"),
+            ]));
+            token_match_templates_map.insert("Division", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::reference("Expression"),
+                TokenMatchTemplateMatcher::raw("/"),
+                TokenMatchTemplateMatcher::reference("Expression"),
+            ]));
+            token_match_templates_map.insert("Integer", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^(?<value>-?[0-9])").unwrap(),
+                ),
+            ]));
+
+            token_match_templates_map
+        }
+
+        #[test]
+        fn it_fully_parses_1_plus_1() {
+            let template_map = initialize_mini_language_math();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1+1", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 3); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 11); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_fully_parses_1_plus_negative_1() {
+            let template_map = initialize_mini_language_math();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1+-1", &template_map).unwrap();
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 4); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 11); // tokens_collection
+            // dump(result.3[0], &result.4.tokens);
+        }
+
+        #[test]
+        fn it_fully_parses_1_plus_quantity_5_times_6() {
+            let template_map = initialize_mini_language_math();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1+(5*6)", &template_map).unwrap();
+            dump(result.3[0], &result.4.tokens);
+            assert_eq!(result.0, true); // matched_all
+            assert_eq!(result.1, 7); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 23); // tokens_collection
+        }
+    }
+
     #[test]
-    fn it_parses_a_mini_language() {
-        let template_map = initialize_mini_language_a();
+    fn it_fully_parses_optional_whitespace() {
+        let template_map = {
+            let mut token_match_templates_map = HashMap::new();
+            token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
+                    TokenMatchTemplateMatcher::any(vec![
+                        TokenMatchTemplateMatcher::reference("A"),
+                        TokenMatchTemplateMatcher::reference("B"),
+                    ]),
+                )),
+            ]));
+            token_match_templates_map.insert("A", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::raw("A"),
+                TokenMatchTemplateMatcher::reference("Whitespace"),
+                TokenMatchTemplateMatcher::raw("A"),
+            ]));
+            token_match_templates_map.insert("B", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::raw("B"),
+                TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
+                TokenMatchTemplateMatcher::raw("B"),
+            ]));
+
+            token_match_templates_map.insert("OptionalWhitespace", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::repeat_count(Box::new(
+                    TokenMatchTemplateMatcher::regex(
+                        Regex::new(r"^\s+").unwrap(),
+                    ),
+                ), 0, 1),
+            ]));
+            token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^\s+").unwrap(),
+                ),
+            ]));
+
+            token_match_templates_map
+        };
         let all_template = template_map.get("All").unwrap();
 
-        let result = all_template.consume_from_start("112", &template_map).unwrap();
+        let result = all_template.consume_from_start("A ABB", &template_map).unwrap();
         assert_eq!(result.0, true); // matched_all
-        assert_eq!(result.1, 3); // offset
-        assert_eq!(result.3.len(), 1); // child_ids
-        assert_eq!(result.4.tokens.len(), 9); // tokens_collection
-        dump(result.3[0], &result.4.tokens);
+        assert_eq!(result.1, 5); // offset
+        assert_eq!(result.3.len(), 2); // child_ids
+        assert_eq!(result.4.tokens.len(), 13); // tokens_collection
+        // dump(result.3[0], &result.4.tokens);
     }
 }

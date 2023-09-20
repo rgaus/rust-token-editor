@@ -7,7 +7,7 @@ run:
 	./target/debug/rust-token-editor
 
 test:
-	cargo test
+	time cargo test
 
 testv:
-	cargo test -- --nocapture
+	time cargo test -- --nocapture
