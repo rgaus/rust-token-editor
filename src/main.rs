@@ -372,7 +372,6 @@ fn main() {
                 let new_subtree_token_id = tokens_collection.change_token_literal_text(
                     token_id,
                     "aba".to_string(),
-                    0,
                     &token_match_templates_map,
                 ).unwrap();
 

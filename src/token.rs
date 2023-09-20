@@ -260,7 +260,6 @@ impl TokensCollection {
         &mut self,
         token_id: uuid::Uuid,
         new_text: String,
-        token_offset: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Option<uuid::Uuid> {
         let Some(old_token) = self.get_by_id(token_id) else {
@@ -278,6 +277,7 @@ impl TokensCollection {
         );
 
         // Second, re-match the token now that is had been changed
+        let token_offset = 0;
         let mut match_iterations = 0;
         loop {
             println!("offset {}", token_offset);
