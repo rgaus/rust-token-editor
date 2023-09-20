@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use regex::Regex;
+use colored::Colorize;
 
 mod token;
 use token::*;
@@ -29,6 +30,94 @@ fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: Stri
 fn dump(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) {
     dump_inner(tokens, vec![head_id], "".to_string());
 }
+
+fn stringify_colors(
+    head_id: uuid::Uuid,
+    tokens_collection: &TokensCollection,
+) -> String {
+    let mut result = String::from("");
+    let mut pointer_id = head_id;
+
+    let color_sequence = vec![
+        "bright_green",
+        "green",
+        "bright_blue",
+        "blue",
+        "bright_magenta",
+        "magenta",
+        "bright_cyan",
+        "cyan",
+        "bright_red",
+        "red",
+        "bright_yellow",
+        "yellow",
+        "bright_purple",
+        "purple",
+    ];
+    let mut color_sequence_index = 0;
+
+    let mut colors = vec![];
+
+    let mut last_depth = 0;
+
+    loop {
+        let Some(mut pointer) = tokens_collection.get_by_id(pointer_id) else {
+            println!("BAD POINTER! {:?}", pointer_id);
+            break;
+        };
+
+        let depth = pointer.depth(&tokens_collection);
+        if depth <= last_depth {
+            while depth < last_depth {
+                colors.pop();
+                last_depth -= 1;
+            }
+        } else {
+            last_depth = depth;
+            let color = color_sequence.get(
+                color_sequence_index % color_sequence.len()
+            ).unwrap_or(&"normal");
+            colors.push(*color);
+
+            color_sequence_index += 1;
+        };
+
+        if let Some(literal_text) = &pointer.literal {
+            let color = colors.last().unwrap_or(&"normal");
+            let colored_literal_text = match *color {
+                "red" => literal_text.clone().red(),
+                "green" => literal_text.clone().green(),
+                "blue" => literal_text.clone().blue(),
+                "yellow" => literal_text.clone().yellow(),
+                "cyan" => literal_text.clone().cyan(),
+                "magenta" => literal_text.clone().magenta(),
+                "purple" => literal_text.clone().purple(),
+                "bright_red" => literal_text.clone().bright_red(),
+                "bright_green" => literal_text.clone().bright_green(),
+                "bright_blue" => literal_text.clone().bright_blue(),
+                "bright_yellow" => literal_text.clone().bright_yellow(),
+                "bright_cyan" => literal_text.clone().bright_cyan(),
+                "bright_magenta" => literal_text.clone().bright_magenta(),
+                "bright_purple" => literal_text.clone().bright_purple(),
+                _ | "normal" => literal_text.clone().normal(),
+            };
+            result = format!("{}{}", result, colored_literal_text);
+            // println!("{}", colored_literal_text);
+        };
+        if let Some(next_pointer_id) = pointer.next_id {
+            pointer_id = next_pointer_id;
+        } else {
+            break;
+        }
+    }
+
+    result
+}
+
+
+
+
+
 
 fn main() {
     let mut token_match_templates_map = HashMap::new();
@@ -320,7 +409,8 @@ fn main() {
 
             if !child_ids.is_empty() {
                 {
-                    println!("{}", tokens_collection.stringify());
+                    // println!("{}", tokens_collection.stringify());
+                    println!("{}", stringify_colors(child_ids[0], &tokens_collection));
                 }
 
                 println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
@@ -330,13 +420,18 @@ fn main() {
                 println!("=========");
 
                 let token_id = {
-                    let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
-                    let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
-                        Token { literal: Some(text), .. } if text == "'aaa'" => true,
-                        _ => false,
-                    }).unwrap();
+                    let (token, _) = tokens_collection.get_by_offset(13).unwrap();
                     token.id
                 };
+
+                // let token_id = {
+                //     let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
+                //     let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
+                //         Token { literal: Some(text), .. } if text == "'aaa'" => true,
+                //         _ => false,
+                //     }).unwrap();
+                //     token.id
+                // };
 
                 let new_subtree_token_id = tokens_collection.change_token_literal_text(
                     token_id,
@@ -346,12 +441,13 @@ fn main() {
 
                 println!("--------- {}", new_subtree_token_id);
                 // dump(new_subtree_token_id, &tokens_collection.tokens);
-                for child_id in &child_ids {
-                    dump(*child_id, &tokens_collection.tokens);
-                    println!("---------");
-                }
+                // for child_id in &child_ids {
+                //     dump(*child_id, &tokens_collection.tokens);
+                //     println!("---------");
+                // }
                 {
-                    println!("{}", tokens_collection.stringify_to_end(child_ids[0]));
+                    // println!("{}", tokens_collection.stringify_to_end(child_ids[0]));
+                    println!("{}", stringify_colors(child_ids[0], &tokens_collection));
                 }
 
                 println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
