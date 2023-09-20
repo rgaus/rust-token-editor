@@ -412,6 +412,68 @@ impl TokensCollection {
 
         None
     }
+
+    // When called with a token node id, walks along through all `next_id` links,
+    // concatenating all literal values in each token to generate the contents of
+    // the document.
+    pub fn stringify_to_end(&self, starting_token_id: uuid::Uuid) -> String {
+        let mut result = String::from("");
+        let mut pointer_id = starting_token_id;
+        loop {
+            let Some(mut pointer) = self.get_by_id(pointer_id) else {
+                break;
+            };
+            if let Some(literal_text) = &pointer.literal {
+                result = format!("{}{}", result, literal_text);
+            };
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+
+    // When called with a token node id, walks along through all `next_id` links,
+    // concatenating all literal values in each token to generate the contents of
+    // the document until AT LEAST `at_least_offset` characters have been
+    // generated, or the end of the document is reached
+    pub fn stringify_for_offset(&self, starting_token_id: uuid::Uuid, at_least_offset: usize) -> String {
+        let mut result = String::from("");
+        let mut pointer_id = starting_token_id;
+        loop {
+            if result.len() > at_least_offset {
+                return result;
+            };
+            let Some(mut pointer) = self.get_by_id(pointer_id) else {
+                break;
+            };
+            if let Some(literal_text) = &pointer.literal {
+                result = format!("{}{}", result, literal_text);
+            };
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+
+    // Outputs the entire document as a text string.
+    //
+    // NOTE: This function should almost never be used outside of a testing context, as it requires
+    // allocating potentially a very large string in the heap!
+    pub fn stringify(&self) -> String {
+        let Some(first_root_node) = self.get_first_root_node() else {
+            return String::from("");
+        };
+
+        self.stringify_to_end(first_root_node.id)
+    }
 }
 
 

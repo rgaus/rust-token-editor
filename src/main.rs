@@ -31,30 +31,30 @@ fn dump(head_id: uuid::Uuid, tokens: &Vec<Box<Token>>) {
     dump_inner(tokens, vec![head_id], "".to_string());
 }
 
-fn stringify(
-    head_id: uuid::Uuid,
-    tokens: &mut Vec<Box<Token>>,
-    token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-) -> String {
-    let mut result = String::from("");
-    let mut pointer_id = head_id;
-    loop {
-        let Some(mut pointer) = tokens.iter().find(|t| t.id == pointer_id) else {
-            println!("BAD POINTER! {:?}", pointer_id);
-            break;
-        };
-        if let Some(literal_text) = &pointer.literal {
-            result = format!("{}{}", result, literal_text);
-        };
-        if let Some(next_pointer_id) = pointer.next_id {
-            pointer_id = next_pointer_id;
-        } else {
-            break;
-        }
-    }
-
-    result
-}
+// fn stringify(
+//     head_id: uuid::Uuid,
+//     tokens: &mut Vec<Box<Token>>,
+//     token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
+// ) -> String {
+//     let mut result = String::from("");
+//     let mut pointer_id = head_id;
+//     loop {
+//         let Some(mut pointer) = tokens.iter().find(|t| t.id == pointer_id) else {
+//             println!("BAD POINTER! {:?}", pointer_id);
+//             break;
+//         };
+//         if let Some(literal_text) = &pointer.literal {
+//             result = format!("{}{}", result, literal_text);
+//         };
+//         if let Some(next_pointer_id) = pointer.next_id {
+//             pointer_id = next_pointer_id;
+//         } else {
+//             break;
+//         }
+//     }
+//
+//     result
+// }
 
 
 
@@ -351,7 +351,7 @@ fn main() {
 
             if !child_ids.is_empty() {
                 {
-                    println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
+                    println!("{}", tokens_collection.stringify());
                 }
 
                 println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
@@ -382,7 +382,7 @@ fn main() {
                     println!("---------");
                 }
                 {
-                    println!("{}", stringify(child_ids[0], &mut tokens_collection.tokens, &token_match_templates_map));
+                    println!("{}", tokens_collection.stringify_to_end(child_ids[0]));
                 }
             }
         }
