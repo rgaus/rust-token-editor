@@ -245,8 +245,19 @@ impl TokensCollection {
         offset
     }
 
-    pub fn change_token_literal_text<'a>(
-        &'a mut self,
+    // When called, modifies the token with the given id to contain the new `literal` value
+    // specified as a parameter.
+    //
+    // This causes the system to reparse the token, doing an in-place replace within the token
+    // collection. This could result in a few possible outcomes:
+    // 1. The token reparses as exactly the same format as it did before. Think changing `11` => `12`
+    // 2. The token reparses completely differently. Think changing `11` => `11+22`
+    //
+    // This function returns the id of the first child token of the reparsed token tree. In case
+    // #1, this token should be equivilent to the old token in all ways but the literal value (and
+    // maybe id). In case #2, expect to find a whole new token subtree following this node!
+    pub fn change_token_literal_text(
+        &mut self,
         token_id: uuid::Uuid,
         new_text: String,
         token_offset: usize,
