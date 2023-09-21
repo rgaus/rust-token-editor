@@ -309,6 +309,8 @@ impl TokensCollection {
     pub fn change_token_literal_text(
         &mut self,
         token_id: uuid::Uuid,
+        start_index: usize,
+        end_index: usize,
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Option<uuid::Uuid> {
@@ -444,6 +446,20 @@ impl TokensCollection {
                         // return first_child.parent_id;
                         return Some(*first_child_id)
                     }
+
+                    // Quick parse:
+                    // 1. attempt to parse
+                    // 2. If it fails, try parsing from begining of string to end of slice range
+                    // 3. Keep advancing one character back until you reach the start of the slice
+                    //    range
+                    // 4. If none of those parses work, then make the whole rest of the token plain
+                    //    text and give up
+                    //
+                    //  Regular parse:
+                    //  1. attempt to parse
+                    //  2. If it fails, go up a level, and parse again
+                    //  3. If after going up a set number of levels things still fail, then do a
+                    //     quick parse
 
                     let Some(parent) = working_token.parent(&self) else {
                         println!("NO PARENT!");
