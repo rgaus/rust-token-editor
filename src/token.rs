@@ -343,7 +343,7 @@ impl TokensCollection {
                 depth,
                 token_match_templates_map,
             ) {
-                Ok((matched_all, offset, last_token_id, child_ids, mut new_tokens)) => {
+                Ok((matched_all, _matched_partial, offset, last_token_id, child_ids, mut new_tokens)) => {
                     println!("MATCHED ALL? {:?} {:?}", working_token, match_iterations);
                     if matched_all {
                         println!("MATCHED ALL!");

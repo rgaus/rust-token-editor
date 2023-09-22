@@ -30,7 +30,7 @@ impl TokenMatchTemplate {
         &self,
         input: &str,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
+    ) -> Result<(bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
         self.consume_from_offset(input, 0, None, 0, token_match_templates_map)
     }
 
@@ -41,18 +41,18 @@ impl TokenMatchTemplate {
         initial_last_token_id: Option<uuid::Uuid>,
         depth: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
+    ) -> Result<(bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
         let mut tokens = TokensCollection::new_empty();
         let mut offset = initial_offset;
         let mut child_ids: Vec<uuid::Uuid> = vec![];
 
         if depth > TOKEN_MATCH_TEMPLATE_FOREVER_MAX_DEPTH {
-            return Ok((false, offset, initial_last_token_id, child_ids, tokens))
+            return Ok((false, false, offset, initial_last_token_id, child_ids, tokens))
         };
 
         // An empty input should fail to parse
         if input.len() == 0 {
-            return Ok((false, offset, initial_last_token_id, child_ids, tokens))
+            return Ok((false, false, offset, initial_last_token_id, child_ids, tokens))
         };
 
         let mut depth_spaces = String::from("");
@@ -122,6 +122,7 @@ impl TokenMatchTemplate {
 
                     let Ok((
                         referenced_matched_all_tokens,
+                        referenced_matched_partial,
                         referenced_template_offset,
                         _referenced_last_token_id,
                         referenced_child_ids,
@@ -326,6 +327,7 @@ impl TokenMatchTemplate {
 
                         let Ok((
                             ephemeral_matched_all_tokens,
+                            ephemeral_matched_partial,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -461,6 +463,7 @@ impl TokenMatchTemplate {
 
                         let Ok((
                             ephemeral_matched_all_tokens,
+                            ephemeral_matched_partial,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -596,6 +599,7 @@ impl TokenMatchTemplate {
 
                         let Ok((
                             ephemeral_matched_all_tokens,
+                            ephemeral_matched_partial,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -746,6 +750,7 @@ impl TokenMatchTemplate {
 
                         let Ok((
                             ephemeral_matched_all_tokens,
+                            ephemeral_matched_partial,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -873,7 +878,8 @@ impl TokenMatchTemplate {
         // }
 
         let matched_all_tokens = matched_token_count == self.matcher.len();
-        println!("{}`-- matched_all_tokens={}", depth_spaces, matched_all_tokens);
-        Ok((matched_all_tokens, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens)))
+        let matched_partial = matched_token_count < self.matcher.len();
+        println!("{}`-- matched_all_tokens={} matched_partial={}", depth_spaces, matched_all_tokens, matched_partial);
+        Ok((matched_all_tokens, matched_partial, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens)))
     }
 }
