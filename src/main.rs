@@ -515,6 +515,7 @@ mod test_parsing {
             assert_eq!(result.1, 1); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+            assert_eq!(result.4.stringify(), "1");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -528,6 +529,7 @@ mod test_parsing {
             assert_eq!(result.1, 2); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 6); // tokens_collection
+            assert_eq!(result.4.stringify(), "12");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -541,6 +543,7 @@ mod test_parsing {
             assert_eq!(result.1, 3); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 9); // tokens_collection
+            assert_eq!(result.4.stringify(), "112");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -554,6 +557,7 @@ mod test_parsing {
             assert_eq!(result.1, 4); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 12); // tokens_collection
+            assert_eq!(result.4.stringify(), "1112");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -567,6 +571,7 @@ mod test_parsing {
             assert_eq!(result.1, 4); // offset - NOTE: not the whole string!
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 12); // tokens_collection
+            assert_eq!(result.4.stringify(), "1112");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -580,6 +585,7 @@ mod test_parsing {
             assert_eq!(result.1, 1); // offset - NOTE: not the whole string!
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+            assert_eq!(result.4.stringify(), "1");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -682,6 +688,7 @@ mod test_parsing {
             assert_eq!(result.1, 3); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 11); // tokens_collection
+            assert_eq!(result.4.stringify(), "1+1");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -695,6 +702,7 @@ mod test_parsing {
             assert_eq!(result.1, 4); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 11); // tokens_collection
+            assert_eq!(result.4.stringify(), "1+-1");
             // dump(result.3[0], &result.4.tokens);
         }
 
@@ -709,6 +717,7 @@ mod test_parsing {
             assert_eq!(result.1, 7); // offset
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 23); // tokens_collection
+            assert_eq!(result.4.stringify(), "1+(5*6)");
         }
     }
 
@@ -757,6 +766,7 @@ mod test_parsing {
         assert_eq!(result.1, 5); // offset
         assert_eq!(result.3.len(), 2); // child_ids
         assert_eq!(result.4.tokens.len(), 13); // tokens_collection
+        assert_eq!(result.4.stringify(), "A ABB");
         // dump(result.3[0], &result.4.tokens);
     }
 }
