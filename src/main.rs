@@ -505,114 +505,199 @@ mod test_parsing {
             token_match_templates_map
         }
 
-        #[test]
-        fn it_fully_parses_1() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+        mod exact_parsing {
+            use super::*;
 
-            let result = all_template.consume_from_start("1", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::FullParse); // status
-            assert_eq!(result.1, 1); // offset
-            assert_eq!(result.3.len(), 1); // child_ids
-            assert_eq!(result.4.tokens.len(), 3); // tokens_collection
-            assert_eq!(result.4.stringify(), "1");
-            // dump(result.3[0], &result.4.tokens);
+            #[test]
+            fn it_fully_parses_1() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("1", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::FullParse); // status
+                assert_eq!(result.1, 1); // offset
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+                assert_eq!(result.4.stringify(), "1");
+                // dump(result.3[0], &result.4.tokens);
+            }
+
+            #[test]
+            fn it_fully_parses_12() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("12", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::FullParse); // status
+                assert_eq!(result.1, 2); // offset
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 6); // tokens_collection
+                assert_eq!(result.4.stringify(), "12");
+                // dump(result.3[0], &result.4.tokens);
+            }
+
+            #[test]
+            fn it_fully_parses_112() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("112", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::FullParse); // status
+                assert_eq!(result.1, 3); // offset
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 9); // tokens_collection
+                assert_eq!(result.4.stringify(), "112");
+                // dump(result.3[0], &result.4.tokens);
+            }
+
+            #[test]
+            fn it_fully_parses_1112() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::FullParse); // status
+                assert_eq!(result.1, 4); // offset
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 12); // tokens_collection
+                assert_eq!(result.4.stringify(), "1112");
+                // dump(result.3[0], &result.4.tokens);
+            }
+
+            #[test]
+            fn it_starts_to_parse_1112aa() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("1112aa", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::FullParse); // status
+                assert_eq!(result.1, 4); // offset - NOTE: not the whole string!
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 12); // tokens_collection
+                assert_eq!(result.4.stringify(), "1112");
+                // dump(result.3[0], &result.4.tokens);
+            }
+
+            #[test]
+            fn it_parses_11112_as_just_1() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("11112", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::FullParse); // status
+                assert_eq!(result.1, 1); // offset - NOTE: not the whole string!
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+                assert_eq!(result.4.stringify(), "1");
+                // dump(result.3[0], &result.4.tokens);
+            }
+
+            #[test]
+            fn it_doesnt_parse_333() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("333", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::Failed); // status
+                assert_eq!(result.1, 0); // offset - NOTE: it parsed no characters!
+                assert_eq!(result.3.len(), 0); // child_ids
+                assert_eq!(result.4.tokens.len(), 0); // tokens_collection
+                // dump(result.3[04, &result.4.tokens);
+            }
+
+            #[test]
+            fn it_doesnt_parse_empty_string() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
+
+                let result = all_template.consume_from_start("", false, &template_map).unwrap();
+                assert_eq!(result.0, TokenParseStatus::Failed); // status
+                assert_eq!(result.1, 0); // offset - NOTE: not the whole string!
+                assert_eq!(result.3.len(), 0); // child_ids
+                assert_eq!(result.4.tokens.len(), 0); // tokens_collection
+                // dump(result.3[04, &result.4.tokens);
+            }
         }
 
-        #[test]
-        fn it_fully_parses_12() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+        mod loose_parsing {
+            use super::*;
 
-            let result = all_template.consume_from_start("12", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::FullParse); // status
-            assert_eq!(result.1, 2); // offset
-            assert_eq!(result.3.len(), 1); // child_ids
-            assert_eq!(result.4.tokens.len(), 6); // tokens_collection
-            assert_eq!(result.4.stringify(), "12");
-            // dump(result.3[0], &result.4.tokens);
-        }
+            #[test]
+            fn it_loosely_parses_1_with_prefix() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
 
-        #[test]
-        fn it_fully_parses_112() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+                let result = all_template.consume_from_start("a1", true, &template_map).unwrap();
+                // dump(result.3[0], &result.4.tokens);
+                assert_eq!(result.0, TokenParseStatus::PartialParse(2, Some(0))); // status
+                assert_eq!(result.1, 2); // offset
+                assert_eq!(result.3.len(), 1); // child_ids
+                assert_eq!(result.4.tokens.len(), 6); // tokens_collection
+                assert_eq!(result.4.stringify(), "a1");
+            }
 
-            let result = all_template.consume_from_start("112", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::FullParse); // status
-            assert_eq!(result.1, 3); // offset
-            assert_eq!(result.3.len(), 1); // child_ids
-            assert_eq!(result.4.tokens.len(), 9); // tokens_collection
-            assert_eq!(result.4.stringify(), "112");
-            // dump(result.3[0], &result.4.tokens);
-        }
+            #[test]
+            fn it_loosely_parses_1_with_suffix() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
 
-        #[test]
-        fn it_fully_parses_1112() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+                let result = all_template.consume_from_start("1a", true, &template_map).unwrap();
+                dump(result.3[0], &result.4.tokens);
+                assert_eq!(result.0, TokenParseStatus::PartialParse(2, Some(1))); // status
+                assert_eq!(result.1, 2); // offset
+                assert_eq!(result.3.len(), 2); // child_ids
+                assert_eq!(result.4.tokens.len(), 4); // tokens_collection
+                assert_eq!(result.4.stringify(), "1a");
+            }
 
-            let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::FullParse); // status
-            assert_eq!(result.1, 4); // offset
-            assert_eq!(result.3.len(), 1); // child_ids
-            assert_eq!(result.4.tokens.len(), 12); // tokens_collection
-            assert_eq!(result.4.stringify(), "1112");
-            // dump(result.3[0], &result.4.tokens);
-        }
+            #[test]
+            fn it_loosely_parses_112_with_garbage_in_the_middle() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
 
-        #[test]
-        fn it_starts_to_parse_1112aa() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+                let result = all_template.consume_from_start("AA11BB2CC", true, &template_map).unwrap();
+                // dump(result.3[0], &result.4.tokens);
+                assert_eq!(result.0, TokenParseStatus::PartialParse(9, Some(0))); // status
+                assert_eq!(result.1, 9); // offset
+                assert_eq!(result.3.len(), 2); // child_ids
+                assert_eq!(result.4.tokens.len(), 9); // tokens_collection
+                assert_eq!(result.4.stringify(), "AA11BB2CC");
+            }
 
-            let result = all_template.consume_from_start("1112aa", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::FullParse); // status
-            assert_eq!(result.1, 4); // offset - NOTE: not the whole string!
-            assert_eq!(result.3.len(), 1); // child_ids
-            assert_eq!(result.4.tokens.len(), 12); // tokens_collection
-            assert_eq!(result.4.stringify(), "1112");
-            // dump(result.3[0], &result.4.tokens);
-        }
+            #[test]
+            fn it_loosely_parses_total_garbage() {
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
 
-        #[test]
-        fn it_parses_11112_as_just_1() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+                let result = all_template.consume_from_start("TOTAL GARBAGE", true, &template_map).unwrap();
+                // dump(result.3[0], &result.4.tokens);
+                assert_eq!(result.0, TokenParseStatus::PartialParse(13, Some(0))); // status
+                assert_eq!(result.1, 13); // offset
+                assert_eq!(result.3.len(), 1); // child_ids
+                // NOTE: This should parse as a single TokenMatchTemplateMatcher::Skipped token
+                // with the entire contents inside
+                assert_eq!(result.4.tokens.len(), 1); // tokens_collection
+                assert_eq!(result.4.stringify(), "TOTAL GARBAGE");
+            }
 
-            let result = all_template.consume_from_start("11112", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::FullParse); // status
-            assert_eq!(result.1, 1); // offset - NOTE: not the whole string!
-            assert_eq!(result.3.len(), 1); // child_ids
-            assert_eq!(result.4.tokens.len(), 3); // tokens_collection
-            assert_eq!(result.4.stringify(), "1");
-            // dump(result.3[0], &result.4.tokens);
-        }
+            #[test]
+            fn it_loosely_parses_111112_as_1_with_skipped_chars_afterward() {
+                // NOTE: the reason it parses this way ("1" "11112", where "11112" is skipped)
+                // versus "111" "11" "2" (where "11" is skipped) is because the "One" path fully
+                // matches, and that is prioritized over a path that partially matches / contains
+                // skipped tokens ("Twelve"), even if that path is longer!
 
-        #[test]
-        fn it_doesnt_parse_333() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+                let template_map = initialize_mini_language_twelve();
+                let all_template = template_map.get("All").unwrap();
 
-            let result = all_template.consume_from_start("333", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::Failed); // status
-            assert_eq!(result.1, 0); // offset - NOTE: it parsed no characters!
-            assert_eq!(result.3.len(), 0); // child_ids
-            assert_eq!(result.4.tokens.len(), 0); // tokens_collection
-            // dump(result.3[04, &result.4.tokens);
-        }
-
-        #[test]
-        fn it_doesnt_parse_empty_string() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
-
-            let result = all_template.consume_from_start("", false, &template_map).unwrap();
-            assert_eq!(result.0, TokenParseStatus::Failed); // status
-            assert_eq!(result.1, 0); // offset - NOTE: not the whole string!
-            assert_eq!(result.3.len(), 0); // child_ids
-            assert_eq!(result.4.tokens.len(), 0); // tokens_collection
-            // dump(result.3[04, &result.4.tokens);
+                let result = all_template.consume_from_start("111112", true, &template_map).unwrap();
+                // dump(result.3[0], &result.4.tokens);
+                assert_eq!(result.0, TokenParseStatus::PartialParse(6, Some(1))); // status
+                assert_eq!(result.1, 6); // offset
+                assert_eq!(result.3.len(), 2); // child_ids
+                assert_eq!(result.4.tokens.len(), 4); // tokens_collection
+                assert_eq!(result.4.stringify(), "111112");
+            }
         }
     }
 

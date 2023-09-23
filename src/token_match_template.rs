@@ -122,14 +122,14 @@ impl TokenMatchTemplate {
                         for index in offset..input.len() {
                             if input[index..].starts_with(raw) {
                                 matched_at_index = Some(index);
-                                println!("MATCHED AT INDEX: {}", index);
+                                // println!("MATCHED AT INDEX: {}", index);
                                 break;
                             }
                         }
 
                         if let Some(index) = matched_at_index {
                             // Matched the token, but had to skip some characters to get there
-                            println!("UNPARSABLE CHARS: {} {} {}", offset, index, &input[offset..index]);
+                            println!("{}UNPARSABLE CHARS: offset={} index={} `{}`", depth_spaces, offset, index, &input[offset..index]);
 
                             // If a non parsable character hasn't been found yet in the stream,
                             // then note this one down as the first occurance.
@@ -356,14 +356,14 @@ impl TokenMatchTemplate {
                             if let Some(captures) = re.captures(&input[index..]) {
                                 matched_captures = Some(captures);
                                 matched_at_index = Some(index);
-                                println!("MATCHED AT INDEX: {}", index);
+                                // println!("MATCHED AT INDEX: {}", index);
                                 break;
                             }
                         }
 
                         if let Some(index) = matched_at_index {
                             // Matched the token, but had to skip some characters to get there
-                            println!("UNPARSABLE CHARS: {} {} {}", offset, index, &input[offset..index]);
+                            println!("{}UNPARSABLE CHARS: offset={} index={} `{}`", depth_spaces, offset, index, &input[offset..index]);
 
                             // If a non parsable character hasn't been found yet in the stream,
                             // then note this one down as the first occurance.
@@ -1183,11 +1183,11 @@ impl TokenMatchTemplate {
         // When `store_non_parsable_chars` is passed, at the very end of the computation, take all
         // the remaining characters at the end and add them as TokenMatchTemplateMatcher::Skipped
         // entries
-        if depth == 0 && matched_partial && store_non_parsable_chars {
+        if depth == 0 && store_non_parsable_chars {
             let remaining_chars = &input[offset..];
             if remaining_chars.len() > 0 {
                 // Matched the token, but had to skip some characters to get there
-                println!("FINAL UNPARSABLE CHARS: {}", remaining_chars);
+                println!("{}FINAL UNPARSABLE CHARS: `{}`", depth_spaces, remaining_chars);
 
                 // If a non parsable character hasn't been found yet in the stream,
                 // then note this one down as the first occurance.
@@ -1226,13 +1226,12 @@ impl TokenMatchTemplate {
 
                 tokens.push(new_token);
 
+                // If characters had to be skipped, it's definitely now a partial match
+                matched_partial = true;
+
                 // Update the offset in the token stream to the place where the token
                 // was found
                 offset += remaining_chars.len();
-
-                // Special case: Because this "eats up" the whole match, it's no longer a partial
-                // match
-                matched_partial = false;
             }
         }
 
