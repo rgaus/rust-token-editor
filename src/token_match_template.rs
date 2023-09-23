@@ -57,8 +57,8 @@ impl TokenMatchTemplate {
 
         let mut depth_spaces = String::from("");
         for _ in 0..depth {
-            // depth_spaces = format!("{}| ", depth_spaces);
-            depth_spaces = format!("{}  ", depth_spaces);
+            depth_spaces = format!("{}| ", depth_spaces);
+            // depth_spaces = format!("{}  ", depth_spaces);
         }
 
         let mut last_token_id: Option<uuid::Uuid> = initial_last_token_id;
@@ -66,8 +66,14 @@ impl TokenMatchTemplate {
         let mut previous_id_mapping: HashMap<uuid::Uuid, Option<uuid::Uuid>> = HashMap::new();
 
         let mut matched_token_count = 0;
+        let mut matched_partial = false;
         for template_matcher in &self.matcher {
             if offset > input.len()-1 {
+                // When reaching the end of the input after parsing the first token and before
+                // parsing the last token, that makes a partial match
+                if matched_token_count > 0 && matched_token_count != self.matcher.len() {
+                    matched_partial = true;
+                };
                 println!("{}EOF!", depth_spaces);
                 break;
             };
@@ -136,10 +142,14 @@ impl TokenMatchTemplate {
                     ) else {
                         break;
                     };
-                    println!("{}`-- (referenced_matched_all_tokens={})", depth_spaces, referenced_matched_all_tokens);
-                    if !referenced_matched_all_tokens {
+                    println!("{}`-- (referenced_matched_all_tokens={} referenced_matched_partial={})", depth_spaces, referenced_matched_all_tokens, referenced_matched_partial);
+                    if !referenced_matched_all_tokens && !referenced_matched_partial {
                         break;
-                    }
+                    };
+                    // If this reference matched partially, then this next match also is partial
+                    if referenced_matched_partial {
+                        matched_partial = true;
+                    };
 
                     let mut new_token = Box::new(Token {
                         id: Uuid::new_v4(),
@@ -300,7 +310,18 @@ impl TokenMatchTemplate {
                 }
                 TokenMatchTemplateMatcher::Any(matchers, events) => {
                     println!("{}ANY: {:?} {} {}", depth_spaces, matchers, escaped_offsetted_input, offset);
-                    let mut matched_at_least_one = false;
+                    let mut full_match: Option<(
+                        Box<Token>,
+                        (bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
+                    )> = None;
+                    let mut largest_partial_match: (usize, Option<(
+                        Box<Token>,
+                        (bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
+                    )>) = (0, None);
+
+                    // Attempt to find a pattern that fully matches
+                    // And if one cannot be found, then find the largest partial match and go with
+                    // that
                     for matcher in matchers {
                         let ephemeral_template = TokenMatchTemplate::new(
                             vec![matcher.clone()],
@@ -329,9 +350,9 @@ impl TokenMatchTemplate {
                             ephemeral_matched_all_tokens,
                             ephemeral_matched_partial,
                             ephemeral_offset,
-                            _ephemeral_last_token_id,
+                            ephemeral_last_token_id,
                             ephemeral_child_ids,
-                            ephemeral_tokens
+                            ephemeral_tokens,
                         )) = ephemeral_template.consume_from_offset(
                             input,
                             offset,
@@ -341,88 +362,133 @@ impl TokenMatchTemplate {
                         ) else {
                             continue;
                         };
-                        // only actually store a new token if a match was found
-                        if !ephemeral_matched_all_tokens {
-                            continue;
+
+                        // If a full match was found, then we're done
+                        if ephemeral_matched_all_tokens && !ephemeral_matched_partial && ephemeral_offset != offset {
+                        // if ephemeral_matched_all_tokens && !ephemeral_matched_partial {
+                            full_match = Some((new_token, (
+                                ephemeral_matched_all_tokens,
+                                ephemeral_matched_partial,
+                                ephemeral_offset,
+                                ephemeral_last_token_id,
+                                ephemeral_child_ids,
+                                ephemeral_tokens,
+                            )));
+                            break;
                         }
 
-                        // Only actually store a new token if a match was found
-                        if ephemeral_offset == offset {
-                            continue;
-                        }
-
-                        // Link the new token's next_id to the first child
-                        if let Some(first_ephemeral_child_id) = ephemeral_child_ids.first() {
-                            // println!("AY: {:?} -> {:?}", new_token.id, Some(*first_ephemeral_child_id));
-                            next_id_mapping.insert(new_token.id, Some(*first_ephemeral_child_id));
-                        }
-
-                        // Link the new token with its previous token
-                        previous_id_mapping.insert(new_token.id, last_token_id);
-                        if let Some(last_token_id_unwrapped) = last_token_id {
-                            // println!("AY: {:?} <- {:?}", last_token_id_unwrapped, Some(new_token.id));
-                            next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
-                        }
-
-                        // Find the deepest last child in the ephemeral token hierarchy
-                        let mut deep_last_ephemeral_child_id = ephemeral_child_ids.last();
-                        loop {
-                            let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
-                                break;
+                        // If a partial match was found, then store it for later
+                        // If there are no full matches, this might be the best option we
+                        // could do
+                        if ephemeral_matched_partial {
+                            let chars_matched = ephemeral_offset - offset;
+                            if chars_matched > largest_partial_match.0 {
+                                largest_partial_match = (chars_matched, Some((new_token, (
+                                    ephemeral_matched_all_tokens,
+                                    ephemeral_matched_partial,
+                                    ephemeral_offset,
+                                    ephemeral_last_token_id,
+                                    ephemeral_child_ids,
+                                    ephemeral_tokens,
+                                ))));
                             };
-                            let Some(child_token) = ephemeral_tokens.get_by_id(
-                                *deep_last_ephemeral_child_id_unwrapped
-                            ) else {
-                                break;
-                            };
-                            if let Some(result) = child_token.children_ids.last() {
-                                deep_last_ephemeral_child_id = Some(result);
-                            } else {
-                                break;
-                            }
-                        }
-                        last_token_id = if let Some(deep_last_ephemeral_child_id) = deep_last_ephemeral_child_id {
-                            // The next "last token" should be the last child
-                            Some(*deep_last_ephemeral_child_id)
-                        } else {
-                            // The next "last token" should be the token that was just added
-                            Some(new_token.id)
                         };
+                    };
 
-                        new_token.children_ids = ephemeral_child_ids;
-                        child_ids.push(new_token.id);
-
-                        let new_token_id = new_token.id;
-                        tokens.push(new_token);
-
-                        let mut temp_ephemeral_tokens_without_parents: Vec<Box<Token>> = vec![];
-                        // Add all tokens to the tokens array that don't have parents
-                        for token in ephemeral_tokens.tokens {
-                            if token.parent_id == None {
-                                temp_ephemeral_tokens_without_parents.push(token);
-                                continue
-                            };
-                            tokens.push(token);
-                        }
-                        // Then add all the tokens with parents AFTER so that when `on_leave` is
-                        // called, all the child tokens (that are already parented) will be present
-                        // in `tokens` first
-                        for mut token in temp_ephemeral_tokens_without_parents {
-                            token.parent_id = Some(new_token_id);
-                            if let Some(on_leave) = token.events.on_leave {
-                                on_leave(&mut token, &mut tokens);
-                            }
-                            tokens.push(token);
-                        }
-
-                        offset = ephemeral_offset;
-                        matched_at_least_one = true;
+                    let fully_matched = match full_match {
+                        Some(_) => true,
+                        _ => false,
+                    };
+                    println!("{}`-- (fully_matched={} largest_partial_match.0={})", depth_spaces, fully_matched, largest_partial_match.0);
+                    let result = if let Some(result) = full_match {
+                        Some(result)
+                    } else if let Some(result) = largest_partial_match.1 {
+                        Some(result)
+                    } else {
+                        None
+                    };
+                    let Some((mut new_token, (
+                        ephemeral_matched_all_tokens,
+                        ephemeral_matched_partial,
+                        ephemeral_offset,
+                        ephemeral_last_token_id,
+                        ephemeral_child_ids,
+                        ephemeral_tokens,
+                    ))) = result else {
+                        // No match was found
                         break;
+                    };
+
+                    // If this reference matched partially, then this next match also is partial
+                    if ephemeral_matched_partial {
+                        matched_partial = true;
+                    };
+
+                    // Link the new token's next_id to the first child
+                    if let Some(first_ephemeral_child_id) = ephemeral_child_ids.first() {
+                        // println!("AY: {:?} -> {:?}", new_token.id, Some(*first_ephemeral_child_id));
+                        next_id_mapping.insert(new_token.id, Some(*first_ephemeral_child_id));
                     }
-                    println!("{}`-- (matched_at_least_one={})", depth_spaces, matched_at_least_one);
-                    if !matched_at_least_one {
-                        break;
+
+                    // Link the new token with its previous token
+                    previous_id_mapping.insert(new_token.id, last_token_id);
+                    if let Some(last_token_id_unwrapped) = last_token_id {
+                        // println!("AY: {:?} <- {:?}", last_token_id_unwrapped, Some(new_token.id));
+                        next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
                     }
+
+                    // Find the deepest last child in the ephemeral token hierarchy
+                    let mut deep_last_ephemeral_child_id = ephemeral_child_ids.last();
+                    loop {
+                        let Some(deep_last_ephemeral_child_id_unwrapped) = deep_last_ephemeral_child_id else {
+                            break;
+                        };
+                        let Some(child_token) = ephemeral_tokens.get_by_id(
+                            *deep_last_ephemeral_child_id_unwrapped
+                        ) else {
+                            break;
+                        };
+                        if let Some(result) = child_token.children_ids.last() {
+                            deep_last_ephemeral_child_id = Some(result);
+                        } else {
+                            break;
+                        }
+                    }
+                    last_token_id = if let Some(deep_last_ephemeral_child_id) = deep_last_ephemeral_child_id {
+                        // The next "last token" should be the last child
+                        Some(*deep_last_ephemeral_child_id)
+                    } else {
+                        // The next "last token" should be the token that was just added
+                        Some(new_token.id)
+                    };
+
+                    new_token.children_ids = ephemeral_child_ids;
+                    child_ids.push(new_token.id);
+
+                    let new_token_id = new_token.id;
+                    tokens.push(new_token);
+
+                    let mut temp_ephemeral_tokens_without_parents: Vec<Box<Token>> = vec![];
+                    // Add all tokens to the tokens array that don't have parents
+                    for token in ephemeral_tokens.tokens {
+                        if token.parent_id == None {
+                            temp_ephemeral_tokens_without_parents.push(token);
+                            continue
+                        };
+                        tokens.push(token);
+                    }
+                    // Then add all the tokens with parents AFTER so that when `on_leave` is
+                    // called, all the child tokens (that are already parented) will be present
+                    // in `tokens` first
+                    for mut token in temp_ephemeral_tokens_without_parents {
+                        token.parent_id = Some(new_token_id);
+                        if let Some(on_leave) = token.events.on_leave {
+                            on_leave(&mut token, &mut tokens);
+                        }
+                        tokens.push(token);
+                    }
+
+                    offset = ephemeral_offset;
                 }
                 TokenMatchTemplateMatcher::Sequence(matchers, events) => {
                     println!("{}REPEAT({:?}): {} {}", depth_spaces, template_matcher, escaped_offsetted_input, offset);
@@ -478,8 +544,9 @@ impl TokenMatchTemplate {
                             match_failed = true;
                             break;
                         };
+
                         // only actually store new tokens if a match was found
-                        if !ephemeral_matched_all_tokens {
+                        if !ephemeral_matched_all_tokens && !ephemeral_matched_partial {
                             match_failed = true;
                             break;
                         }
@@ -550,8 +617,15 @@ impl TokenMatchTemplate {
                             }
                             tokens.push(token);
                         }
+
+                        // If this reference matched partially, then we're done since this is where
+                        // the parser looses track of where it's going
+                        if ephemeral_matched_partial {
+                            matched_partial = true;
+                            break;
+                        };
                     }
-                    println!("{}`-- (match_failed={}", depth_spaces, match_failed);
+                    println!("{}`-- match_failed={}", depth_spaces, match_failed);
 
                     if match_failed {
                         break;
@@ -614,7 +688,7 @@ impl TokenMatchTemplate {
                             break;
                         };
                         // only actually store a new token if a match was found
-                        if !ephemeral_matched_all_tokens {
+                        if !ephemeral_matched_all_tokens && !ephemeral_matched_partial {
                             break;
                         }
                         matched_at_least_once = true;
@@ -687,7 +761,14 @@ impl TokenMatchTemplate {
                                 on_leave(&mut token, &mut tokens);
                             }
                             tokens.push(token);
-                        }
+                        };
+
+                        // If this reference matched partially, then we're done since this is where
+                        // the parser looses track of where it's going
+                        if ephemeral_matched_partial {
+                            matched_partial = true;
+                            break;
+                        };
                     }
                     println!("{}`-- (matched_at_least_once={} repeat_count={})", depth_spaces, matched_at_least_once, repeat_count);
 
@@ -766,7 +847,7 @@ impl TokenMatchTemplate {
                         };
 
                         // only actually store a new token if a match was found
-                        if !ephemeral_matched_all_tokens {
+                        if !ephemeral_matched_all_tokens && !ephemeral_matched_partial {
                             break;
                         }
 
@@ -837,7 +918,14 @@ impl TokenMatchTemplate {
                                 on_leave(&mut token, &mut tokens);
                             }
                             tokens.push(token);
-                        }
+                        };
+
+                        // If this reference matched partially, then we're done since this is where
+                        // the parser looses track of where it's going
+                        if ephemeral_matched_partial {
+                            matched_partial = true;
+                            break;
+                        };
                     }
                     println!("{}`-- (offset={} repeat_count={})", depth_spaces, offset, repeat_count);
 
@@ -878,7 +966,7 @@ impl TokenMatchTemplate {
         // }
 
         let matched_all_tokens = matched_token_count == self.matcher.len();
-        let matched_partial = matched_token_count < self.matcher.len();
+        println!("{}`-- matched_token_count={} self.matcher.len()={}", depth_spaces, matched_token_count, self.matcher.len());
         println!("{}`-- matched_all_tokens={} matched_partial={}", depth_spaces, matched_all_tokens, matched_partial);
         Ok((matched_all_tokens, matched_partial, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens)))
     }

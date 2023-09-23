@@ -385,7 +385,7 @@ fn main() {
 // }";
 
     // let input = "{let a = ['aaa', ['cc', 'bbb']]}";
-    let input = "let a =";
+    let input = "let a = {";
     // let input = "456";
 
     // let input = "1aa1bb";
