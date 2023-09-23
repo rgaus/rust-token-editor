@@ -37,9 +37,10 @@ impl TokenMatchTemplate {
     pub fn consume_from_start(
         &self,
         input: &str,
+        store_non_parsable_chars: bool,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<(TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
-        self.consume_from_offset(input, 0, None, 0, token_match_templates_map)
+        self.consume_from_offset(input, 0, None, store_non_parsable_chars, 0, token_match_templates_map)
     }
 
     pub fn consume_from_offset(
@@ -47,6 +48,7 @@ impl TokenMatchTemplate {
         input: &str,
         initial_offset: usize,
         initial_last_token_id: Option<uuid::Uuid>,
+        store_non_parsable_chars: bool,
         depth: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<(TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
@@ -75,6 +77,7 @@ impl TokenMatchTemplate {
 
         let mut matched_token_count = 0;
         let mut matched_partial = false;
+
         for template_matcher in &self.matcher {
             if offset > input.len()-1 {
                 // When reaching the end of the input after parsing the first token and before
@@ -91,7 +94,75 @@ impl TokenMatchTemplate {
             match template_matcher {
                 TokenMatchTemplateMatcher::Raw(raw, events) => {
                     println!("{}RAW({}): {} {}", depth_spaces, raw, escaped_offsetted_input, offset);
-                    if !offsetted_input.starts_with(raw) {
+                    let mut matched = offsetted_input.starts_with(raw);
+
+                    // When `store_non_parsable_chars` is enabled, attempt to look forward to find
+                    // a match if the match didn't work
+                    let should_look_for_chars = if offset > 0 {
+                        // When not at the very start, look for characters only after the first token
+                        // parses
+                        offset != initial_offset
+                    } else {
+                        // If at the very start, then matching characters at the start is fine so that
+                        // any bogus chars before the match are captured
+                        true
+                    };
+                    if !matched && store_non_parsable_chars && should_look_for_chars {
+                        let mut matched_at_index = None;
+                        for index in offset..input.len() {
+                            if input[index..].starts_with(raw) {
+                                matched_at_index = Some(index);
+                                println!("MATCHED AT INDEX: {}", index);
+                                break;
+                            }
+                        }
+
+                        if let Some(index) = matched_at_index {
+                            // Matched the token, but had to skip some characters to get there
+                            println!("UNPARSABLE CHARS: {} {} {}", offset, index, &input[offset..index]);
+
+                            let mut new_token = Box::new(Token {
+                                id: Uuid::new_v4(),
+                                template: TokenMatchTemplateMatcher::Skipped,
+                                literal: Some(String::from(&input[offset..index])),
+                                matches: HashMap::new(),
+                                effects: vec![],
+                                events: TokenEvents::new_empty(),
+                                next_id: None,
+                                previous_id: None,
+                                parent_id: None,
+                                children_ids: vec![],
+                            });
+                            // if let Some(on_enter) = new_token.events.on_enter {
+                            //     on_enter(&mut new_token);
+                            // }
+
+                            child_ids.push(new_token.id);
+
+                            // println!("RW: {:?} <- {:?}", new_token.id, last_token_id);
+                            previous_id_mapping.insert(new_token.id, last_token_id);
+                            if let Some(last_token_id_unwrapped) = last_token_id {
+                                // println!("RW: {:?} -> {:?}", last_token_id_unwrapped, Some(new_token.id));
+                                next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                            }
+                            last_token_id = Some(new_token.id);
+
+                            tokens.push(new_token);
+
+                            // If characters had to be skipped, it's definitely a partial match
+                            matched_partial = true;
+
+                            // Update the offset in the token stream to the place where the token
+                            // was found
+                            offset = index;
+                            matched = true;
+                        } else {
+                            // Did not match the token!
+                            break;
+                        }
+                    }
+
+                    if !matched {
                         break;
                     }
 
@@ -144,6 +215,7 @@ impl TokenMatchTemplate {
                         input,
                         offset,
                         last_token_id,
+                        store_non_parsable_chars,
                         depth + 1,
                         token_match_templates_map,
                     ) else {
@@ -363,6 +435,7 @@ impl TokenMatchTemplate {
                             input,
                             offset,
                             Some(new_token.id),
+                            store_non_parsable_chars,
                             depth + 1,
                             token_match_templates_map,
                         ) else {
@@ -540,6 +613,7 @@ impl TokenMatchTemplate {
                             input,
                             new_offset,
                             Some(new_token.id),
+                            store_non_parsable_chars,
                             depth + 1,
                             token_match_templates_map,
                         ) else {
@@ -683,6 +757,7 @@ impl TokenMatchTemplate {
                             input,
                             new_offset,
                             Some(new_token.id),
+                            store_non_parsable_chars,
                             depth + 1,
                             token_match_templates_map,
                         ) else {
@@ -840,6 +915,7 @@ impl TokenMatchTemplate {
                             input,
                             new_offset,
                             Some(new_token.id),
+                            store_non_parsable_chars,
                             depth + 1,
                             token_match_templates_map,
                         ) else {
@@ -940,6 +1016,11 @@ impl TokenMatchTemplate {
                     offset = new_offset;
                     last_token_id = new_last_token_id;
                 }
+                // NOTE: this pattern should never appear in a user generated token template map
+                //
+                // It's used for skipping characters in the input stream when this is desired to
+                // force match a given pattern
+                TokenMatchTemplateMatcher::Skipped => {}
             }
             matched_token_count += 1;
         }
@@ -964,6 +1045,7 @@ impl TokenMatchTemplate {
         //         on_leave(&mut token, &mut parented_tokens);
         //     }
         // }
+
 
         let matched_all_tokens = matched_token_count == self.matcher.len();
         println!("{}`-- matched_token_count={} self.matcher.len()={}", depth_spaces, matched_token_count, self.matcher.len());

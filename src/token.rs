@@ -309,14 +309,13 @@ impl TokensCollection {
     pub fn change_token_literal_text(
         &mut self,
         token_id: uuid::Uuid,
-        start_index: usize,
-        end_index: usize,
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Option<uuid::Uuid> {
         let Some(old_token) = self.get_by_id(token_id) else {
             return None;
         };
+        let mut token_offset = 0;
 
         // Create a clone of the token to modify in-memory
         let mut working_token = old_token.clone();
@@ -332,21 +331,186 @@ impl TokensCollection {
         );
 
         // Second, re-match the token now that is had been changed
-        let token_offset = 0;
-        let mut match_iterations = 0;
+        let quick_parse_only = false;
+        if !quick_parse_only {
+            println!("REGULAR PARSE:");
+            let mut regular_parse_max_upward_traverals = Some(5);
+            // Start by doing the more technically correct (but also more computationally expensive)
+            // "regular" parse method:
+            //
+            //  Regular parse:
+            //  1. attempt to parse
+            //  2. If it fails, go up a level, and parse again
+            //  3. If after going up a set number of levels things still fail, then do a
+            //     quick parse
+
+            let mut match_iterations = 0;
+            loop {
+                // If we're done with the expensive method, then break
+                if let Some(value) = regular_parse_max_upward_traverals {
+                    if value == 0 {
+                        break;
+                    } else {
+                        regular_parse_max_upward_traverals = Some(value-1);
+                    }
+                };
+
+                println!("offset {}", token_offset);
+                match working_template.consume_from_offset(
+                    &new_text,
+                    token_offset,
+                    working_token.previous_id,
+                    false,
+                    depth,
+                    token_match_templates_map,
+                ) {
+                    Ok((match_status, offset, last_token_id, child_ids, mut new_tokens)) => {
+                        println!("MATCHED ALL? {:?} {:?}", working_token, match_iterations);
+                        if match_status == TokenParseStatus::FullParse {
+                            println!("MATCHED ALL!");
+
+                            // Before doing the token swap, figure out the token that is the final "next" token in the
+                            // token tree
+                            let mut deep_last_referenced_child_id = Some(working_token.id);
+                            loop {
+                                let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
+                                    break;
+                                };
+                                let Some(child_token) = self.get_by_id(
+                                    deep_last_referenced_child_id_unwrapped
+                                ) else {
+                                    break;
+                                };
+                                if let Some(result) = child_token.children_ids.last() {
+                                    deep_last_referenced_child_id = Some(*result);
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            let next_token_id = if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
+                                if let Some(deep_last_referenced_child) = self.get_by_id(deep_last_referenced_child_id) {
+                                    deep_last_referenced_child.next_id
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+
+                            // Third, Remove all tokens in the subtree underneath the matching working token
+                            let subtree_children_ids = match working_token.deep_children(self, match_iterations) {
+                                Some(subtree_children) => {
+                                    subtree_children.iter().map(|t| t.id).collect()
+                                },
+                                _ => vec![],
+                            };
+                            for child_id in subtree_children_ids {
+                                println!("REMOVE TOKEN! {:?} {}", child_id,
+                                self.remove(child_id)
+                                );
+                            };
+                            println!("REMOVE TOKEN! {:?} {}", working_token.id,
+                            self.remove(working_token.id)
+                            );
+
+                            // Fouth, substitute in the new subtree into where the old subtree went
+                            for new_token in new_tokens.tokens {
+                                println!("ADD NEW TOKEN! {:?}", new_token);
+                                self.push(new_token);
+                            };
+
+                            // Link the matching working node to the first child
+                            for child_id in &child_ids {
+                                self.get_by_id_mut(*child_id, |child| {
+                                    child.parent_id = working_token.parent_id;
+                                    println!("CHILD: {:?}", child);
+                                });
+                            };
+
+                            let (
+                                Some(parent_id), // FIXME: it might be wrong to bail if parent_id is None?
+                                Some(first_child_id),
+                                Some(last_child_id),
+                            ) = (working_token.parent_id, child_ids.first(), child_ids.last()) else {
+                                return None;
+                            };
+
+                            let parent = self.get_by_id(parent_id) else {
+                                return None;
+                            };
+
+
+                            self.get_by_id_mut(parent_id, |parent| {
+                                parent.children_ids = child_ids.clone();
+                                parent.next_id = Some(*first_child_id);
+                                println!("PARENT: {:?}", parent);
+                            });
+                            self.get_by_id_mut(*first_child_id, |first_child| {
+                                first_child.previous_id = working_token.parent_id;
+                            });
+
+                            if let Some(last_token_id) = last_token_id {
+                                self.get_by_id_mut(last_token_id, |deep_last_child| {
+                                    deep_last_child.next_id = next_token_id;
+                                });
+                            };
+                            if let Some(next_token_id) = next_token_id {
+                                self.get_by_id_mut(next_token_id, |next_token| {
+                                    next_token.previous_id = last_token_id;
+                                });
+                            };
+
+                            // Fifth, add in the updated token
+                            println!("TOK: {:?}", working_token);
+                            // let first_child = self.get_by_id(*first_child_id).unwrap();
+                            // return first_child.parent_id;
+                            return Some(*first_child_id)
+                        }
+
+                        let Some(parent) = working_token.parent(&self) else {
+                            println!("NO PARENT!");
+                            break;
+                        };
+
+                        match_iterations += 1;
+                        working_template = TokenMatchTemplate::new(
+                            vec![parent.template.clone()],
+                        );
+                        working_token = parent.clone();
+                    }
+                    Err(e) => {
+                        println!("ERROR: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // And if "regular" parse fails, do a quick parse
+        //
+        // Quick parse:
+        // 1. attempt to parse
+        // 2. If it fails, try parsing from begining of string to end of slice range
+        // 3. Keep advancing one character back until you reach the start of the slice
+        //    range
+        // 4. If none of those parses work, then make the whole rest of the token plain
+        //    text and give up
+
+        println!("QUICK PARSE:");
+        let mut previous_id = working_token.previous_id;
         loop {
-            println!("offset {}", token_offset);
             match working_template.consume_from_offset(
                 &new_text,
                 token_offset,
-                working_token.previous_id,
+                previous_id,
+                false,
                 depth,
                 token_match_templates_map,
             ) {
                 Ok((match_status, offset, last_token_id, child_ids, mut new_tokens)) => {
-                    println!("MATCHED ALL? {:?} {:?}", working_token, match_iterations);
-                    if match_status == TokenParseStatus::FullParse {
-                        println!("MATCHED ALL!");
+                    if match_status == TokenParseStatus::FullParse || match_status == TokenParseStatus::PartialParse {
+                        println!("MATCHED! {:?}", match_status);
 
                         // Before doing the token swap, figure out the token that is the final "next" token in the
                         // token tree
@@ -378,7 +542,8 @@ impl TokensCollection {
                         };
 
                         // Third, Remove all tokens in the subtree underneath the matching working token
-                        let subtree_children_ids = match working_token.deep_children(self, match_iterations) {
+                        // FIXME: this maybe should be deep_children
+                        let subtree_children_ids = match working_token.children(self) {
                             Some(subtree_children) => {
                                 subtree_children.iter().map(|t| t.id).collect()
                             },
@@ -442,35 +607,41 @@ impl TokensCollection {
 
                         // Fifth, add in the updated token
                         println!("TOK: {:?}", working_token);
-                        // let first_child = self.get_by_id(*first_child_id).unwrap();
-                        // return first_child.parent_id;
-                        return Some(*first_child_id)
+                        previous_id = next_token_id;
+                        token_offset = offset;
                     }
 
-                    // Quick parse:
-                    // 1. attempt to parse
-                    // 2. If it fails, try parsing from begining of string to end of slice range
-                    // 3. Keep advancing one character back until you reach the start of the slice
-                    //    range
-                    // 4. If none of those parses work, then make the whole rest of the token plain
-                    //    text and give up
-                    //
-                    //  Regular parse:
-                    //  1. attempt to parse
-                    //  2. If it fails, go up a level, and parse again
-                    //  3. If after going up a set number of levels things still fail, then do a
-                    //     quick parse
+                    if match_status == TokenParseStatus::PartialParse {
+                        // If it's a partial parse, then the next character seemingly was a problem
+                        // in the parse matching
+                        //
+                        // So make it a "Temp" and move on
+                        let unparseable_char = new_text.char_indices().find(|(i, _)| *i == token_offset).unwrap().1;
+                        println!("UNPARSABLE CHAR: {}", unparseable_char);
+                        // let new_token = Box::new(Token {
+                        //     id: Uuid::new_v4(),
+                        //     template: TokenMatchTemplateMatcher::Skipped,
+                        //     literal: Some(String::from(literal)),
+                        //     matches: matches,
+                        //     effects: vec![],
+                        //     events: match events {
+                        //         Some(events) => events.clone(),
+                        //         None => TokenEvents::new_empty(),
+                        //     },
+                        //     next_id: None,
+                        //     previous_id: None,
+                        //     parent_id: None,
+                        //     children_ids: vec![],
+                        // });
+                        // new_tokens.push(new_token);
+                        // TODO: add token
+                        token_offset += 1;
+                    }
 
-                    let Some(parent) = working_token.parent(&self) else {
-                        println!("NO PARENT!");
+                    if match_status == TokenParseStatus::Failed {
+                        println!("PARSE FAIL!");
                         break;
-                    };
-
-                    match_iterations += 1;
-                    working_template = TokenMatchTemplate::new(
-                        vec![parent.template.clone()],
-                    );
-                    working_token = parent.clone();
+                    }
                 }
                 Err(e) => {
                     println!("ERROR: {:?}", e);
@@ -560,6 +731,8 @@ pub enum TokenMatchTemplateMatcher {
     RepeatCount(Box<TokenMatchTemplateMatcher>, usize, usize, Option<TokenEvents>),
     RepeatOnceToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
     RepeatZeroToForever(Box<TokenMatchTemplateMatcher>, Option<TokenEvents>),
+
+    Skipped,
 }
 
 impl TokenMatchTemplateMatcher {
