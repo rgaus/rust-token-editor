@@ -1180,6 +1180,62 @@ impl TokenMatchTemplate {
             matched_token_count += 1;
         }
 
+        // When `store_non_parsable_chars` is passed, at the very end of the computation, take all
+        // the remaining characters at the end and add them as TokenMatchTemplateMatcher::Skipped
+        // entries
+        if depth == 0 && matched_partial && store_non_parsable_chars {
+            let remaining_chars = &input[offset..];
+            if remaining_chars.len() > 0 {
+                // Matched the token, but had to skip some characters to get there
+                println!("FINAL UNPARSABLE CHARS: {}", remaining_chars);
+
+                // If a non parsable character hasn't been found yet in the stream,
+                // then note this one down as the first occurance.
+                //
+                // This data is used by the caller to weight different branches in the
+                // parse tree and figure out which one to pick
+                if first_non_parsable_char_index.is_none() {
+                    first_non_parsable_char_index = Some(offset);
+                }
+
+                let mut new_token = Box::new(Token {
+                    id: Uuid::new_v4(),
+                    template: TokenMatchTemplateMatcher::Skipped,
+                    literal: Some(String::from(remaining_chars)),
+                    matches: HashMap::new(),
+                    effects: vec![],
+                    events: TokenEvents::new_empty(),
+                    next_id: None,
+                    previous_id: None,
+                    parent_id: None,
+                    children_ids: vec![],
+                });
+                // if let Some(on_enter) = new_token.events.on_enter {
+                //     on_enter(&mut new_token);
+                // }
+
+                child_ids.push(new_token.id);
+
+                // println!("RW: {:?} <- {:?}", new_token.id, last_token_id);
+                previous_id_mapping.insert(new_token.id, last_token_id);
+                if let Some(last_token_id_unwrapped) = last_token_id {
+                    // println!("RW: {:?} -> {:?}", last_token_id_unwrapped, Some(new_token.id));
+                    next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                }
+                last_token_id = Some(new_token.id);
+
+                tokens.push(new_token);
+
+                // Update the offset in the token stream to the place where the token
+                // was found
+                offset += remaining_chars.len();
+
+                // Special case: Because this "eats up" the whole match, it's no longer a partial
+                // match
+                matched_partial = false;
+            }
+        }
+
         let parented_tokens: Vec<Box<Token>> = tokens.tokens.into_iter().map(|mut token| {
             if let Some(next_id) = next_id_mapping.get(&token.id) {
                 // println!("  NEXT SET: {} {:?}", token.id, next_id);
