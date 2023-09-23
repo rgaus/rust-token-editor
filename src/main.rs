@@ -467,14 +467,6 @@ fn main() {
 mod test_parsing {
     use super::*;
 
-    #[test]
-    fn it_works() {
-        let a = TokensCollection::new_empty();
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-
-
     mod mini_language_twelve {
         use super::*;
 
@@ -756,7 +748,7 @@ mod test_parsing {
             ]));
             token_match_templates_map.insert("Integer", TokenMatchTemplate::new(vec![
                 TokenMatchTemplateMatcher::regex(
-                    Regex::new(r"^(?<value>-?[0-9])").unwrap(),
+                    Regex::new(r"^(?<value>-?[0-9]+)").unwrap(),
                 ),
             ]));
 
@@ -803,6 +795,96 @@ mod test_parsing {
             assert_eq!(result.3.len(), 1); // child_ids
             assert_eq!(result.4.tokens.len(), 23); // tokens_collection
             assert_eq!(result.4.stringify(), "1+(5*6)");
+        }
+
+        #[test]
+        fn it_partially_parses_1_plus_as_just_one() {
+            let template_map = initialize_mini_language_math();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("1+", false, &template_map).unwrap();
+            // dump(result.3[0], &result.4.tokens);
+            assert_eq!(result.0, TokenParseStatus::FullParse); // status
+            assert_eq!(result.1, 1); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 3); // tokens_collection
+
+            // NOTE: `store_non_parsable_chars` is not set! So the non matching last character
+            // should not be included
+            assert_eq!(result.4.stringify(), "1");
+        }
+    }
+
+    mod mini_language_looping_expressions {
+        use super::*;
+
+        // This mini language implements a series of strings and numbers with whitespace in between
+        fn initialize_mini_language_looping_expressions() -> HashMap<&'static str, TokenMatchTemplate> {
+            let mut token_match_templates_map = HashMap::new();
+            token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
+                    TokenMatchTemplateMatcher::any(vec![
+                        TokenMatchTemplateMatcher::reference("Whitespace"),
+                        TokenMatchTemplateMatcher::reference("String"),
+                        TokenMatchTemplateMatcher::reference("PositiveInteger"),
+                    ]),
+                )),
+            ]));
+            token_match_templates_map.insert("String", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::raw("'"),
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^(?<literal>[^']*)").unwrap(),
+                ),
+                TokenMatchTemplateMatcher::raw("'"),
+            ]));
+            token_match_templates_map.insert("PositiveInteger", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^(?<value>[0-9]+)").unwrap(),
+                ),
+            ]));
+            token_match_templates_map.insert("Whitespace", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^\s+").unwrap(),
+                ),
+            ]));
+
+            token_match_templates_map
+        }
+
+        #[test]
+        fn it_fully_parses_abc_enter_123() {
+            let template_map = initialize_mini_language_looping_expressions();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("'abc'\n123", false, &template_map).unwrap();
+            dump(result.3[0], &result.4.tokens);
+            assert_eq!(result.0, TokenParseStatus::FullParse); // status
+            assert_eq!(result.1, 9); // offset
+            assert_eq!(result.3.len(), 3); // child_ids
+            assert_eq!(result.4.tokens.len(), 14); // tokens_collection
+            assert_eq!(result.4.stringify(), "'abc'\n123");
+        }
+
+        #[test]
+        fn it_fully_parses_quote_123_quote_as_string() {
+            let template_map = initialize_mini_language_looping_expressions();
+            let all_template = template_map.get("All").unwrap();
+
+            let result = all_template.consume_from_start("'123'", false, &template_map).unwrap();
+            dump(result.3[0], &result.4.tokens);
+            assert_eq!(result.0, TokenParseStatus::FullParse); // status
+            assert_eq!(result.1, 5); // offset
+            assert_eq!(result.3.len(), 1); // child_ids
+            assert_eq!(result.4.tokens.len(), 6); // tokens_collection
+            assert_eq!(result.4.stringify(), "'123'");
+
+            // Make sure that there is a String somewhere in the token collection
+            let root_node = result.4.get_first_root_node().unwrap();
+            let matching_node = root_node.find_deep_child(&result.4, 100, |token| match token {
+                Token { template: TokenMatchTemplateMatcher::Reference("String", _), .. } => true,
+                _ => false,
+            });
+            assert!(matching_node.is_some());
         }
     }
 
