@@ -343,9 +343,9 @@ impl TokensCollection {
                 depth,
                 token_match_templates_map,
             ) {
-                Ok((matched_all, _matched_partial, offset, last_token_id, child_ids, mut new_tokens)) => {
+                Ok((match_status, offset, last_token_id, child_ids, mut new_tokens)) => {
                     println!("MATCHED ALL? {:?} {:?}", working_token, match_iterations);
-                    if matched_all {
+                    if match_status == TokenParseStatus::FullParse {
                         println!("MATCHED ALL!");
 
                         // Before doing the token swap, figure out the token that is the final "next" token in the

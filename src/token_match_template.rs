@@ -12,6 +12,14 @@ use crate::token::*;
 const TOKEN_MATCH_TEMPLATE_FOREVER_MAX_DEPTH: usize = 99;
 
 #[derive(Debug)]
+#[derive(PartialEq)] 
+pub enum TokenParseStatus {
+    Failed,
+    FullParse,
+    PartialParse,
+}
+
+#[derive(Debug)]
 #[derive(Clone)]
 pub struct TokenMatchTemplate {
     matcher: Vec<TokenMatchTemplateMatcher>,
@@ -30,7 +38,7 @@ impl TokenMatchTemplate {
         &self,
         input: &str,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
+    ) -> Result<(TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
         self.consume_from_offset(input, 0, None, 0, token_match_templates_map)
     }
 
@@ -41,18 +49,18 @@ impl TokenMatchTemplate {
         initial_last_token_id: Option<uuid::Uuid>,
         depth: usize,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Result<(bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
+    ) -> Result<(TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
         let mut tokens = TokensCollection::new_empty();
         let mut offset = initial_offset;
         let mut child_ids: Vec<uuid::Uuid> = vec![];
 
         if depth > TOKEN_MATCH_TEMPLATE_FOREVER_MAX_DEPTH {
-            return Ok((false, false, offset, initial_last_token_id, child_ids, tokens))
+            return Ok((TokenParseStatus::Failed, offset, initial_last_token_id, child_ids, tokens))
         };
 
         // An empty input should fail to parse
         if input.len() == 0 {
-            return Ok((false, false, offset, initial_last_token_id, child_ids, tokens))
+            return Ok((TokenParseStatus::Failed, offset, initial_last_token_id, child_ids, tokens))
         };
 
         let mut depth_spaces = String::from("");
@@ -127,8 +135,7 @@ impl TokenMatchTemplate {
                     };
 
                     let Ok((
-                        referenced_matched_all_tokens,
-                        referenced_matched_partial,
+                        referenced_parse_status,
                         referenced_template_offset,
                         _referenced_last_token_id,
                         referenced_child_ids,
@@ -142,12 +149,12 @@ impl TokenMatchTemplate {
                     ) else {
                         break;
                     };
-                    println!("{}`-- (referenced_matched_all_tokens={} referenced_matched_partial={})", depth_spaces, referenced_matched_all_tokens, referenced_matched_partial);
-                    if !referenced_matched_all_tokens && !referenced_matched_partial {
+                    println!("{}`-- (referenced_parse_status={:?})", depth_spaces, referenced_parse_status);
+                    if referenced_parse_status == TokenParseStatus::Failed {
                         break;
                     };
                     // If this reference matched partially, then this next match also is partial
-                    if referenced_matched_partial {
+                    if referenced_parse_status == TokenParseStatus::PartialParse {
                         matched_partial = true;
                     };
 
@@ -237,7 +244,7 @@ impl TokenMatchTemplate {
                     offset = referenced_template_offset;
                 }
                 TokenMatchTemplateMatcher::Regex(re, negated_re, events) => {
-                    println!("{}REGEX({:?}): {} {}", depth_spaces, re, escaped_offsetted_input, offset);
+                    println!("{}REGEX({:?}, {:?}): {} {}", depth_spaces, re, negated_re, escaped_offsetted_input, offset);
                     // ref: https://stackoverflow.com/a/39239614/4115328
                     match re.captures(offsetted_input) {
                         Some(captures) => {
@@ -312,11 +319,11 @@ impl TokenMatchTemplate {
                     println!("{}ANY: {:?} {} {}", depth_spaces, matchers, escaped_offsetted_input, offset);
                     let mut full_match: Option<(
                         Box<Token>,
-                        (bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
+                        (TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
                     )> = None;
                     let mut largest_partial_match: (usize, Option<(
                         Box<Token>,
-                        (bool, bool, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
+                        (TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
                     )>) = (0, None);
 
                     // Attempt to find a pattern that fully matches
@@ -347,8 +354,7 @@ impl TokenMatchTemplate {
                         }
 
                         let Ok((
-                            ephemeral_matched_all_tokens,
-                            ephemeral_matched_partial,
+                            ephemeral_parse_status,
                             ephemeral_offset,
                             ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -364,11 +370,10 @@ impl TokenMatchTemplate {
                         };
 
                         // If a full match was found, then we're done
-                        if ephemeral_matched_all_tokens && !ephemeral_matched_partial && ephemeral_offset != offset {
-                        // if ephemeral_matched_all_tokens && !ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::FullParse && ephemeral_offset != offset {
+                        // if ephemeral_parse_status == TokenParseStatus::FullParse {
                             full_match = Some((new_token, (
-                                ephemeral_matched_all_tokens,
-                                ephemeral_matched_partial,
+                                ephemeral_parse_status,
                                 ephemeral_offset,
                                 ephemeral_last_token_id,
                                 ephemeral_child_ids,
@@ -380,12 +385,11 @@ impl TokenMatchTemplate {
                         // If a partial match was found, then store it for later
                         // If there are no full matches, this might be the best option we
                         // could do
-                        if ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
                             let chars_matched = ephemeral_offset - offset;
                             if chars_matched > largest_partial_match.0 {
                                 largest_partial_match = (chars_matched, Some((new_token, (
-                                    ephemeral_matched_all_tokens,
-                                    ephemeral_matched_partial,
+                                    ephemeral_parse_status,
                                     ephemeral_offset,
                                     ephemeral_last_token_id,
                                     ephemeral_child_ids,
@@ -408,8 +412,7 @@ impl TokenMatchTemplate {
                         None
                     };
                     let Some((mut new_token, (
-                        ephemeral_matched_all_tokens,
-                        ephemeral_matched_partial,
+                        ephemeral_parse_status,
                         ephemeral_offset,
                         ephemeral_last_token_id,
                         ephemeral_child_ids,
@@ -420,7 +423,7 @@ impl TokenMatchTemplate {
                     };
 
                     // If this reference matched partially, then this next match also is partial
-                    if ephemeral_matched_partial {
+                    if ephemeral_parse_status == TokenParseStatus::PartialParse {
                         matched_partial = true;
                     };
 
@@ -528,8 +531,7 @@ impl TokenMatchTemplate {
                         }
 
                         let Ok((
-                            ephemeral_matched_all_tokens,
-                            ephemeral_matched_partial,
+                            ephemeral_parse_status,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -546,7 +548,7 @@ impl TokenMatchTemplate {
                         };
 
                         // only actually store new tokens if a match was found
-                        if !ephemeral_matched_all_tokens && !ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::Failed {
                             match_failed = true;
                             break;
                         }
@@ -620,7 +622,7 @@ impl TokenMatchTemplate {
 
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
-                        if ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
                             matched_partial = true;
                             break;
                         };
@@ -672,8 +674,7 @@ impl TokenMatchTemplate {
                         }
 
                         let Ok((
-                            ephemeral_matched_all_tokens,
-                            ephemeral_matched_partial,
+                            ephemeral_parse_status,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -688,7 +689,7 @@ impl TokenMatchTemplate {
                             break;
                         };
                         // only actually store a new token if a match was found
-                        if !ephemeral_matched_all_tokens && !ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::Failed {
                             break;
                         }
                         matched_at_least_once = true;
@@ -765,7 +766,7 @@ impl TokenMatchTemplate {
 
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
-                        if ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
                             matched_partial = true;
                             break;
                         };
@@ -830,8 +831,7 @@ impl TokenMatchTemplate {
                         }
 
                         let Ok((
-                            ephemeral_matched_all_tokens,
-                            ephemeral_matched_partial,
+                            ephemeral_parse_status,
                             ephemeral_offset,
                             _ephemeral_last_token_id,
                             ephemeral_child_ids,
@@ -847,7 +847,7 @@ impl TokenMatchTemplate {
                         };
 
                         // only actually store a new token if a match was found
-                        if !ephemeral_matched_all_tokens && !ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::Failed {
                             break;
                         }
 
@@ -922,7 +922,7 @@ impl TokenMatchTemplate {
 
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
-                        if ephemeral_matched_partial {
+                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
                             matched_partial = true;
                             break;
                         };
@@ -967,7 +967,14 @@ impl TokenMatchTemplate {
 
         let matched_all_tokens = matched_token_count == self.matcher.len();
         println!("{}`-- matched_token_count={} self.matcher.len()={}", depth_spaces, matched_token_count, self.matcher.len());
-        println!("{}`-- matched_all_tokens={} matched_partial={}", depth_spaces, matched_all_tokens, matched_partial);
-        Ok((matched_all_tokens, matched_partial, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens)))
+        let status = if matched_partial {
+            TokenParseStatus::PartialParse
+        } else if matched_all_tokens {
+            TokenParseStatus::FullParse
+        } else {
+            TokenParseStatus::Failed
+        };
+        println!("{}`-- matched_all_tokens={} matched_partial={} status={:?}", depth_spaces, matched_all_tokens, matched_partial, status);
+        Ok((status, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens)))
     }
 }
