@@ -89,6 +89,19 @@ impl TokenMatchTemplate {
                 break;
             };
 
+            // When `store_non_parsable_chars` is enabled, attempt to look forward to find
+            // a match if the match didn't work
+            let should_look_for_non_parsable_chars = if offset > 0 {
+                // When not at the very start, look for characters only after the first token
+                // parses. This ensures that the parser doesn't wrongly assume a branch matches
+                // because it matched some non parsable stuff at the beginning of a match.
+                offset != initial_offset
+            } else {
+                // If at the very start, then matching characters at the start is fine so that
+                // any bogus chars before the match are captured
+                true
+            };
+
             let offsetted_input = &input[offset..];
             let escaped_offsetted_input = format!("`{}`", offsetted_input.replace("\n", "\\n"));
             match template_matcher {
@@ -98,16 +111,7 @@ impl TokenMatchTemplate {
 
                     // When `store_non_parsable_chars` is enabled, attempt to look forward to find
                     // a match if the match didn't work
-                    let should_look_for_chars = if offset > 0 {
-                        // When not at the very start, look for characters only after the first token
-                        // parses
-                        offset != initial_offset
-                    } else {
-                        // If at the very start, then matching characters at the start is fine so that
-                        // any bogus chars before the match are captured
-                        true
-                    };
-                    if !matched && store_non_parsable_chars && should_look_for_chars {
+                    if !matched && store_non_parsable_chars && should_look_for_non_parsable_chars {
                         let mut matched_at_index = None;
                         for index in offset..input.len() {
                             if input[index..].starts_with(raw) {
@@ -317,75 +321,139 @@ impl TokenMatchTemplate {
                 }
                 TokenMatchTemplateMatcher::Regex(re, negated_re, events) => {
                     println!("{}REGEX({:?}, {:?}): {} {}", depth_spaces, re, negated_re, escaped_offsetted_input, offset);
+
+                    let mut matched_captures: Option<regex::Captures> = None;
+
                     // ref: https://stackoverflow.com/a/39239614/4115328
-                    match re.captures(offsetted_input) {
-                        Some(captures) => {
-                            let Some(whole_match) = captures.get(0) else {
+                    if let Some(captures) = re.captures(offsetted_input) {
+                        matched_captures = Some(captures);
+                    }
+
+                    // When `store_non_parsable_chars` is enabled, attempt to look forward to find
+                    // a match if the match didn't work
+                    if matched_captures.is_none() && store_non_parsable_chars && should_look_for_non_parsable_chars {
+                        let mut matched_at_index = None;
+                        for index in offset..input.len() {
+                            // ref: https://stackoverflow.com/a/39239614/4115328
+                            if let Some(captures) = re.captures(&input[index..]) {
+                                matched_captures = Some(captures);
+                                matched_at_index = Some(index);
+                                println!("MATCHED AT INDEX: {}", index);
                                 break;
-                            };
-                            let literal = whole_match.as_str();
-
-                            // The optional negated_re parameter allows a secondary regex to be run
-                            // on the match of the first regex, and if it matches, it fails the
-                            // match
-                            if let Some(negated_re_unwrapped) = negated_re {
-                                if let Some(_) = negated_re_unwrapped.captures(literal) {
-                                    break;
-                                }
                             }
+                        }
 
-                            let mut matches = HashMap::new();
-                            for name in re.capture_names() {
-                                let Some(name) = name else {
-                                    continue;
-                                };
+                        if let Some(index) = matched_at_index {
+                            // Matched the token, but had to skip some characters to get there
+                            println!("UNPARSABLE CHARS: {} {} {}", offset, index, &input[offset..index]);
 
-                                let Some(value) = captures.name(name) else {
-                                    continue;
-                                };
-
-                                matches.insert(name.to_string(), TokenMatch {
-                                    start: value.start(),
-                                    end: value.end(),
-                                    global_start: offset + value.start(),
-                                    global_end: offset + value.end(),
-                                    string: value.as_str().to_string(),
-                                });
-                            }
-
-                            let new_token = Box::new(Token {
+                            let mut new_token = Box::new(Token {
                                 id: Uuid::new_v4(),
-                                template: template_matcher.clone(),
-                                literal: Some(String::from(literal)),
-                                matches: matches,
+                                template: TokenMatchTemplateMatcher::Skipped,
+                                literal: Some(String::from(&input[offset..index])),
+                                matches: HashMap::new(),
                                 effects: vec![],
-                                events: match events {
-                                    Some(events) => events.clone(),
-                                    None => TokenEvents::new_empty(),
-                                },
+                                events: TokenEvents::new_empty(),
                                 next_id: None,
                                 previous_id: None,
                                 parent_id: None,
                                 children_ids: vec![],
                             });
+                            // if let Some(on_enter) = new_token.events.on_enter {
+                            //     on_enter(&mut new_token);
+                            // }
+
                             child_ids.push(new_token.id);
 
-                            // println!("RX: {:?} <- {:?}", new_token.id, last_token_id);
+                            // println!("RW: {:?} <- {:?}", new_token.id, last_token_id);
                             previous_id_mapping.insert(new_token.id, last_token_id);
                             if let Some(last_token_id_unwrapped) = last_token_id {
-                                // println!("RX: {:?} -> {:?}", last_token_id_unwrapped, Some(new_token.id));
+                                // println!("RW: {:?} -> {:?}", last_token_id_unwrapped, Some(new_token.id));
                                 next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
                             }
                             last_token_id = Some(new_token.id);
 
                             tokens.push(new_token);
 
-                            offset += whole_match.len();
-                        }
-                        None => {
+                            // If characters had to be skipped, it's definitely a partial match
+                            matched_partial = true;
+
+                            // Update the offset in the token stream to the place where the token
+                            // was found
+                            offset = index;
+                            // matched_captures is set earlier above
+                        } else {
+                            // Did not match the token!
                             break;
                         }
                     }
+
+                    let Some(captures) = matched_captures else {
+                        break;
+                    };
+
+
+                    let Some(whole_match) = captures.get(0) else {
+                        break;
+                    };
+                    let literal = whole_match.as_str();
+
+                    // The optional negated_re parameter allows a secondary regex to be run
+                    // on the match of the first regex, and if it matches, it fails the
+                    // match
+                    if let Some(negated_re_unwrapped) = negated_re {
+                        if let Some(_) = negated_re_unwrapped.captures(literal) {
+                            break;
+                        }
+                    }
+
+                    let mut matches = HashMap::new();
+                    for name in re.capture_names() {
+                        let Some(name) = name else {
+                            continue;
+                        };
+
+                        let Some(value) = captures.name(name) else {
+                            continue;
+                        };
+
+                        matches.insert(name.to_string(), TokenMatch {
+                            start: value.start(),
+                            end: value.end(),
+                            global_start: offset + value.start(),
+                            global_end: offset + value.end(),
+                            string: value.as_str().to_string(),
+                        });
+                    }
+
+                    let new_token = Box::new(Token {
+                        id: Uuid::new_v4(),
+                        template: template_matcher.clone(),
+                        literal: Some(String::from(literal)),
+                        matches: matches,
+                        effects: vec![],
+                        events: match events {
+                            Some(events) => events.clone(),
+                            None => TokenEvents::new_empty(),
+                        },
+                        next_id: None,
+                        previous_id: None,
+                        parent_id: None,
+                        children_ids: vec![],
+                    });
+                    child_ids.push(new_token.id);
+
+                    // println!("RX: {:?} <- {:?}", new_token.id, last_token_id);
+                    previous_id_mapping.insert(new_token.id, last_token_id);
+                    if let Some(last_token_id_unwrapped) = last_token_id {
+                        // println!("RX: {:?} -> {:?}", last_token_id_unwrapped, Some(new_token.id));
+                        next_id_mapping.insert(last_token_id_unwrapped, Some(new_token.id));
+                    }
+                    last_token_id = Some(new_token.id);
+
+                    tokens.push(new_token);
+
+                    offset += whole_match.len();
                 }
                 TokenMatchTemplateMatcher::Any(matchers, events) => {
                     println!("{}ANY: {:?} {} {}", depth_spaces, matchers, escaped_offsetted_input, offset);
