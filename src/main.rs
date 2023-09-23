@@ -101,8 +101,8 @@ fn stringify_colors(
                 "bright_purple" => literal_text.clone().bright_purple(),
                 _ | "normal" => literal_text.clone().normal(),
             };
-            result = format!("{}{}", result, colored_literal_text);
-            // println!("{}", colored_literal_text);
+            // result = format!("{}{}", result, colored_literal_text);
+            println!("{}", colored_literal_text);
         };
         if let Some(next_pointer_id) = pointer.next_id {
             pointer_id = next_pointer_id;
@@ -384,8 +384,10 @@ fn main() {
 //     }
 // }";
 
-    // let input = "{let a = ['aaa', ['cc', 'bbb']]}";
-    let input = "let @a = 'fo'@@";
+    let input = "{let a = ['aaa', ['cc', 'bbb']]}";
+    // let input = "{let a = ['aaa', [@'cc', 'bbb']]}";
+    // let input = "let a = ['aaa'@, 1]";
+    // let input = "let @a = 'fo'@@";
     // let input = "456";
 
     // let input = "1aa1bb";
@@ -423,6 +425,7 @@ fn main() {
                 //
                 // let token_id = {
                 //     let (token, _) = tokens_collection.get_by_offset(13).unwrap();
+                //     println!("TOK: {:?}", token);
                 //     token.id
                 // };
                 //
@@ -652,7 +655,7 @@ mod test_parsing {
                 assert_eq!(result.0, TokenParseStatus::PartialParse(9, Some(0))); // status
                 assert_eq!(result.1, 9); // offset
                 assert_eq!(result.3.len(), 2); // child_ids
-                assert_eq!(result.4.tokens.len(), 9); // tokens_collection
+                assert_eq!(result.4.tokens.len(), 12); // tokens_collection
                 assert_eq!(result.4.stringify(), "AA11BB2CC");
             }
 

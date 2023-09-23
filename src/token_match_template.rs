@@ -67,8 +67,8 @@ impl TokenMatchTemplate {
 
         let mut depth_spaces = String::from("");
         for _ in 0..depth {
-            depth_spaces = format!("{}| ", depth_spaces);
-            // depth_spaces = format!("{}  ", depth_spaces);
+            // depth_spaces = format!("{}| ", depth_spaces);
+            depth_spaces = format!("{}  ", depth_spaces);
         }
 
         let mut last_token_id: Option<uuid::Uuid> = initial_last_token_id;
@@ -847,7 +847,6 @@ impl TokenMatchTemplate {
                                 first_non_parsable_char_index = Some(value);
                             }
                             matched_partial = true;
-                            break;
                         };
                     }
                     println!("{}`-- match_failed={}", depth_spaces, match_failed);
@@ -912,10 +911,22 @@ impl TokenMatchTemplate {
                         ) else {
                             break;
                         };
+
                         // only actually store a new token if a match was found
                         if ephemeral_parse_status == TokenParseStatus::Failed {
                             break;
                         }
+
+                        // A partial parse isn't good enough when its possible for it to match zero
+                        // times on the first match at the start of the input. This means that the
+                        // pattern is really being stretched to try to force fit the input when it
+                        // should just be considered a non-match.
+                        if let TokenParseStatus::PartialParse(_, Some(first_non_parsable_char_index)) = ephemeral_parse_status {
+                            if *min_repeats == 0 && repeat_count == 0 && first_non_parsable_char_index == new_offset {
+                                break;
+                            }
+                        }
+
                         matched_at_least_once = true;
 
                         // Another match was found, so store another generated token
@@ -991,14 +1002,14 @@ impl TokenMatchTemplate {
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
                         if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = ephemeral_parse_status {
+                            matched_partial = true;
+
                             if let Some(value) = first_non_parsable_char_index_temp {
                                 first_non_parsable_char_index = Some(value);
                             }
-                            matched_partial = true;
-                            break;
                         };
                     }
-                    println!("{}`-- (matched_at_least_once={} repeat_count={})", depth_spaces, matched_at_least_once, repeat_count);
+                    println!("{}`-- (matched_at_least_once={} matched_partial={} repeat_count={})", depth_spaces, matched_at_least_once, matched_partial, repeat_count);
 
                     // NOTE: if the repeat count can be zero and the match fails, that is totally
                     // fine
@@ -1079,6 +1090,16 @@ impl TokenMatchTemplate {
                             break;
                         }
 
+                        // A partial parse isn't good enough when its possible for it to match zero
+                        // times on the first match at the start of the input. This means that the
+                        // pattern is really being stretched to try to force fit the input when it
+                        // should just be considered a non-match.
+                        if let TokenParseStatus::PartialParse(_, Some(first_non_parsable_char_index)) = ephemeral_parse_status {
+                            if min_repeats == 0 && repeat_count == 0 && first_non_parsable_char_index == new_offset {
+                                break;
+                            }
+                        }
+
                         // Another match was found, so store another generated token
                         repeat_count += 1;
                         new_offset = ephemeral_offset;
@@ -1155,7 +1176,6 @@ impl TokenMatchTemplate {
                                 first_non_parsable_char_index = Some(value);
                             }
                             matched_partial = true;
-                            break;
                         };
                     }
                     println!("{}`-- (offset={} repeat_count={})", depth_spaces, offset, repeat_count);
