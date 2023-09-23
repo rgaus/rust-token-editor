@@ -16,7 +16,7 @@ const TOKEN_MATCH_TEMPLATE_FOREVER_MAX_DEPTH: usize = 99;
 pub enum TokenParseStatus {
     Failed,
     FullParse,
-    PartialParse,
+    PartialParse(usize /* chars_matched */, Option<usize> /* first_non_parsable_char_index */),
 }
 
 #[derive(Debug)]
@@ -77,6 +77,7 @@ impl TokenMatchTemplate {
 
         let mut matched_token_count = 0;
         let mut matched_partial = false;
+        let mut first_non_parsable_char_index: Option<usize> = None;
 
         for template_matcher in &self.matcher {
             if offset > input.len()-1 {
@@ -91,15 +92,20 @@ impl TokenMatchTemplate {
 
             // When `store_non_parsable_chars` is enabled, attempt to look forward to find
             // a match if the match didn't work
-            let should_look_for_non_parsable_chars = if offset > 0 {
+            let should_look_for_non_parsable_chars = if offset == 0 {
+                // If at the very start, then matching characters at the start is fine so that
+                // any bogus chars before the match are captured
+                true
+            } else if self.matcher.len() == 1 {
+                // If there is only one token to be matched, then any characters before won't
+                // force the system down a complicated branch since there is only one token
+                // This is meant to hit in cases like an REF(identifier) containing a single REGEX
+                true
+            } else {
                 // When not at the very start, look for characters only after the first token
                 // parses. This ensures that the parser doesn't wrongly assume a branch matches
                 // because it matched some non parsable stuff at the beginning of a match.
                 offset != initial_offset
-            } else {
-                // If at the very start, then matching characters at the start is fine so that
-                // any bogus chars before the match are captured
-                true
             };
 
             let offsetted_input = &input[offset..];
@@ -124,6 +130,15 @@ impl TokenMatchTemplate {
                         if let Some(index) = matched_at_index {
                             // Matched the token, but had to skip some characters to get there
                             println!("UNPARSABLE CHARS: {} {} {}", offset, index, &input[offset..index]);
+
+                            // If a non parsable character hasn't been found yet in the stream,
+                            // then note this one down as the first occurance.
+                            //
+                            // This data is used by the caller to weight different branches in the
+                            // parse tree and figure out which one to pick
+                            if first_non_parsable_char_index.is_none() {
+                                first_non_parsable_char_index = Some(offset);
+                            }
 
                             let mut new_token = Box::new(Token {
                                 id: Uuid::new_v4(),
@@ -230,7 +245,10 @@ impl TokenMatchTemplate {
                         break;
                     };
                     // If this reference matched partially, then this next match also is partial
-                    if referenced_parse_status == TokenParseStatus::PartialParse {
+                    if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = referenced_parse_status {
+                        if let Some(value) = first_non_parsable_char_index_temp {
+                            first_non_parsable_char_index = Some(value);
+                        }
                         matched_partial = true;
                     };
 
@@ -347,6 +365,15 @@ impl TokenMatchTemplate {
                             // Matched the token, but had to skip some characters to get there
                             println!("UNPARSABLE CHARS: {} {} {}", offset, index, &input[offset..index]);
 
+                            // If a non parsable character hasn't been found yet in the stream,
+                            // then note this one down as the first occurance.
+                            //
+                            // This data is used by the caller to weight different branches in the
+                            // parse tree and figure out which one to pick
+                            if first_non_parsable_char_index.is_none() {
+                                first_non_parsable_char_index = Some(offset);
+                            }
+
                             let mut new_token = Box::new(Token {
                                 id: Uuid::new_v4(),
                                 template: TokenMatchTemplateMatcher::Skipped,
@@ -461,10 +488,10 @@ impl TokenMatchTemplate {
                         Box<Token>,
                         (TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
                     )> = None;
-                    let mut largest_partial_match: (usize, Option<(
+                    let mut largest_partial_match: (usize, Option<usize>, Option<(
                         Box<Token>,
                         (TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection),
-                    )>) = (0, None);
+                    )>) = (0, None, None);
 
                     // Attempt to find a pattern that fully matches
                     // And if one cannot be found, then find the largest partial match and go with
@@ -526,17 +553,62 @@ impl TokenMatchTemplate {
                         // If a partial match was found, then store it for later
                         // If there are no full matches, this might be the best option we
                         // could do
-                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
-                            let chars_matched = ephemeral_offset - offset;
-                            if chars_matched > largest_partial_match.0 {
-                                largest_partial_match = (chars_matched, Some((new_token, (
-                                    ephemeral_parse_status,
-                                    ephemeral_offset,
-                                    ephemeral_last_token_id,
-                                    ephemeral_child_ids,
-                                    ephemeral_tokens,
-                                ))));
+                        if let TokenParseStatus::PartialParse(
+                            number_of_chars_matched,
+                            first_non_parsable_char_index,
+                        ) = ephemeral_parse_status {
+                            let pick_new = if let Some(existing_non_parsable_char_start_index) = largest_partial_match.1 {
+                                // The existing match DOES have non parsable characters
+                                // Does the current match?
+                                if let Some(first_non_parsable_char_index) = first_non_parsable_char_index {
+                                    // println!("BOTH HAVE NON PARSABLE");
+                                    // Both matches do have non parsable characters, so pick the
+                                    // match where the non parsable characters begin later in the
+                                    // token stream
+                                    let new_non_parsables_start_later = (
+                                        existing_non_parsable_char_start_index < first_non_parsable_char_index
+                                    );
+                                    new_non_parsables_start_later
+                                } else {
+                                    // println!("OLD HAS NON PARSABLE");
+                                    // The new match is a better match since it has no non
+                                    // parsable chars
+                                    true
+                                }
+                            } else {
+                                // The existing match DOES NOT have non parsable characters
+                                // Does the current match?
+                                if let Some(first_non_parsable_char_index) = first_non_parsable_char_index {
+                                    // println!("NEW HAS NON PARSABLE");
+                                    // The existing match is a better match since it has no non
+                                    // parsable chars
+
+                                    // If there is no existing match yet though, this one is the
+                                    // best we've got
+                                    let no_existing_match = largest_partial_match.2.is_none();
+                                    no_existing_match
+                                } else {
+                                    // println!("BOTH FULLY PARSABLE");
+                                    // Both matches do NOT have non parsable characters
+                                    // So the longest match should win!
+                                    let is_largest_match = number_of_chars_matched > largest_partial_match.0;
+                                    is_largest_match
+                                }
                             };
+
+                            if pick_new {
+                                largest_partial_match = (
+                                    number_of_chars_matched,
+                                    first_non_parsable_char_index,
+                                    Some((new_token, (
+                                        ephemeral_parse_status,
+                                        ephemeral_offset,
+                                        ephemeral_last_token_id,
+                                        ephemeral_child_ids,
+                                        ephemeral_tokens,
+                                    ))),
+                                );
+                            }
                         };
                     };
 
@@ -544,10 +616,13 @@ impl TokenMatchTemplate {
                         Some(_) => true,
                         _ => false,
                     };
-                    println!("{}`-- (fully_matched={} largest_partial_match.0={})", depth_spaces, fully_matched, largest_partial_match.0);
+                    println!("{}`-- (fully_matched={} largest_partial_match.0={} largest_partial_match.1={:?})", depth_spaces, fully_matched, largest_partial_match.0, largest_partial_match.1);
                     let result = if let Some(result) = full_match {
                         Some(result)
-                    } else if let Some(result) = largest_partial_match.1 {
+                    } else if let (_, first_non_parsable_char_index_temp, Some(result)) = largest_partial_match {
+                        if let Some(value) = first_non_parsable_char_index_temp {
+                            first_non_parsable_char_index = Some(value);
+                        }
                         Some(result)
                     } else {
                         None
@@ -564,7 +639,10 @@ impl TokenMatchTemplate {
                     };
 
                     // If this reference matched partially, then this next match also is partial
-                    if ephemeral_parse_status == TokenParseStatus::PartialParse {
+                    if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = ephemeral_parse_status {
+                        if let Some(value) = first_non_parsable_char_index_temp {
+                            first_non_parsable_char_index = Some(value);
+                        }
                         matched_partial = true;
                     };
 
@@ -764,7 +842,10 @@ impl TokenMatchTemplate {
 
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
-                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
+                        if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = ephemeral_parse_status {
+                            if let Some(value) = first_non_parsable_char_index_temp {
+                                first_non_parsable_char_index = Some(value);
+                            }
                             matched_partial = true;
                             break;
                         };
@@ -909,7 +990,10 @@ impl TokenMatchTemplate {
 
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
-                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
+                        if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = ephemeral_parse_status {
+                            if let Some(value) = first_non_parsable_char_index_temp {
+                                first_non_parsable_char_index = Some(value);
+                            }
                             matched_partial = true;
                             break;
                         };
@@ -1066,7 +1150,10 @@ impl TokenMatchTemplate {
 
                         // If this reference matched partially, then we're done since this is where
                         // the parser looses track of where it's going
-                        if ephemeral_parse_status == TokenParseStatus::PartialParse {
+                        if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = ephemeral_parse_status {
+                            if let Some(value) = first_non_parsable_char_index_temp {
+                                first_non_parsable_char_index = Some(value);
+                            }
                             matched_partial = true;
                             break;
                         };
@@ -1118,7 +1205,7 @@ impl TokenMatchTemplate {
         let matched_all_tokens = matched_token_count == self.matcher.len();
         println!("{}`-- matched_token_count={} self.matcher.len()={}", depth_spaces, matched_token_count, self.matcher.len());
         let status = if matched_partial {
-            TokenParseStatus::PartialParse
+            TokenParseStatus::PartialParse(offset - initial_offset, first_non_parsable_char_index)
         } else if matched_all_tokens {
             TokenParseStatus::FullParse
         } else {
