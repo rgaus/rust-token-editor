@@ -384,8 +384,8 @@ fn main() {
 //     }
 // }";
 
-    let input = "{let a = ['aaa', ['cc', 'bbb']]}";
-    // let input = "{let a = ['aaa', [@'cc', 'bbb']]}";
+    // let input = "{let a = ['aaa', ['cc', 'bbb']]}";
+    let input = "{let a = ['aaa', [@'cc', 'bbb']]}";
     // let input = "let a = ['aaa'@, 1]";
     // let input = "let @a = 'fo'@@";
     // let input = "456";

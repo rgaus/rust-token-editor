@@ -67,8 +67,8 @@ impl TokenMatchTemplate {
 
         let mut depth_spaces = String::from("");
         for _ in 0..depth {
-            // depth_spaces = format!("{}| ", depth_spaces);
-            depth_spaces = format!("{}  ", depth_spaces);
+            depth_spaces = format!("{}| ", depth_spaces);
+            // depth_spaces = format!("{}  ", depth_spaces);
         }
 
         let mut last_token_id: Option<uuid::Uuid> = initial_last_token_id;
@@ -849,7 +849,7 @@ impl TokenMatchTemplate {
                             matched_partial = true;
                         };
                     }
-                    println!("{}`-- match_failed={}", depth_spaces, match_failed);
+                    println!("{}`-- match_failed={} new_offset={}", depth_spaces, match_failed, new_offset);
 
                     if match_failed {
                         break;
@@ -1095,7 +1095,8 @@ impl TokenMatchTemplate {
                         // pattern is really being stretched to try to force fit the input when it
                         // should just be considered a non-match.
                         if let TokenParseStatus::PartialParse(_, Some(first_non_parsable_char_index)) = ephemeral_parse_status {
-                            if min_repeats == 0 && repeat_count == 0 && first_non_parsable_char_index == new_offset {
+                            if min_repeats == 0 && repeat_count == 0 && first_non_parsable_char_index == ephemeral_offset {
+                                println!("{}BREAK {} {}", depth_spaces, first_non_parsable_char_index, ephemeral_offset);
                                 break;
                             }
                         }
@@ -1178,7 +1179,7 @@ impl TokenMatchTemplate {
                             matched_partial = true;
                         };
                     }
-                    println!("{}`-- (offset={} repeat_count={})", depth_spaces, offset, repeat_count);
+                    println!("{}`-- (new_offset={} repeat_count={})", depth_spaces, new_offset, repeat_count);
 
                     if repeat_count < min_repeats {
                         break;
@@ -1278,8 +1279,8 @@ impl TokenMatchTemplate {
 
 
         let matched_all_tokens = matched_token_count == self.matcher.len();
-        println!("{}`-- matched_token_count={} self.matcher.len()={}", depth_spaces, matched_token_count, self.matcher.len());
-        let status = if matched_partial {
+        println!("{}`-- matched_token_count={} offset={} initial_offset={} self.matcher.len()={}", depth_spaces, matched_token_count, offset, initial_offset, self.matcher.len());
+        let status = if matched_partial && offset > initial_offset {
             TokenParseStatus::PartialParse(offset - initial_offset, first_non_parsable_char_index)
         } else if matched_all_tokens {
             TokenParseStatus::FullParse
