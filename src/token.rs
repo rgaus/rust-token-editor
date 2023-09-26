@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use rangemap::RangeInclusiveMap;
+use rangemap::RangeMap;
 
 use crate::token_match_template::*;
 
@@ -13,7 +13,7 @@ pub struct TokensCollection {
 
     // A cache that stores the character offset of each token's start and end in the final output
     // string, mapped BACKWARDS. Use this to query for a token at a specific character offset.
-    tokens_by_start_offset_cache: RangeInclusiveMap<usize, uuid::Uuid>,
+    tokens_by_start_offset_cache: RangeMap<usize, uuid::Uuid>,
 }
 
 impl TokensCollection {
@@ -21,7 +21,7 @@ impl TokensCollection {
         TokensCollection {
             tokens: tokens,
             offset_cache: HashMap::new(),
-            tokens_by_start_offset_cache: RangeInclusiveMap::new(),
+            tokens_by_start_offset_cache: RangeMap::new(),
         }
     }
     pub fn new_empty() -> TokensCollection {
@@ -119,8 +119,9 @@ impl TokensCollection {
     // or None. If a token is found, the offset from the start of the token that `input_offset`
     // refers to is also returned.`
     pub fn get_by_offset(&mut self, input_offset: usize) -> Option<(&Box<Token>, usize)> {
+        // println!("GET BY OFFSET: {}", input_offset);
         if let Some((offset_range, token_id)) = self.tokens_by_start_offset_cache.get_key_value(&input_offset) {
-            let offset_into_token = input_offset - offset_range.start();
+            let offset_into_token = input_offset - offset_range.start;
             let Some(token) = self.get_by_id(*token_id) else {
                 return None;
             };
@@ -139,20 +140,19 @@ impl TokensCollection {
                 None => 0,
             };
             let first_root_node_id = first_root_node.id;
-            self.tokens_by_start_offset_cache.insert(0..=first_root_node_length, first_root_node_id);
+            self.tokens_by_start_offset_cache.insert(0..first_root_node_length+1, first_root_node_id);
             self.offset_cache.insert(first_root_node_id, (0, first_root_node_length));
         }
 
         // If a pre-cached value wasn't found, then figure out the next earliest token that is
         // cached, and start computing from there
-        let Some(last_gap) = self.tokens_by_start_offset_cache.gaps(&(0..=input_offset)).last() else {
-            // NOTE: the below return should be impossible, since there should always be at least
-            // one token in the cache since that's what the code right above does!
-            panic!("No last gap found in tokens_by_start_offset_cache but at least one token inside! input_offset={}", input_offset);
+        let last_gap_start = match self.tokens_by_start_offset_cache.gaps(&(0..input_offset+1)).last() {
+            Some(last_gap) => last_gap.start,
+            None => 0,
         };
+        // println!("CACHE: {:?} {:?} {}", self.tokens_by_start_offset_cache, self.tokens_by_start_offset_cache.gaps(&(0..input_offset+1)).last(), last_gap_start);
 
-        let last_gap_start = last_gap.start();
-        let previous_cached_token_start = last_gap_start - 1;
+        let previous_cached_token_start = if last_gap_start > 0 { last_gap_start - 1 } else { 0 };
         let Some(previous_cached_token_id) = self.tokens_by_start_offset_cache.get(&previous_cached_token_start) else {
             return None;
         };
@@ -161,9 +161,9 @@ impl TokensCollection {
         };
 
         let mut pointer_id = previous_cached_token.next_id;
-        let mut offset = *last_gap_start;
-        // println!("STARTING AT: {:?}", offset);
-        loop {
+        let mut offset = previous_cached_token_start;
+        // println!("STARTING AT: {} => {} {:?}", offset, input_offset, previous_cached_token);
+        while input_offset > 0 {
             let Some(pointer_id_unwrapped) = pointer_id else {
                 return None;
             };
@@ -171,17 +171,23 @@ impl TokensCollection {
                 let Some(pointer) = self.get_by_id(pointer_id_unwrapped) else {
                     return None;
                 };
+                // println!("POINTER: {:?}", pointer.literal);
                 let pointer_length = match &pointer.literal {
                     Some(literal) => literal.len(),
                     None => 0,
                 };
-                let end_offset = offset + pointer_length;
-                (offset, end_offset-1, pointer_length, pointer.next_id)
+                let end_offset = if pointer_length > 0 {
+                    offset + pointer_length + 1
+                } else {
+                    offset
+                };
+                (offset, end_offset, pointer_length, pointer.next_id)
             };
+            // println!("STATUS: {} {} {}", range_start, range_end, pointer_length);
 
             // Exclude adding zero length tokens to the cache, since those are not indexable by
             // offset since it's impossible to be "inside" them
-            let range = range_start..=range_end;
+            let range = range_start..range_end;
             if !range.is_empty() {
                 // println!("INSERT: {:?} {:?}", range, pointer_id_unwrapped);
                 self.tokens_by_start_offset_cache.insert(range, pointer_id_unwrapped);
@@ -189,7 +195,8 @@ impl TokensCollection {
             };
 
             // Once the offset gets to the offset that the user was looking for, we're done
-            if (offset + pointer_length) > input_offset {
+            if offset != 0 && (offset + pointer_length) >= input_offset {
+                // println!("FOUND: {} + {} >= {}", offset, pointer_length, input_offset);
                 break;
             };
 
@@ -201,6 +208,7 @@ impl TokensCollection {
         let Some(pointer_id_unwrapped) = pointer_id else {
             return None;
         };
+        // println!("FOO: {} - {}", input_offset, offset);
         let offset_into_token = input_offset - offset;
         let Some(token) = self.get_by_id(pointer_id_unwrapped) else {
             return None;
@@ -241,7 +249,7 @@ impl TokensCollection {
         let offset = previous_offset + previous_length;
 
         self.offset_cache.insert(id, (offset, offset + token_length));
-        self.tokens_by_start_offset_cache.insert(offset..=offset + token_length, id);
+        self.tokens_by_start_offset_cache.insert(offset..offset + token_length, id);
         offset
     }
 
@@ -276,20 +284,20 @@ impl TokensCollection {
                     .iter()
                     .map(|(range, _)| range)
                     .fold(
-                        0..=offset,
+                        0..offset,
                         |rangea, rangeb| {
-                            let rangea_end = rangea.end();
-                            if rangea_end.max(rangeb.end()) == rangea_end {
+                            let rangea_end = rangea.end;
+                            if rangea_end.max(rangeb.end) == rangea_end {
                                 rangea
                             } else {
                                 rangeb.clone()
                             }
                         },
                     );
-                *result_range.end()
+                result_range.end
             };
 
-            self.tokens_by_start_offset_cache.remove(offset..=maximum_cached_offset);
+            self.tokens_by_start_offset_cache.remove(offset..maximum_cached_offset);
         };
 
         true

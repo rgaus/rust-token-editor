@@ -8,6 +8,9 @@ use token::*;
 mod token_match_template;
 use token_match_template::*;
 
+mod engine;
+use engine::*;
+
 
 fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: String) {
     for child_id in child_ids {
@@ -118,8 +121,7 @@ fn stringify_colors(
 
 
 
-
-fn main() {
+fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
     let mut token_match_templates_map = HashMap::new();
     token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
@@ -367,6 +369,11 @@ fn main() {
         ),
     ]));
 
+    token_match_templates_map
+}
+
+fn main() {
+    let token_match_templates_map = make_token_template_map();
     let Some(all_template) = token_match_templates_map.get("All") else {
         panic!("No 'All' template found!");
     };
@@ -397,66 +404,93 @@ fn main() {
         Ok((match_status, offset, _last_token_id, child_ids, mut tokens_collection)) => {
             println!("RESULT: {:?} {:?}", offset, match_status);
             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
+            let mut buffer = Buffer::new_from_tokenscollection(Box::new(tokens_collection));
+            println!("--------");
+            buffer.seek(0);
+            println!("READ: {:?}", buffer.read_forwards_until(|c| c == 'e', true));
+            println!("READ: {:?}", buffer.read_forwards_until(|c| c == 'a', true));
+            println!("READ: {:?}", buffer.read_backwards_until(|c| c == 'l', true));
+            // println!("READ: {:?}", buffer.read(3));
+            println!("READ: {:?}", buffer.read(7));
+            println!("OFFSET: {:?}", buffer.get_offset());
+            println!("--------");
+            // buffer.seek(1);
+            // println!("READ: {:?}", buffer.read(7));
+            // println!("--------");
+            // buffer.seek(2);
+            // println!("READ: {:?}", buffer.read(7));
+            // println!("--------");
+            // buffer.seek(3);
+            // println!("READ: {:?}", buffer.read(7));
+            // println!("--------");
+            // buffer.seek(4);
+            // println!("READ: {:?}", buffer.read(7));
+            // println!("--------");
+            // buffer.seek(5);
+            // println!("READ: {:?}", buffer.read(7));
+            // println!("--------");
+            // buffer.seek(6);
+            // println!("READ: {:?}", buffer.read(7));
 
-            println!("=========");
-            println!("= TOKENS: {} {}", tokens_collection.tokens.len(), input.len());
-            println!("=========");
-
-            for child_id in &child_ids {
-                dump(*child_id, &tokens_collection.tokens);
-                println!("---------");
-            }
-
-            println!("=========");
-            println!("= STRINGS:");
-            println!("=========");
-
-            if !child_ids.is_empty() {
-                {
-                    // println!("{}", tokens_collection.stringify());
-                    println!("{}", stringify_colors(child_ids[0], &tokens_collection));
-                }
-
-                // println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
-                //
-                // println!("=========");
-                // println!("= MUTATION:");
-                // println!("=========");
-                //
-                // let token_id = {
-                //     let (token, _) = tokens_collection.get_by_offset(13).unwrap();
-                //     println!("TOK: {:?}", token);
-                //     token.id
-                // };
-                //
-                // // let token_id = {
-                // //     let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
-                // //     let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
-                // //         Token { literal: Some(text), .. } if text == "'aaa'" => true,
-                // //         _ => false,
-                // //     }).unwrap();
-                // //     token.id
-                // // };
-                //
-                // let new_subtree_token_id = tokens_collection.change_token_literal_text(
-                //     token_id,
-                //     "aba".to_string(),
-                //     &token_match_templates_map,
-                // ).unwrap();
-                //
-                // println!("--------- {}", new_subtree_token_id);
-                // // dump(new_subtree_token_id, &tokens_collection.tokens);
-                // // for child_id in &child_ids {
-                // //     dump(*child_id, &tokens_collection.tokens);
-                // //     println!("---------");
-                // // }
-                // {
-                //     // println!("{}", tokens_collection.stringify_to_end(child_ids[0]));
-                //     println!("{}", stringify_colors(child_ids[0], &tokens_collection));
-                // }
-                //
-                // println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
-            }
+            // println!("=========");
+            // println!("= TOKENS: {} {}", tokens_collection.tokens.len(), input.len());
+            // println!("=========");
+            //
+            // for child_id in &child_ids {
+            //     dump(*child_id, &tokens_collection.tokens);
+            //     println!("---------");
+            // }
+            //
+            // println!("=========");
+            // println!("= STRINGS:");
+            // println!("=========");
+            //
+            // if !child_ids.is_empty() {
+            //     {
+            //         // println!("{}", tokens_collection.stringify());
+            //         println!("{}", stringify_colors(child_ids[0], &tokens_collection));
+            //     }
+            //
+            //     // println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
+            //     //
+            //     // println!("=========");
+            //     // println!("= MUTATION:");
+            //     // println!("=========");
+            //     //
+            //     // let token_id = {
+            //     //     let (token, _) = tokens_collection.get_by_offset(13).unwrap();
+            //     //     println!("TOK: {:?}", token);
+            //     //     token.id
+            //     // };
+            //     //
+            //     // // let token_id = {
+            //     // //     let top = tokens_collection.get_by_id(child_ids[0]).unwrap();
+            //     // //     let token = top.find_deep_child(&tokens_collection, 100, |token| match token {
+            //     // //         Token { literal: Some(text), .. } if text == "'aaa'" => true,
+            //     // //         _ => false,
+            //     // //     }).unwrap();
+            //     // //     token.id
+            //     // // };
+            //     //
+            //     // let new_subtree_token_id = tokens_collection.change_token_literal_text(
+            //     //     token_id,
+            //     //     "aba".to_string(),
+            //     //     &token_match_templates_map,
+            //     // ).unwrap();
+            //     //
+            //     // println!("--------- {}", new_subtree_token_id);
+            //     // // dump(new_subtree_token_id, &tokens_collection.tokens);
+            //     // // for child_id in &child_ids {
+            //     // //     dump(*child_id, &tokens_collection.tokens);
+            //     // //     println!("---------");
+            //     // // }
+            //     // {
+            //     //     // println!("{}", tokens_collection.stringify_to_end(child_ids[0]));
+            //     //     println!("{}", stringify_colors(child_ids[0], &tokens_collection));
+            //     // }
+            //     //
+            //     // println!("RESULT: {:?}", tokens_collection.get_by_offset(13));
+            // }
         }
         Err(e) => {
             println!("ERROR: {:?}", e);
@@ -938,5 +972,64 @@ mod test_parsing {
         assert_eq!(result.4.tokens.len(), 13); // tokens_collection
         assert_eq!(result.4.stringify(), "A ABB");
         // dump(result.3[0], &result.4.tokens);
+    }
+}
+
+#[cfg(test)]
+mod test_engine {
+    use super::*;
+
+    // This mini language is either:
+    // - A single `1`
+    // - Between 1 to 3 `1`s, followed by a `2`
+    fn initialize_mini_language_twelve() -> HashMap<&'static str, TokenMatchTemplate> {
+        let mut token_match_templates_map = HashMap::new();
+        token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Twelve"),
+                TokenMatchTemplateMatcher::reference("One"),
+            ]),
+        ]));
+        token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::repeat_count(
+                Box::new(TokenMatchTemplateMatcher::reference("One")),
+                1, 3
+            ),
+            TokenMatchTemplateMatcher::raw("2"),
+        ]));
+        token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::regex(
+                Regex::new(r"^(?<one>1)").unwrap(),
+            ),
+        ]));
+
+        token_match_templates_map
+    }
+
+    #[test]
+    fn it_is_able_to_get_substrings_of_document_with_get() {
+        let template_map = initialize_mini_language_twelve();
+        let all_template = template_map.get("All").unwrap();
+
+        let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+        assert_eq!(result.0, TokenParseStatus::FullParse); // status
+
+        // Make sure the parser parsed the input that was expected
+        assert_eq!(result.4.stringify(), "1112");
+
+        // Get a few subranges to make sure they generate the right data
+        let mut buffer = Buffer::new_from_tokenscollection(Box::new(result.4));
+        buffer.seek(0);
+        assert_eq!(buffer.read(3), Ok(String::from("111")));
+        println!("------");
+        buffer.seek(1);
+        assert_eq!(buffer.read(3), Ok(String::from("112")));
+        println!("------");
+        buffer.seek(2);
+        assert_eq!(buffer.read(2), Ok(String::from("12")));
+
+        // Make sure that if at the end, as much data is returned as possible
+        buffer.seek(3);
+        assert_eq!(buffer.read(5), Ok(String::from("2")));
     }
 }
