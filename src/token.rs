@@ -27,6 +27,23 @@ impl TokensCollection {
     pub fn new_empty() -> TokensCollection {
         TokensCollection::new(vec![])
     }
+    pub fn new_unparsed_literal(literal: &str) -> TokensCollection {
+        let mut document = TokensCollection::new_empty();
+        document.push(Box::new(Token {
+            id: uuid::Uuid::new_v4(),
+            template: TokenMatchTemplateMatcher::Skipped,
+            literal: Some(String::from(literal)),
+            matches: HashMap::new(),
+            effects: vec![],
+            events: TokenEvents::new_empty(),
+            next_id: None,
+            previous_id: None,
+            parent_id: None,
+            children_ids: vec![],
+        }));
+
+        document
+    }
     pub fn push(&mut self, token: Box<Token>) {
         self.tokens.push(token);
     }
@@ -119,15 +136,6 @@ impl TokensCollection {
     // or None. If a token is found, the offset from the start of the token that `input_offset`
     // refers to is also returned.`
     pub fn get_by_offset(&mut self, input_offset: usize) -> Option<(&Box<Token>, usize)> {
-        // println!("GET BY OFFSET: {}", input_offset);
-        if let Some((offset_range, token_id)) = self.tokens_by_start_offset_cache.get_key_value(&input_offset) {
-            let offset_into_token = input_offset - offset_range.start;
-            let Some(token) = self.get_by_id(*token_id) else {
-                return None;
-            };
-            return Some((token, offset_into_token));
-        }
-
         // Prior to searching for a matching node, make sure the cache has at least one item in it
         // first as a base case. The root node is always at zero so it will always be before any
         // other node.
@@ -142,6 +150,15 @@ impl TokensCollection {
             let first_root_node_id = first_root_node.id;
             self.tokens_by_start_offset_cache.insert(0..first_root_node_length+1, first_root_node_id);
             self.offset_cache.insert(first_root_node_id, (0, first_root_node_length));
+        }
+
+        // println!("GET BY OFFSET: {}", input_offset);
+        if let Some((offset_range, token_id)) = self.tokens_by_start_offset_cache.get_key_value(&input_offset) {
+            let offset_into_token = input_offset - offset_range.start;
+            let Some(token) = self.get_by_id(*token_id) else {
+                return None;
+            };
+            return Some((token, offset_into_token));
         }
 
         // If a pre-cached value wasn't found, then figure out the next earliest token that is
