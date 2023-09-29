@@ -4,6 +4,7 @@ use rangemap::RangeMap;
 use crate::token_match_template::*;
 
 
+#[derive(Debug)]
 pub struct TokensCollection {
     pub tokens: Vec<Box<Token>>,
 
