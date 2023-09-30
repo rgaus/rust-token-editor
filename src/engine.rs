@@ -104,7 +104,10 @@ impl Buffer {
         &mut self,
         mut needle_func: F,
         include_matched_char: bool,
-    ) -> Result<Option<String>, String> where F: FnMut(char, usize) -> bool {
+    ) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+    )>, String> where F: FnMut(char, usize) -> bool {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
@@ -157,12 +160,22 @@ impl Buffer {
 
         let result_length = result.len();
         if !include_matched_char && result_length > 0 {
-            self.seek(offset + (result_length-1));
-            Ok(Some(result[0..result_length-1].to_string()))
+            let initial_offset = *offset;
+            let final_offset = initial_offset + (result_length-1);
+            self.seek(final_offset);
+            // println!("SEEK: {} => {}", initial_offset, final_offset);
+            Ok(Some((
+                initial_offset..final_offset,
+                result[0..result_length-1].to_string()
+            )))
         } else {
-            self.seek(offset + (result_length-1));
-            println!("SEEK: {}", self.get_offset());
-            Ok(Some(result))
+            let initial_offset = *offset;
+            let final_offset = initial_offset + (result_length-1);
+            self.seek(final_offset);
+            Ok(Some((
+                initial_offset..final_offset+1,
+                result,
+            )))
         }
     }
 
@@ -175,7 +188,10 @@ impl Buffer {
         &mut self,
         mut needle_func: F,
         include_matched_char: bool,
-    ) -> Result<Option<String>, String> where F: FnMut(char, usize) -> bool {
+    ) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+    )>, String> where F: FnMut(char, usize) -> bool {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
@@ -228,11 +244,15 @@ impl Buffer {
         };
 
         if !include_matched_char && result.len() > 0 {
-            self.seek(offset - (result.len()-1)); // FIXME: I think this is wrong
-            Ok(Some(result[1..].to_string()))
+            let initial_offset = *offset;
+            let final_offset = initial_offset - (result.len()-1);
+            self.seek(final_offset); // FIXME: I think this is wrong
+            Ok(Some((initial_offset+1..final_offset+1, result[1..].to_string())))
         } else {
-            self.seek(offset - (result.len()-1));
-            Ok(Some(result))
+            let initial_offset = *offset;
+            let final_offset = initial_offset - (result.len()-1);
+            self.seek(final_offset);
+            Ok(Some((initial_offset+1..final_offset, result)))
         }
     }
 
@@ -240,7 +260,10 @@ impl Buffer {
         &mut self,
         pattern: TraversalPattern,
         repeat_count: usize,
-    ) -> Result<Option<(std::ops::Range<usize>, String)>, String> {
+    ) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+    )>, String> {
         let initial_offset = self.get_offset();
         let mut final_offset = initial_offset;
 
@@ -340,7 +363,7 @@ impl Buffer {
             }
 
             match result {
-                Ok(Some(result)) => {
+                Ok(Some((_, result))) => {
                     final_offset = self.get_offset();
                     if final_offset > initial_offset {
                         combined_result = format!("{}{}", combined_result, result);
@@ -415,7 +438,7 @@ impl Buffer {
         self.seek_push(current_offset);
         while current_row < row {
             self.seek(current_offset);
-            let Ok(Some(result)) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+            let Ok(Some((_, result))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
                 // There must not be an end of line for the rest of the text document
                 // So we are done
                 break;
@@ -460,7 +483,7 @@ impl Buffer {
         self.seek_push(current_offset);
         while current_offset < offset {
             self.seek(current_offset);
-            let Ok(Some(result)) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+            let Ok(Some((_, result))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
                 // There must not be an end of line for the rest of the text document
                 // So we are done
                 break;
@@ -920,7 +943,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
                     buffer.read_forwards_until(|c, _| c == 'b', true),
-                    Ok(Some("foo b".to_string()))
+                    Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
             }
@@ -930,7 +953,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
                     buffer.read_forwards_until(|c, _| c == 'b', false),
-                    Ok(Some("foo ".to_string()))
+                    Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
             }
@@ -940,7 +963,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
                     buffer.read_forwards_until(|_, i| i >= 5, true),
-                    Ok(Some("foo ba".to_string()))
+                    Ok(Some((0..6, "foo ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
             }
@@ -948,10 +971,9 @@ mod test_engine {
             #[test]
             fn it_should_seek_by_index_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
-                buffer.seek(0);
                 assert_eq!(
                     buffer.read_forwards_until(|_, i| i >= 5, false),
-                    Ok(Some("foo b".to_string()))
+                    Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
             }
@@ -973,21 +995,21 @@ mod test_engine {
                 // First seek to the first space
                 assert_eq!(
                     buffer.read_forwards_until(|c, _| c == ' ', true),
-                    Ok(Some("foo ".to_string()))
+                    Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 3);
 
                 // Then seek to right before the `a`
                 assert_eq!(
                     buffer.read_forwards_until(|c, _| c == 'a', false),
-                    Ok(Some(" b".to_string()))
+                    Ok(Some((3..5, " b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
 
                 // Then seek by index most of the way to the end
                 assert_eq!(
                     buffer.read_forwards_until(|_, i| i >= 9, true),
-                    Ok(Some("ar ba".to_string()))
+                    Ok(Some((5..10, "ar ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 9);
             }
@@ -1002,7 +1024,7 @@ mod test_engine {
                 buffer.seek(10);
                 assert_eq!(
                     buffer.read_backwards_until(|c, _| c == 'r', true),
-                    Ok(Some("r baz".to_string()))
+                    Ok(Some((11..6, "r baz".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
             }
@@ -1013,7 +1035,7 @@ mod test_engine {
                 buffer.seek(10);
                 assert_eq!(
                     buffer.read_backwards_until(|c, _| c == 'r', false),
-                    Ok(Some(" baz".to_string()))
+                    Ok(Some((11..7, " baz".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
             }
@@ -1026,14 +1048,28 @@ mod test_engine {
             // First seek to the first space
             assert_eq!(
                 buffer.read_forwards_until(|c, _| c == ' ', true),
-                Ok(Some("foo ".to_string()))
+                Ok(Some((0..4, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 3);
 
-            // Then seek back 2 characters
+            // Then seek back a few characters
             assert_eq!(
                 buffer.read_backwards_until(|c, _| c == 'f', true),
-                Ok(Some("foo ".to_string()))
+                Ok(Some((4..0, "foo ".to_string())))
+            );
+            assert_eq!(buffer.get_offset(), 0);
+
+            // Then seek to the first space, NOT INCLUDING IT
+            assert_eq!(
+                buffer.read_forwards_until(|c, _| c == ' ', false),
+                Ok(Some((0..3, "foo".to_string())))
+            );
+            assert_eq!(buffer.get_offset(), 3);
+
+            // Then seek back a few characters again, NOT INCLUDING IT
+            assert_eq!(
+                buffer.read_backwards_until(|c, _| c == 'f', false),
+                Ok(Some((4..1, "oo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 0);
         }
