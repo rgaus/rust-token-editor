@@ -21,8 +21,8 @@ impl SequentialTokenRange {
         starting_token_id: uuid::Uuid,
         starting_token_offset: usize,
         char_count: usize
-    ) -> SequentialTokenRange {
-        SequentialTokenRange {
+    ) -> Self {
+        Self {
             starting_token_id,
             starting_token_offset,
             is_backwards: false,
@@ -33,8 +33,8 @@ impl SequentialTokenRange {
         starting_token_id: uuid::Uuid,
         starting_token_offset: usize,
         char_count: usize
-    ) -> SequentialTokenRange {
-        SequentialTokenRange {
+    ) -> Self {
+        Self {
             starting_token_id,
             starting_token_offset,
             is_backwards: true,
@@ -199,14 +199,14 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new_from_tokenscollection(document: Box<TokensCollection>) -> Buffer {
-        Buffer {
+    pub fn new_from_tokenscollection(document: Box<TokensCollection>) -> Self {
+        Self {
             document: document,
             offset_stack: vec![0],
             newline_offset_cache: HashMap::new(),
         }
     }
-    pub fn new_from_literal(literal: &str) -> Buffer {
+    pub fn new_from_literal(literal: &str) -> Self {
         Self::new_from_tokenscollection(
             Box::new(TokensCollection::new_unparsed_literal(literal)),
         )
@@ -804,8 +804,8 @@ pub struct ViewDumpedData {
 }
 
 impl View {
-    pub fn new(buffer: Box<Buffer>) -> View {
-        View {
+    pub fn new(buffer: Box<Buffer>) -> Self {
+        Self {
             buffer: buffer,
             mode: Mode::Normal,
             position: (0, 0),
