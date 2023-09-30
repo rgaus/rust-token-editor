@@ -216,6 +216,14 @@ impl Buffer {
         View::new(Box::new(self))
     }
 
+    // Allow one to extract the token collection from the buffer for lower level mutations
+    pub fn tokens(&self) -> &Box<TokensCollection> {
+        &self.document
+    }
+    pub fn tokens_mut(&mut self) -> &mut Box<TokensCollection> {
+        &mut self.document
+    }
+
     pub fn seek_push(&mut self, offset: usize) {
         self.offset_stack.push(offset);
     }

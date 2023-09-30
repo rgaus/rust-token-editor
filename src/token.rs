@@ -381,39 +381,27 @@ impl TokensCollection {
                     let mut is_done = false;
 
                     if match_status != TokenParseStatus::FullParse {
-                        // Once we've traversed as high up as we have to, then be a little more
-                        // flexible in what we can accept. Be willing to accept a partial parse to get
-                        // this operation over with
                         if let Some(value) = regular_parse_max_upward_traverals {
+                            // Once we've traversed as high up as we have to, then be a little more
+                            // flexible in what we can accept. Be willing to accept a partial parse to get
+                            // this operation over with
                             if value > 0 {
-                                // Still at least one more iteration to go!
-                                regular_parse_max_upward_traverals = Some(value-1);
-                                continue;
-                            }
+                                // Make sure there is a parent to traverse upwards to:
+                                if let Some(parent) = working_token.parent(&self) {
+                                    // Still at least one more iteration to go!
+                                    regular_parse_max_upward_traverals = Some(value-1);
 
-                            if let TokenParseStatus::PartialParse(_, _) = match_status {
-                                // NOTE: this should be impossible, because `store_non_parsable_chars` is
-                                // true when calling `consume_from_offset`
-                                break;
+                                    match_iterations += 1;
+                                    working_template = TokenMatchTemplate::new(
+                                        vec![parent.template.clone()],
+                                    );
+                                    working_token = parent.clone();
+                                    continue;
+                                };
                             }
 
                             is_done = true;
                         }
-                    }
-
-                    // Keep going up to the next level if needed
-                    if !is_done {
-                        let Some(parent) = working_token.parent(&self) else {
-                            println!("NO PARENT!");
-                            break;
-                        };
-
-                        match_iterations += 1;
-                        working_template = TokenMatchTemplate::new(
-                            vec![parent.template.clone()],
-                        );
-                        working_token = parent.clone();
-                        continue;
                     }
 
                     // Before doing the token swap, figure out the token that is the final "next" token in the

@@ -377,6 +377,15 @@ fn main() {
     let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
     println!("OFFSET: {}", buffer.convert_rows_cols_to_offset((2, 10)));
     println!("OFFSET: {:?}", buffer.convert_offset_to_rows_cols(13));
+    let (_, _, range) = buffer.read_forwards_until(|c, _| c == '.', false).unwrap().unwrap();
+    {
+        let tokens_collection = buffer.tokens_mut();
+        println!("READ: {:?}", range);
+        println!("PRE: {}", tokens_collection.stringify());
+        let result = range.replace_text(tokens_collection, String::from("TEST"), &HashMap::new());
+        println!("RESULT: {:?}", result);
+        println!("POST: {}", tokens_collection.stringify());
+    }
     // buffer.seek(3);
     // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::Find('z'), 1));
     // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::UpperWord, 1));
