@@ -244,27 +244,45 @@ impl Buffer {
             self.offset_stack.pop();
         }
     }
-    pub fn read(&mut self, number_of_chars: usize) -> Result<String, String> {
+    pub fn read(
+        &mut self,
+        number_of_chars: usize,
+    ) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenRange, /* The token range that was matched */
+    )>, String> {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
         let Some((token, token_offset)) = self.document.get_by_offset(*offset) else {
             return Err(format!("Cannot get token at offset {} in document!", offset));
         };
+        let initial_offset = *offset;
         // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
 
         let token_id = token.id.clone();
 
         let result = self.document.stringify_for_offset(token_id, token_offset+number_of_chars);
         if result.len() >= token_offset+number_of_chars {
-            self.seek(offset + number_of_chars);
-            return Ok(String::from(&result[token_offset..token_offset+number_of_chars]));
+            let final_offset = initial_offset + number_of_chars;
+            self.seek(final_offset);
+            return Ok(Some((
+                initial_offset..final_offset,
+                String::from(&result[token_offset..token_offset+number_of_chars]),
+                SequentialTokenRange::new(token_id, token_offset, final_offset),
+            )));
         } else {
             // The buffer isn't long enough to return the full length of data, so return what we
             // can
             let chars = &result[token_offset..];
-            self.seek(offset + chars.len());
-            return Ok(String::from(chars));
+            let final_offset = initial_offset + chars.len();
+            self.seek(final_offset);
+            return Ok(Some((
+                initial_offset..final_offset,
+                String::from(chars),
+                SequentialTokenRange::new(token_id, token_offset, final_offset),
+            )));
         }
     }
 
@@ -1015,6 +1033,27 @@ impl View {
 mod test_engine {
     use super::*;
 
+    fn remove_sequentialtokenrange(v: Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenRange, /* The token range that was matched */
+    )>, String>) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+    )>, String> {
+        match v {
+            Ok(a) => {
+                if let Some((b, c, d)) = a {
+                    println!("D: {:?}", d);
+                    Ok(Some((b, c)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     mod test_buffer {
         use super::*;
 
@@ -1056,21 +1095,21 @@ mod test_engine {
                 Buffer::new_from_tokenscollection(Box::new(result.4))
             };
             buffer.seek(0);
-            assert_eq!(buffer.read(3), Ok(String::from("111")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((0..3, String::from("111")))));
 
             let mut buffer = {
                 let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
                 Buffer::new_from_tokenscollection(Box::new(result.4))
             };
             buffer.seek(1);
-            assert_eq!(buffer.read(3), Ok(String::from("112")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((1..4, String::from("112")))));
 
             let mut buffer = {
                 let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
                 Buffer::new_from_tokenscollection(Box::new(result.4))
             };
             buffer.seek(2);
-            assert_eq!(buffer.read(2), Ok(String::from("12")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(2)), Ok(Some((2..4, String::from("12")))));
 
             // Make sure that if at the end, as much data is returned as possible
             let mut buffer = {
@@ -1078,7 +1117,7 @@ mod test_engine {
                 Buffer::new_from_tokenscollection(Box::new(result.4))
             };
             buffer.seek(3);
-            assert_eq!(buffer.read(5), Ok(String::from("2")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(5)), Ok(Some((3..4, String::from("2")))));
         }
 
         #[test]
@@ -1095,15 +1134,15 @@ mod test_engine {
             // Get a few subranges to make sure they generate the right data
             let mut buffer = Buffer::new_from_tokenscollection(Box::new(result.4));
             buffer.seek(0);
-            assert_eq!(buffer.read(3), Ok(String::from("111")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((0..3, String::from("111")))));
             buffer.seek(1);
-            assert_eq!(buffer.read(3), Ok(String::from("112")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((1..4, String::from("112")))));
             buffer.seek(2);
-            assert_eq!(buffer.read(2), Ok(String::from("12")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(2)), Ok(Some((2..4, String::from("12")))));
 
             // Make sure that if at the end, as much data is returned as possible
             buffer.seek(3);
-            assert_eq!(buffer.read(5), Ok(String::from("2")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(5)), Ok(Some((3..4, String::from("2")))));
         }
 
         #[test]
@@ -1111,38 +1150,17 @@ mod test_engine {
             // Get a few subranges to make sure they generate the right data
             let mut buffer = Buffer::new_from_literal("foo bar baz");
             buffer.seek(0);
-            assert_eq!(buffer.read(3), Ok(String::from("foo")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((0..3, String::from("foo")))));
             buffer.seek(1);
-            assert_eq!(buffer.read(3), Ok(String::from("oo ")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((1..4, String::from("oo ")))));
             buffer.seek(2);
-            assert_eq!(buffer.read(5), Ok(String::from("o bar")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(5)), Ok(Some((2..7, String::from("o bar")))));
             buffer.seek(6);
-            assert_eq!(buffer.read(4), Ok(String::from("r ba")));
+            assert_eq!(remove_sequentialtokenrange(buffer.read(4)), Ok(Some((6..10, String::from("r ba")))));
 
             // Make sure that if at the end, as much data is returned as possible
             buffer.seek(9);
-            assert_eq!(buffer.read(10), Ok(String::from("az")));
-        }
-
-        fn get_first_two_in_tuple(v: Result<Option<(
-            std::ops::Range<usize>, /* The matched token offset range */
-            String, /* The matched literal data in all tokens, concatenated */
-            SequentialTokenRange, /* The token range that was matched */
-        )>, String>) -> Result<Option<(
-            std::ops::Range<usize>, /* The matched token offset range */
-            String, /* The matched literal data in all tokens, concatenated */
-        )>, String> {
-            match v {
-                Ok(a) => {
-                    if let Some((b, c, d)) = a {
-                        println!("D: {:?}", d);
-                        Ok(Some((b, c)))
-                    } else {
-                        Ok(None)
-                    }
-                }
-                Err(e) => Err(e),
-            }
+            assert_eq!(remove_sequentialtokenrange(buffer.read(10)), Ok(Some((9..11, String::from("az")))));
         }
 
         mod read_forwards_until {
@@ -1152,7 +1170,7 @@ mod test_engine {
             fn it_should_seek_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'b', true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', true)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
@@ -1162,7 +1180,7 @@ mod test_engine {
             fn it_should_seek_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'b', false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
@@ -1172,7 +1190,7 @@ mod test_engine {
             fn it_should_seek_by_index_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|_, i| i >= 5, true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, true)),
                     Ok(Some((0..6, "foo ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
@@ -1182,7 +1200,7 @@ mod test_engine {
             fn it_should_seek_by_index_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|_, i| i >= 5, false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, false)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
@@ -1192,7 +1210,7 @@ mod test_engine {
             fn it_should_never_match_a_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'X', false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'X', false)),
                     Ok(None)
                 );
                 assert_eq!(buffer.get_offset(), 0);
@@ -1204,21 +1222,21 @@ mod test_engine {
 
                 // First seek to the first space
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == ' ', true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 3);
 
                 // Then seek to right before the `a`
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'a', false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'a', false)),
                     Ok(Some((3..5, " b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
 
                 // Then seek by index most of the way to the end
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_forwards_until(|_, i| i >= 9, true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 9, true)),
                     Ok(Some((5..10, "ar ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 9);
@@ -1233,7 +1251,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 buffer.seek(10);
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'r', true)),
+                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', true)),
                     Ok(Some((11..6, "r baz".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
@@ -1244,7 +1262,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 buffer.seek(10);
                 assert_eq!(
-                    get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'r', false)),
+                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', false)),
                     Ok(Some((11..7, " baz".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
@@ -1257,28 +1275,28 @@ mod test_engine {
 
             // First seek to the first space
             assert_eq!(
-                get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == ' ', true)),
+                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true)),
                 Ok(Some((0..4, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 3);
 
             // Then seek back a few characters
             assert_eq!(
-                get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'f', true)),
+                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', true)),
                 Ok(Some((4..0, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 0);
 
             // Then seek to the first space, NOT INCLUDING IT
             assert_eq!(
-                get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == ' ', false)),
+                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', false)),
                 Ok(Some((0..3, "foo".to_string())))
             );
             assert_eq!(buffer.get_offset(), 3);
 
             // Then seek back a few characters again, NOT INCLUDING IT
             assert_eq!(
-                get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'f', false)),
+                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', false)),
                 Ok(Some((4..1, "oo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 0);
