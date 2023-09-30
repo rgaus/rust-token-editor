@@ -42,9 +42,11 @@ impl SequentialTokenRange {
         }
     }
 
-    // Remove all tokens within the token range. If `keep_first_token` is true, then the first
-    // token is kept in the token list but left blank, likely because the user execured a change
-    // rather than a delete and this initial token is where the change text will end up
+    // Remove all tokens (and any of their children!) within the token range.
+    //
+    // If `keep_first_token` is true, then the first token is kept in the token list but left
+    // blank, likely because the user execured a change rather than a delete and this initial token
+    // is where the change text will end up
     pub fn remove_deep(
         &self,
         tokens_collection: &mut Box<TokensCollection>,
@@ -134,6 +136,10 @@ impl SequentialTokenRange {
         Ok(())
     }
 
+    // Replaces the given token range's text contents with the passed `new_text` value.
+    //
+    // Note that this is immediate, and that if you want to remove and update the contents after
+    // the fact / over time, call `remove_deep(..., false)` instead.
     pub fn replace_text(
         &self,
         tokens_collection: &mut Box<TokensCollection>,
