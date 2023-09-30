@@ -5,6 +5,8 @@ use colored::Colorize;
 use crate::token::*;
 use crate::token_match_template::*;
 
+const NEWLINE_CHAR: char = '\n';
+
 pub enum TraversalPattern {
     Left,
     Right,
@@ -24,6 +26,11 @@ pub enum TraversalPattern {
 pub struct Buffer {
     document: Box<TokensCollection>,
     offset_stack: Vec<usize>,
+
+    // A cache that maps 1-indexed row to the offset at the start of that row.
+    // This is used to quickly be able to convert from an offset to a (x, y) position and back
+    // again
+    newline_offset_cache: HashMap<usize, usize>,
 }
 
 impl Buffer {
@@ -31,13 +38,13 @@ impl Buffer {
         Buffer {
             document: document,
             offset_stack: vec![0],
+            newline_offset_cache: HashMap::new(),
         }
     }
     pub fn new_from_literal(literal: &str) -> Buffer {
-        Buffer {
-            document: Box::new(TokensCollection::new_unparsed_literal(literal)),
-            offset_stack: vec![0],
-        }
+        Self::new_from_tokenscollection(
+            Box::new(TokensCollection::new_unparsed_literal(literal)),
+        )
     }
 
     pub fn create_view(self) -> View {
@@ -357,6 +364,124 @@ impl Buffer {
             Ok(Some((initial_offset..final_offset, combined_result)))
         }
     }
+
+    // Remove all cached newlines that are at or after the given offset
+    pub fn clear_newline_cache_at(&mut self, offset: usize) {
+        self.newline_offset_cache.retain(|_, newline_start_offset| {
+            *newline_start_offset < offset
+        })
+    }
+
+    fn seed_newline_cache_if_empty(&mut self) {
+        if self.newline_offset_cache.is_empty() {
+            self.newline_offset_cache.insert(1, 0);
+        }
+    }
+
+    // Given a (row, column) pair corresponding to a position in the final output token text,
+    // returns the corresponding character offset that corresponds to that position.
+    //
+    // This function's behavior is undefined if the position is not a position that could possibly
+    // exist in the token text (for example, if a row has x columns and (row, x+1) is passed)
+    pub fn convert_rows_cols_to_offset(&mut self, position: (usize, usize)) -> usize {
+        let (row, col) = position;
+        if row == 0 || col == 0 {
+            // Row and column are 1 indexed, so these values being set to 0 is impossible!
+            return 0;
+        }
+
+        self.seed_newline_cache_if_empty();
+
+        let (start_row, start_offset) = self.newline_offset_cache
+            .iter()
+            .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
+                if *cached_row > row {
+                    // This cached value is AFTER the value that is being queried for
+                    (previous_row, previous_offset)
+                } else if *cached_row > previous_row {
+                    // Prefer the value that is later on in the list
+                    (*cached_row, *cached_offset)
+                } else {
+                    (previous_row, previous_offset)
+                }
+            });
+        // Work from start_offset reading character by character through the document until we are
+        // at the right line
+
+        // Then add `col_index` to get the offset
+
+        let mut current_offset = start_offset;
+        let mut current_row = start_row;
+        self.seek_push(current_offset);
+        while current_row < row {
+            self.seek(current_offset);
+            let Ok(Some(result)) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+                // There must not be an end of line for the rest of the text document
+                // So we are done
+                break;
+            };
+
+            let number_of_matched_chars_including_newline = result.len();
+            current_offset += number_of_matched_chars_including_newline;
+            current_row += 1;
+
+            self.newline_offset_cache.insert(current_row, current_offset);
+        }
+        self.seek_pop();
+
+        // So the column offset can just be added to the 0-indexed column offset
+        current_offset + (col - 1)
+    }
+
+    // Given a character offset in the final output token text, returns the corresponding
+    // one-indexed (row, column) pair that corresponds to that offset.
+    //
+    // This function's behavior is undefined if the offset passed is larger than the max token
+    // offset within the token text.
+    pub fn convert_offset_to_rows_cols(&mut self, offset: usize) -> (usize, usize) {
+        self.seed_newline_cache_if_empty();
+
+        let (start_row, start_offset) = self.newline_offset_cache
+            .iter()
+            .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
+                if *cached_offset > offset {
+                    // This cached offset is AFTER the value that is being queried for
+                    (previous_row, previous_offset)
+                } else if *cached_offset > previous_offset {
+                    // Prefer the value that is later on in the list
+                    (*cached_row, *cached_offset)
+                } else {
+                    (previous_row, previous_offset)
+                }
+            });
+
+        let mut current_offset = start_offset;
+        let mut current_row = start_row;
+        self.seek_push(current_offset);
+        while current_offset < offset {
+            self.seek(current_offset);
+            let Ok(Some(result)) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+                // There must not be an end of line for the rest of the text document
+                // So we are done
+                break;
+            };
+
+            let number_of_matched_chars_including_newline = result.len();
+            if current_offset + number_of_matched_chars_including_newline > offset {
+                // We went past the end of the line!
+                break;
+            }
+            current_offset += number_of_matched_chars_including_newline;
+            current_row += 1;
+
+            self.newline_offset_cache.insert(current_row, current_offset);
+        }
+        self.seek_pop();
+
+        let offset_difference = offset - current_offset;
+        let column = offset_difference + 1; // NOTE: columns are one indexed!
+        (current_row, column)
+    }
 }
 
 
@@ -425,8 +550,14 @@ enum ViewState {
 #[derive(Debug)]
 pub struct View {
     buffer: Box<Buffer>,
-    state: ViewState,
     mode: Mode,
+
+    // Position in the document in (rows, columns) format
+    // (1, 1) is at the top left
+    pub position: (usize, usize),
+
+    // Command parsing state
+    state: ViewState,
     command_count: String,
     verb: Option<Verb>,
     noun: Option<Noun>,
@@ -446,20 +577,24 @@ impl View {
     pub fn new(buffer: Box<Buffer>) -> View {
         View {
             buffer: buffer,
-            state: ViewState::Initial,
             mode: Mode::Normal,
+            position: (0, 0),
+            state: ViewState::Initial,
             command_count: String::from(""),
             verb: None,
             noun: None,
             should_clear_command_count: false,
         }
     }
-    pub fn reset(&mut self) {
-        self.state = ViewState::Initial;
-        self.mode = Mode::Normal;
+    fn clear_command(&mut self) {
         self.command_count = String::from("");
         self.verb = None;
         self.noun = None;
+    }
+    pub fn reset(&mut self) {
+        self.state = ViewState::Initial;
+        self.mode = Mode::Normal;
+        self.clear_command();
     }
 
     pub fn dump(&self) -> ViewDumpedData {
@@ -517,7 +652,9 @@ impl View {
         }
     }
 
-    pub fn process_input(&mut self, input: &str) {
+    // When called with string input, parses the input and calls `on_complete` every time that
+    // a new command is successfully parsed
+    pub fn raw_parse_input<F>(&mut self, input: &str, mut on_complete: F) where F: FnMut(&mut Self) {
         for character in input.chars() {
             println!("CHAR: {}", character);
             match character {
@@ -611,7 +748,53 @@ impl View {
                     self.reset();
                 },
             }
+
+            if self.state == ViewState::Complete {
+                on_complete(self);
+            }
         }
+    }
+
+    pub fn process_input(&mut self, input: &str) {
+        self.raw_parse_input(input, |inner_self| {
+            // Once a command has completed processing, execute it!
+            inner_self.execute_command();
+        })
+    }
+
+    fn execute_command(&mut self) {
+        if self.state != ViewState::Complete {
+            return;
+        }
+
+        let range_start = self.position;
+        let mut range_end = self.position;
+        match self.noun {
+            Some(Noun::Character) => {
+                // self.buffer.read_to_pattern();
+            },
+            // Character,
+            // Word,
+            // Paragraph,
+            // Sentence,
+            // Line,
+            // BlockSquare,
+            // BlockParenthesis,
+            // BlockCurly,
+            // BlockAngle,
+            // BlockSquareOrParenthesis,
+            // BlockSquareOrCurly,
+            // BlockXMLTag,
+            // QuoteSingle,
+            // QuoteDouble,
+            // QuoteBacktick,
+            // Inside(Box<Noun>),
+            // Around(Box<Noun>),
+            _ => {},
+        }
+
+        self.dump();
+        self.clear_command();
     }
 }
 
@@ -957,7 +1140,7 @@ mod test_engine {
                 }),
                 // TODO: "cx" should not work
             ] {
-                view.process_input(input_text);
+                view.raw_parse_input(input_text, |_| {});
                 assert_eq!(view.dump(), dumped_data, "Assertion failed: `{}`", input_text);
                 view.reset();
             }

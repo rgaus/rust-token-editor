@@ -373,17 +373,19 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 }
 
 fn main() {
-    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+    // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+    let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
+    println!("OFFSET: {}", buffer.convert_rows_cols_to_offset((2, 10)));
+    println!("OFFSET: {:?}", buffer.convert_offset_to_rows_cols(13));
     // buffer.seek(3);
     // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::Find('z'), 1));
     // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::UpperWord, 1));
     // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::Right, 1));
     // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::Left, 1));
-    let mut view = buffer.create_view();
-    view.process_input("2cw");
+    // let mut view = buffer.create_view();
+    // view.process_input("2cw");
     // view.process_input("c2w");
     // view.process_input("2cc");
-    view.dump();
 }
 
 // fn main() {

@@ -234,6 +234,7 @@ impl TokensCollection {
         return Some((token, offset_into_token));
     }
 
+    // Given a token id, returns the offset within the final output text for the start of the token
     pub fn compute_offset(&mut self, id: uuid::Uuid) -> usize {
         if let Some((cached_offset_start, _)) = self.offset_cache.get(&id) {
             return *cached_offset_start;
