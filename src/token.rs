@@ -338,9 +338,9 @@ impl TokensCollection {
         token_id: uuid::Uuid,
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
-    ) -> Option<uuid::Uuid> {
+    ) -> Result<Option<uuid::Uuid>, String> {
         let Some(old_token) = self.get_by_id(token_id) else {
-            return None;
+            return Err(format!("Cannot find token with id {}", token_id));
         };
         let mut token_offset = 0;
 
@@ -480,11 +480,11 @@ impl TokensCollection {
                         Some(first_child_id),
                         Some(last_child_id),
                     ) = (working_token.parent_id, child_ids.first(), child_ids.last()) else {
-                        return None;
+                        return Ok(None);
                     };
 
                     let parent = self.get_by_id(parent_id) else {
-                        return None;
+                        return Ok(None);
                     };
 
 
@@ -512,17 +512,123 @@ impl TokensCollection {
                     println!("TOK: {:?}", working_token);
                     // let first_child = self.get_by_id(*first_child_id).unwrap();
                     // return first_child.parent_id;
-                    return Some(*first_child_id)
+                    return Ok(Some(*first_child_id))
                 }
                 Err(e) => {
-                    println!("ERROR: {:?}", e);
-                    break;
+                    return Err(e);
                 }
             }
         }
 
-        None
+        Ok(None)
     }
+
+    // When called, removes a token from the token tree, also removing all of its children.
+    // When removed, all token links are updated so that this removed token is now omitted.
+    //
+    // If one attempts to remove a non-leaf token, this function returns an `Err`
+    pub fn remove_deep(&mut self, token_id: uuid::Uuid) -> Result<bool, String> {
+        let old_token_data = {
+            let Some(old_token) = self.get_by_id(token_id) else {
+                return Err(format!("Cannot find token {}", token_id));
+            };
+
+            // Get the deepest last child id in the token subtree
+            let mut deep_last_referenced_child_id = old_token.children_ids.last();
+            loop {
+                let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
+                    break;
+                };
+                let Some(child_token) = self.get_by_id(
+                    *deep_last_referenced_child_id_unwrapped
+                ) else {
+                    break;
+                };
+                if let Some(result) = child_token.children_ids.last() {
+                    deep_last_referenced_child_id = Some(result);
+                } else {
+                    break;
+                }
+            }
+
+            Ok((
+                old_token.next_id,
+                old_token.previous_id,
+                old_token.parent_id,
+                deep_last_referenced_child_id,
+            ))
+        };
+
+        match old_token_data {
+            Ok((
+                old_token_next_id,
+                old_token_previous_id,
+                old_token_parent_id,
+                deep_last_referenced_child_id,
+            )) => {
+                // Update the pointer on the child AFTER old_token that points to the final deep child
+                if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
+                   if let Some(last_deep_child) = self.get_by_id(*deep_last_referenced_child_id) {
+                        if let Some(token_after_old_token_id) = last_deep_child.next_id {
+                            self.get_by_id_mut(token_after_old_token_id, |token_after_old_token| {
+                                token_after_old_token.previous_id = old_token_previous_id;
+                            })
+                        }
+                    }
+                }
+
+                // Update all pointers that point to `old_token`
+                if let Some(previous_id) = old_token_previous_id {
+                    self.get_by_id_mut(previous_id, |previous| {
+                        previous.next_id = old_token_next_id;
+                    });
+                }
+                if let Some(next_id) = old_token_next_id {
+                    self.get_by_id_mut(next_id, |next| {
+                        next.previous_id = old_token_previous_id;
+                    });
+                }
+                if let Some(parent_id) = old_token_parent_id {
+                    self.get_by_id_mut(parent_id, |parent| {
+                        parent.children_ids.retain(|child_id| *child_id != token_id);
+                    });
+                }
+
+                // Clear all caches of data at or after this token
+                self.reset_caches_for_and_after(token_id);
+
+                Ok(true)
+            },
+            Err(err) => Err(err),
+        }
+    }
+
+    // // Starting at the given token + offset within the literal of that offset, scan forward
+    // // character by character within token stream. Once `needle_fn` returns `true`, then 
+    // pub fn remove_starting_at_token_until<F>(
+    //     &mut self,
+    //     token_id: uuid::Uuid,
+    //     token_start_offset: usize,
+    //     mut needle_fn: F,
+    // ) where F: FnMut(char #<{(| character |)}>#, usize #<{(| offset |)}>#) -> bool {
+    //     let mut result = String::from("");
+    //     let mut pointer_id = starting_token_id;
+    //     loop {
+    //         let Some(mut pointer) = self.get_by_id(pointer_id) else {
+    //             break;
+    //         };
+    //         if let Some(literal_text) = &pointer.literal {
+    //             result = format!("{}{}", result, literal_text);
+    //         };
+    //         if let Some(next_pointer_id) = pointer.next_id {
+    //             pointer_id = next_pointer_id;
+    //         } else {
+    //             break;
+    //         }
+    //     }
+    //
+    //     result
+    // }
 
     // When called with a token node id, walks along through all `next_id` links,
     // concatenating all literal values in each token to generate the contents of

@@ -7,6 +7,171 @@ use crate::token_match_template::*;
 
 const NEWLINE_CHAR: char = '\n';
 
+#[derive(Debug)]
+#[derive(Clone)]
+#[derive(PartialEq)]
+pub struct SequentialTokenRange {
+    starting_token_id: uuid::Uuid,
+    starting_token_offset: usize,
+    is_backwards: bool,
+    char_count: usize,
+}
+impl SequentialTokenRange {
+    pub fn new(
+        starting_token_id: uuid::Uuid,
+        starting_token_offset: usize,
+        char_count: usize
+    ) -> SequentialTokenRange {
+        SequentialTokenRange {
+            starting_token_id,
+            starting_token_offset,
+            is_backwards: false,
+            char_count,
+        }
+    }
+    pub fn new_backwards(
+        starting_token_id: uuid::Uuid,
+        starting_token_offset: usize,
+        char_count: usize
+    ) -> SequentialTokenRange {
+        SequentialTokenRange {
+            starting_token_id,
+            starting_token_offset,
+            is_backwards: true,
+            char_count,
+        }
+    }
+
+    // Remove all tokens within the token range. If `keep_first_token` is true, then the first
+    // token is kept in the token list but left blank, likely because the user execured a change
+    // rather than a delete and this initial token is where the change text will end up
+    pub fn remove_deep(
+        &self,
+        tokens_collection: &mut Box<TokensCollection>,
+        keep_first_token: bool,
+    ) -> Result<(), String> {
+        let mut chars_removed = 0;
+        let mut is_first = true;
+        let mut pointer_id = self.starting_token_id;
+        let mut token_ids_to_remove = vec![];
+
+        loop {
+            let result = {
+                let Some(pointer) = tokens_collection.get_by_id(pointer_id) else {
+                    return Err(format!("Unable to find token with id {} ({} chars in to removal)", pointer_id, chars_removed));
+                };
+
+                // If moving backwards, then select the right field to move to next:
+                let subsequent_id = if self.is_backwards {
+                    pointer.previous_id
+                } else {
+                    pointer.next_id
+                };
+
+                Ok((subsequent_id, pointer.literal.clone()))
+            };
+
+            match result {
+                Ok((pointer_subsequent_id, pointer_literal)) => {
+                    if let Some(literal_text) = pointer_literal {
+                        let literal_text_length = literal_text.len();
+                        chars_removed += literal_text_length;
+
+                        if chars_removed <= self.char_count {
+                            if is_first {
+                                if self.starting_token_offset > 0 {
+                                    // Keep the first `self.starting_token_offset` chars of this token
+                                    tokens_collection.get_by_id_mut(pointer_id, |pointer| {
+                                        pointer.literal = Some(String::from(
+                                            &literal_text[..self.starting_token_offset]
+                                        ));
+                                    });
+                                } else if keep_first_token {
+                                    tokens_collection.get_by_id_mut(pointer_id, |pointer| {
+                                        pointer.literal = Some(String::from(""));
+                                    });
+                                } else {
+                                    // Remove this token, it's the first token, but the match starts at the
+                                    // very start so it can all go
+                                    token_ids_to_remove.push(pointer_id);
+                                }
+                            } else {
+                                // Remove this token, its bounds are fully within `chars_removed`
+                                token_ids_to_remove.push(pointer_id);
+                            }
+                            if chars_removed == self.char_count {
+                                break;
+                            }
+                        } else {
+                            chars_removed -= literal_text_length;
+                            // Part of this token needs to stay around - also, this is the last token
+                            let number_of_chars_to_keep = self.char_count - chars_removed;
+                            tokens_collection.get_by_id_mut(pointer_id, |pointer| {
+                                pointer.literal = Some(String::from(&literal_text[number_of_chars_to_keep..]));
+                            });
+                            break;
+                        }
+                    };
+
+                    if let Some(subsequent_id) = pointer_subsequent_id {
+                        pointer_id = subsequent_id;
+                    } else {
+                        // Reached the end of the token stream
+                        return Err(format!("Unable to remove SequentialTokenRange: ran out of tokens (start at {} offset {} and went {} of {} chars)", self.starting_token_id, self.starting_token_offset, chars_removed, self.char_count));
+                    }
+                    is_first = false;
+                },
+                Err(err) => {
+                    return Err(err)
+                },
+            }
+        }
+
+        for token_id in token_ids_to_remove {
+            tokens_collection.remove_deep(token_id)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn replace_text(
+        &self,
+        tokens_collection: &mut Box<TokensCollection>,
+        new_text: String,
+        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
+    ) -> Result<Option<uuid::Uuid>, String> {
+        // Remove all other tokens in the sequence EXCEPT for the first one:
+        self.remove_deep(tokens_collection, false)?;
+
+        let mut complete_new_text = new_text;
+        if let Some(starting_token) = tokens_collection.get_by_id(self.starting_token_id) {
+            if let Some(literal_text) = &starting_token.literal {
+                complete_new_text = String::from(format!(
+                    "{}{}",
+                    &literal_text[..self.starting_token_offset],
+                    complete_new_text, /* this is equal to `new_text` here */
+                ));
+                if literal_text.len() > self.starting_token_offset + self.char_count {
+                    complete_new_text = String::from(format!(
+                        "{}{}",
+                        complete_new_text,
+                        literal_text,
+                    ));
+                }
+            }
+        };
+
+        println!("NEW: {} {}", self.starting_token_offset, complete_new_text);
+
+        // Then change the first one to have the new token text:
+        tokens_collection.change_token_literal_text(
+            self.starting_token_id,
+            complete_new_text,
+            token_match_templates_map,
+        )
+    }
+}
+
 pub enum TraversalPattern {
     Left,
     Right,
@@ -107,6 +272,7 @@ impl Buffer {
     ) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
         String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenRange, /* The token range that was matched */
     )>, String> where F: FnMut(char, usize) -> bool {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
@@ -114,12 +280,13 @@ impl Buffer {
         let Some((token, token_offset)) = self.document.get_by_offset(*offset) else {
             return Err(format!("Cannot get token at offset {} in document!", offset));
         };
+        let token_id = token.id;
         // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
 
         let mut is_first = true;
         let mut is_done = false;
         let mut result = String::from("");
-        let mut pointer_id = token.id;
+        let mut pointer_id = token_id;
         loop {
             let Some(mut pointer) = self.document.get_by_id(pointer_id) else {
                 break;
@@ -166,7 +333,8 @@ impl Buffer {
             // println!("SEEK: {} => {}", initial_offset, final_offset);
             Ok(Some((
                 initial_offset..final_offset,
-                result[0..result_length-1].to_string()
+                result[0..result_length-1].to_string(),
+                SequentialTokenRange::new(token_id, token_offset, result_length-1),
             )))
         } else {
             let initial_offset = *offset;
@@ -175,6 +343,7 @@ impl Buffer {
             Ok(Some((
                 initial_offset..final_offset+1,
                 result,
+                SequentialTokenRange::new(token_id, token_offset, result_length),
             )))
         }
     }
@@ -191,6 +360,7 @@ impl Buffer {
     ) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
         String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenRange, /* The token range that was matched */
     )>, String> where F: FnMut(char, usize) -> bool {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
@@ -198,12 +368,13 @@ impl Buffer {
         let Some((token, token_offset)) = self.document.get_by_offset(*offset) else {
             return Err(format!("Cannot get token at offset {} in document!", offset));
         };
+        let token_id = token.id;
         // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
 
         let mut is_first = true;
         let mut is_done = false;
         let mut result = String::from("");
-        let mut pointer_id = token.id;
+        let mut pointer_id = token_id;
         loop {
             let Some(mut pointer) = self.document.get_by_id(pointer_id) else {
                 break;
@@ -243,16 +414,26 @@ impl Buffer {
             return Ok(None);
         };
 
+        let result_length = result.len();
+
         if !include_matched_char && result.len() > 0 {
             let initial_offset = *offset;
-            let final_offset = initial_offset - (result.len()-1);
+            let final_offset = initial_offset - (result_length-1);
             self.seek(final_offset); // FIXME: I think this is wrong
-            Ok(Some((initial_offset+1..final_offset+1, result[1..].to_string())))
+            Ok(Some((
+                initial_offset+1..final_offset+1,
+                result[1..].to_string(),
+                SequentialTokenRange::new_backwards(token_id, token_offset, result_length-1),
+            )))
         } else {
             let initial_offset = *offset;
-            let final_offset = initial_offset - (result.len()-1);
+            let final_offset = initial_offset - (result_length-1);
             self.seek(final_offset);
-            Ok(Some((initial_offset+1..final_offset, result)))
+            Ok(Some((
+                initial_offset+1..final_offset,
+                result,
+                SequentialTokenRange::new_backwards(token_id, token_offset, result_length),
+            )))
         }
     }
 
@@ -363,7 +544,7 @@ impl Buffer {
             }
 
             match result {
-                Ok(Some((_, result))) => {
+                Ok(Some((_, result, _))) => {
                     final_offset = self.get_offset();
                     if final_offset > initial_offset {
                         combined_result = format!("{}{}", combined_result, result);
@@ -438,7 +619,7 @@ impl Buffer {
         self.seek_push(current_offset);
         while current_row < row {
             self.seek(current_offset);
-            let Ok(Some((_, result))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
                 // There must not be an end of line for the rest of the text document
                 // So we are done
                 break;
@@ -483,7 +664,7 @@ impl Buffer {
         self.seek_push(current_offset);
         while current_offset < offset {
             self.seek(current_offset);
-            let Ok(Some((_, result))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
                 // There must not be an end of line for the rest of the text document
                 // So we are done
                 break;
@@ -935,6 +1116,27 @@ mod test_engine {
             assert_eq!(buffer.read(10), Ok(String::from("az")));
         }
 
+        fn get_first_two_in_tuple(v: Result<Option<(
+            std::ops::Range<usize>, /* The matched token offset range */
+            String, /* The matched literal data in all tokens, concatenated */
+            SequentialTokenRange, /* The token range that was matched */
+        )>, String>) -> Result<Option<(
+            std::ops::Range<usize>, /* The matched token offset range */
+            String, /* The matched literal data in all tokens, concatenated */
+        )>, String> {
+            match v {
+                Ok(a) => {
+                    if let Some((b, c, d)) = a {
+                        println!("D: {:?}", d);
+                        Ok(Some((b, c)))
+                    } else {
+                        Ok(None)
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        }
+
         mod read_forwards_until {
             use super::*;
 
@@ -942,7 +1144,7 @@ mod test_engine {
             fn it_should_seek_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    buffer.read_forwards_until(|c, _| c == 'b', true),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'b', true)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
@@ -952,7 +1154,7 @@ mod test_engine {
             fn it_should_seek_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    buffer.read_forwards_until(|c, _| c == 'b', false),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'b', false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
@@ -962,7 +1164,7 @@ mod test_engine {
             fn it_should_seek_by_index_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    buffer.read_forwards_until(|_, i| i >= 5, true),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|_, i| i >= 5, true)),
                     Ok(Some((0..6, "foo ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
@@ -972,7 +1174,7 @@ mod test_engine {
             fn it_should_seek_by_index_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    buffer.read_forwards_until(|_, i| i >= 5, false),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|_, i| i >= 5, false)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
@@ -982,7 +1184,7 @@ mod test_engine {
             fn it_should_never_match_a_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    buffer.read_forwards_until(|c, _| c == 'X', false),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'X', false)),
                     Ok(None)
                 );
                 assert_eq!(buffer.get_offset(), 0);
@@ -994,21 +1196,21 @@ mod test_engine {
 
                 // First seek to the first space
                 assert_eq!(
-                    buffer.read_forwards_until(|c, _| c == ' ', true),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == ' ', true)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 3);
 
                 // Then seek to right before the `a`
                 assert_eq!(
-                    buffer.read_forwards_until(|c, _| c == 'a', false),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == 'a', false)),
                     Ok(Some((3..5, " b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
 
                 // Then seek by index most of the way to the end
                 assert_eq!(
-                    buffer.read_forwards_until(|_, i| i >= 9, true),
+                    get_first_two_in_tuple(buffer.read_forwards_until(|_, i| i >= 9, true)),
                     Ok(Some((5..10, "ar ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 9);
@@ -1023,7 +1225,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 buffer.seek(10);
                 assert_eq!(
-                    buffer.read_backwards_until(|c, _| c == 'r', true),
+                    get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'r', true)),
                     Ok(Some((11..6, "r baz".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
@@ -1034,7 +1236,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 buffer.seek(10);
                 assert_eq!(
-                    buffer.read_backwards_until(|c, _| c == 'r', false),
+                    get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'r', false)),
                     Ok(Some((11..7, " baz".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
@@ -1047,28 +1249,28 @@ mod test_engine {
 
             // First seek to the first space
             assert_eq!(
-                buffer.read_forwards_until(|c, _| c == ' ', true),
+                get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == ' ', true)),
                 Ok(Some((0..4, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 3);
 
             // Then seek back a few characters
             assert_eq!(
-                buffer.read_backwards_until(|c, _| c == 'f', true),
+                get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'f', true)),
                 Ok(Some((4..0, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 0);
 
             // Then seek to the first space, NOT INCLUDING IT
             assert_eq!(
-                buffer.read_forwards_until(|c, _| c == ' ', false),
+                get_first_two_in_tuple(buffer.read_forwards_until(|c, _| c == ' ', false)),
                 Ok(Some((0..3, "foo".to_string())))
             );
             assert_eq!(buffer.get_offset(), 3);
 
             // Then seek back a few characters again, NOT INCLUDING IT
             assert_eq!(
-                buffer.read_backwards_until(|c, _| c == 'f', false),
+                get_first_two_in_tuple(buffer.read_backwards_until(|c, _| c == 'f', false)),
                 Ok(Some((4..1, "oo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 0);
