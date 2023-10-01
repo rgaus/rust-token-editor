@@ -849,7 +849,16 @@ enum Verb {
 #[derive(Clone)]
 enum Noun {
     Character,
-    Word,
+    LowerWord,
+    UpperWord,
+    LowerBack,
+    UpperBack,
+    LowerEnd,
+    UpperEnd,
+    To(char),
+    UpperTo(char),
+    Find(char),
+    UpperFind(char),
     Paragraph,
     Sentence,
     Line,
@@ -891,6 +900,7 @@ pub struct View {
     // Command parsing state
     state: ViewState,
     command_count: String,
+    is_backwards: bool,
     verb: Option<Verb>,
     noun: Option<Noun>,
     should_clear_command_count: bool,
@@ -901,6 +911,7 @@ pub struct View {
 pub struct ViewDumpedData {
     mode: Mode,
     command_count: usize,
+    is_backwards: bool,
     verb: Option<Verb>,
     noun: Option<Noun>,
 }
@@ -913,6 +924,7 @@ impl View {
             position: (0, 0),
             state: ViewState::Initial,
             command_count: String::from(""),
+            is_backwards: false,
             verb: None,
             noun: None,
             should_clear_command_count: false,
@@ -920,6 +932,7 @@ impl View {
     }
     fn clear_command(&mut self) {
         self.command_count = String::from("");
+        self.is_backwards = false;
         self.verb = None;
         self.noun = None;
     }
@@ -934,6 +947,7 @@ impl View {
         println!("VIEW STATE:");
         println!("state={:?}", self.state);
         println!("mode={:?}", self.mode);
+        println!("is_backwards={:?}", self.is_backwards);
         println!("command_count={:?}", self.command_count);
         println!("verb={:?}", self.verb);
         println!("noun={:?}", self.noun);
@@ -943,6 +957,7 @@ impl View {
         ViewDumpedData {
             mode: self.mode.clone(),
             command_count: self.command_count.parse::<usize>().unwrap_or(1),
+            is_backwards: self.is_backwards,
             verb: self.verb.clone(),
             noun: self.noun.clone(),
         }
@@ -1028,7 +1043,7 @@ impl View {
                 'u' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Lowercase) => self.set_noun(Noun::Line),
 
                 // "Nouns"
-                'w' if self.next_can_be_noun() => self.set_noun(Noun::Word),
+                'w' if self.next_can_be_noun() => self.set_noun(Noun::LowerWord),
                 'p' if self.next_can_be_noun() => self.set_noun(Noun::Paragraph),
                 's' if self.next_can_be_noun() => self.set_noun(Noun::Sentence),
                 '[' | ']' if self.next_can_be_noun() => self.set_noun(Noun::BlockSquare),
@@ -1099,14 +1114,33 @@ impl View {
             return;
         }
 
-        let range_start = self.position;
-        let mut range_end = self.position;
-        match self.noun {
+        let command_count = self.command_count.parse::<usize>().unwrap_or(1);
+        let range = match self.noun {
             Some(Noun::Character) => {
-                // self.buffer.read_to_pattern();
+                if self.is_backwards {
+                    self.buffer.read_to_pattern(TraversalPattern::Left, command_count)
+                } else {
+                    self.buffer.read_to_pattern(TraversalPattern::Right, command_count)
+                }
             },
-            // Character,
-            // Word,
+            Some(Noun::LowerWord) => self.buffer.read_to_pattern(TraversalPattern::LowerWord, command_count),
+            Some(Noun::UpperWord) => self.buffer.read_to_pattern(TraversalPattern::UpperWord, command_count),
+            Some(Noun::LowerBack) => self.buffer.read_to_pattern(TraversalPattern::LowerBack, command_count),
+            Some(Noun::UpperBack) => self.buffer.read_to_pattern(TraversalPattern::UpperBack, command_count),
+            Some(Noun::LowerEnd) => self.buffer.read_to_pattern(TraversalPattern::LowerEnd, command_count),
+            Some(Noun::UpperEnd) => self.buffer.read_to_pattern(TraversalPattern::UpperEnd, command_count),
+            Some(Noun::To(c)) => self.buffer.read_to_pattern(TraversalPattern::To(c), command_count),
+            Some(Noun::UpperTo(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperTo(c), command_count),
+            // LowerWord,
+            // UpperWord,
+            // LowerBack,
+            // UpperBack,
+            // LowerEnd,
+            // UpperEnd,
+            // To(char),
+            // UpperTo(char),
+            // Find(char),
+            // UpperFind(char),
             // Paragraph,
             // Sentence,
             // Line,
@@ -1122,8 +1156,8 @@ impl View {
             // QuoteBacktick,
             // Inside(Box<Noun>),
             // Around(Box<Noun>),
-            _ => {},
-        }
+            _ => self.buffer.read(1),
+        };
 
         self.dump();
         self.clear_command();
@@ -1418,19 +1452,19 @@ mod test_engine {
                     mode: Mode::Normal,
                     command_count: 1,
                     verb: Some(Verb::Change),
-                    noun: Some(Noun::Word),
+                    noun: Some(Noun::LowerWord),
                 }),
                 ("2cw", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 2,
                     verb: Some(Verb::Change),
-                    noun: Some(Noun::Word),
+                    noun: Some(Noun::LowerWord),
                 }),
                 ("c2w", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 2,
                     verb: Some(Verb::Change),
-                    noun: Some(Noun::Word),
+                    noun: Some(Noun::LowerWord),
                 }),
 
                 // Inside / Around
