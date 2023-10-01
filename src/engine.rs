@@ -42,6 +42,29 @@ impl SequentialTokenRange {
         }
     }
 
+    // Creates a new SequentialTokenRange by taking two absolute offsets in the token stream
+    pub fn new_from_offsets(
+        tokens_collection: &mut Box<TokensCollection>,
+        offset_a: usize,
+        offset_b: usize,
+    ) -> Result<SequentialTokenRange, String> {
+        let (start_offset, end_offset, is_backwards) = if offset_a <= offset_b {
+            (offset_a, offset_b, false)
+        } else {
+            (offset_b, offset_a, true)
+        };
+
+        let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(start_offset) else {
+            return Err(format!("Cannot get start token at offset {} in document!", start_offset));
+        };
+
+        Ok(Self::new(
+            start_token.id,
+            start_token_offset,
+            end_offset - start_offset,
+        ))
+    }
+
     // Remove all tokens (and any of their children!) within the token range.
     //
     // If `keep_first_token` is true, then the first token is kept in the token list but left
@@ -176,6 +199,69 @@ impl SequentialTokenRange {
             token_match_templates_map,
         )
     }
+
+    // When called, converts the given SequentialTokenRange into forwards form if it is a backwards
+    // range. If the range is already forwards, then this is a no-op.
+    pub fn as_forwards_range(
+        &self,
+        tokens_collection: &mut Box<TokensCollection>,
+    ) -> Result<SequentialTokenRange, String> {
+        if !self.is_backwards {
+            return Ok(self.clone());
+        }
+
+        let mut start_offset = tokens_collection.compute_offset(self.starting_token_id);
+        start_offset += self.starting_token_offset;
+
+        let end_offset = if self.char_count > start_offset {
+            // This range seems to go to before the start of the document?
+            0
+        } else {
+            start_offset - self.char_count
+        };
+
+        let Some((token, token_offset)) = tokens_collection.get_by_offset(end_offset) else {
+            return Err(format!("Cannot get token at offset {} in document!", end_offset));
+        };
+
+        Ok(Self::new(
+            token.id,
+            token_offset,
+            start_offset - end_offset,
+        ))
+    }
+
+    pub fn extend(
+        &self,
+        tokens_collection: &mut Box<TokensCollection>,
+        range: SequentialTokenRange,
+    ) -> Result<SequentialTokenRange, String> {
+        // NOTE: the below logic won't work unless the ranges are already forwards
+        let existing_range = self.as_forwards_range(tokens_collection)?;
+        let new_range = range.as_forwards_range(tokens_collection)?;
+
+        let mut existing_start_offset = tokens_collection.compute_offset(existing_range.starting_token_id);
+        existing_start_offset += existing_range.starting_token_offset;
+
+        let mut new_start_offset = tokens_collection.compute_offset(new_range.starting_token_id);
+        new_start_offset += new_range.starting_token_offset;
+
+        if existing_start_offset < new_start_offset {
+            let char_count = (new_start_offset - existing_start_offset) + new_range.char_count;
+            Ok(Self::new(
+                existing_range.starting_token_id,
+                existing_range.starting_token_offset,
+                char_count,
+            ))
+        } else {
+            let char_count = (existing_start_offset - new_start_offset) + existing_range.char_count;
+            Ok(Self::new(
+                new_range.starting_token_id,
+                new_range.starting_token_offset,
+                char_count,
+            ))
+        }
+    }
 }
 
 pub enum TraversalPattern {
@@ -250,10 +336,8 @@ impl Buffer {
             self.offset_stack.pop();
         }
     }
-    pub fn read(
-        &mut self,
-        number_of_chars: usize,
-    ) -> Result<Option<(
+
+    pub fn read(&mut self, number_of_chars: usize) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
         String, /* The matched literal data in all tokens, concatenated */
         SequentialTokenRange, /* The token range that was matched */
@@ -476,11 +560,17 @@ impl Buffer {
     ) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
         String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenRange, /* The token range that was matched */
     )>, String> {
         let initial_offset = self.get_offset();
         let mut final_offset = initial_offset;
 
         let mut combined_result = String::from("");
+        let mut combined_range = SequentialTokenRange::new_from_offsets(
+            &mut self.document,
+            initial_offset,
+            initial_offset,
+        )?;
 
         for _index in 0..repeat_count {
             let mut hit_newline = false;
@@ -576,13 +666,15 @@ impl Buffer {
             }
 
             match result {
-                Ok(Some((_, result, _))) => {
+                Ok(Some((_, result, range))) => {
                     final_offset = self.get_offset();
+
                     if final_offset > initial_offset {
                         combined_result = format!("{}{}", combined_result, result);
                     } else {
                         combined_result = format!("{}{}", result, combined_result);
                     }
+                    combined_range = combined_range.extend(&mut self.document, range)?;
                 },
                 Ok(None) => {
                     // Couldn't find a next match, so stick with whatever we've got already
@@ -597,7 +689,11 @@ impl Buffer {
         if initial_offset == final_offset {
             Ok(None)
         } else {
-            Ok(Some((initial_offset..final_offset, combined_result)))
+            Ok(Some((
+                initial_offset..final_offset,
+                combined_result,
+                combined_range,
+            )))
         }
     }
 
