@@ -11,10 +11,10 @@ const NEWLINE_CHAR: char = '\n';
 #[derive(Clone)]
 #[derive(PartialEq)]
 pub struct SequentialTokenRange {
-    starting_token_id: uuid::Uuid,
-    starting_token_offset: usize,
-    is_backwards: bool,
-    char_count: usize,
+    pub starting_token_id: uuid::Uuid,
+    pub starting_token_offset: usize,
+    pub is_backwards: bool,
+    pub char_count: usize,
 }
 impl SequentialTokenRange {
     pub fn new(
@@ -410,11 +410,13 @@ impl Buffer {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
-        let Some((token, token_offset)) = self.document.get_by_offset(*offset) else {
-            return Err(format!("Cannot get token at offset {} in document!", offset));
+        let initial_offset = *offset;
+
+        let Some((token, token_offset)) = self.document.get_by_offset(initial_offset) else {
+            return Err(format!("Cannot get token at offset {} in document!", initial_offset));
         };
         let token_id = token.id;
-        // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
+        // println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
 
         let mut is_first = true;
         let mut is_done = false;
@@ -432,7 +434,7 @@ impl Buffer {
                     }
                     println!("CHAR: {}", character);
                     result = format!("{}{}", result, character);
-                    if needle_func(character, offset + (result.len()-1)) {
+                    if needle_func(character, initial_offset + (result.len()-1)) {
                         is_done = true;
                         println!("DONE!");
                         break;
@@ -459,20 +461,18 @@ impl Buffer {
         };
 
         let result_length = result.len();
+        let final_offset = initial_offset + (result_length-1);
+
         if !include_matched_char && result_length > 0 {
-            let initial_offset = *offset;
-            let final_offset = initial_offset + (result_length-1);
             self.seek(final_offset);
-            // println!("SEEK: {} => {}", initial_offset, final_offset);
             Ok(Some((
                 initial_offset..final_offset,
                 result[0..result_length-1].to_string(),
                 SequentialTokenRange::new(token_id, token_offset, result_length-1),
             )))
         } else {
-            let initial_offset = *offset;
-            let final_offset = initial_offset + (result_length-1);
-            self.seek(final_offset);
+            self.seek(final_offset+1);
+            println!("SEEK: {} => {}", initial_offset, final_offset);
             Ok(Some((
                 initial_offset..final_offset+1,
                 result,
@@ -498,11 +498,12 @@ impl Buffer {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
-        let Some((token, token_offset)) = self.document.get_by_offset(*offset) else {
-            return Err(format!("Cannot get token at offset {} in document!", offset));
+        let initial_offset = *offset - 1;
+        let Some((token, token_offset)) = self.document.get_by_offset(initial_offset) else {
+            return Err(format!("Cannot get token at offset {} in document!", initial_offset));
         };
         let token_id = token.id;
-        // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
+        // println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
 
         let mut is_first = true;
         let mut is_done = false;
@@ -521,8 +522,8 @@ impl Buffer {
                         continue;
                     }
                     result = format!("{}{}", character, result);
-                    println!("FOO {} {} - {}", character, offset, result.len()-1);
-                    if needle_func(character, offset - (result.len() - 1)) {
+                    println!("FOO {} {} - {}", character, initial_offset, result.len()-1);
+                    if needle_func(character, initial_offset - (result.len() - 1)) {
                         is_done = true;
                         break;
                     }
@@ -548,19 +549,16 @@ impl Buffer {
         };
 
         let result_length = result.len();
+        let final_offset = initial_offset - (result_length-1);
 
         if !include_matched_char && result.len() > 0 {
-            let initial_offset = *offset;
-            let final_offset = initial_offset - (result_length-1);
-            self.seek(final_offset); // FIXME: I think this is wrong
+            self.seek(final_offset+1);
             Ok(Some((
                 initial_offset+1..final_offset+1,
                 result[1..].to_string(),
                 SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
             )))
         } else {
-            let initial_offset = *offset;
-            let final_offset = initial_offset - (result_length-1);
             self.seek(final_offset);
             Ok(Some((
                 initial_offset+1..final_offset,
@@ -928,7 +926,7 @@ pub struct View {
 pub struct ViewDumpedData {
     mode: Mode,
     command_count: usize,
-    is_backwards: bool,
+    // is_backwards: bool,
     verb: Option<Verb>,
     noun: Option<Noun>,
 }
@@ -974,7 +972,7 @@ impl View {
         ViewDumpedData {
             mode: self.mode.clone(),
             command_count: self.command_count.parse::<usize>().unwrap_or(1),
-            is_backwards: self.is_backwards,
+            // is_backwards: self.is_backwards,
             verb: self.verb.clone(),
             noun: self.noun.clone(),
         }
@@ -1148,16 +1146,8 @@ impl View {
             Some(Noun::UpperEnd) => self.buffer.read_to_pattern(TraversalPattern::UpperEnd, command_count),
             Some(Noun::To(c)) => self.buffer.read_to_pattern(TraversalPattern::To(c), command_count),
             Some(Noun::UpperTo(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperTo(c), command_count),
-            // LowerWord,
-            // UpperWord,
-            // LowerBack,
-            // UpperBack,
-            // LowerEnd,
-            // UpperEnd,
-            // To(char),
-            // UpperTo(char),
-            // Find(char),
-            // UpperFind(char),
+            Some(Noun::Find(c)) => self.buffer.read_to_pattern(TraversalPattern::Find(c), command_count),
+            Some(Noun::UpperFind(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperFind(c), command_count),
             // Paragraph,
             // Sentence,
             // Line,
@@ -1326,7 +1316,7 @@ mod test_engine {
                     remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', true)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 4);
+                assert_eq!(buffer.get_offset(), 5);
             }
 
             #[test]
@@ -1346,7 +1336,7 @@ mod test_engine {
                     remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, true)),
                     Ok(Some((0..6, "foo ba".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 5);
+                assert_eq!(buffer.get_offset(), 6);
             }
 
             #[test]
@@ -1378,12 +1368,12 @@ mod test_engine {
                     remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 3);
+                assert_eq!(buffer.get_offset(), 4);
 
                 // Then seek to right before the `a`
                 assert_eq!(
                     remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'a', false)),
-                    Ok(Some((3..5, " b".to_string())))
+                    Ok(Some((4..5, "b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
 
@@ -1392,7 +1382,7 @@ mod test_engine {
                     remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 9, true)),
                     Ok(Some((5..10, "ar ba".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 9);
+                assert_eq!(buffer.get_offset(), 10);
             }
         }
 
@@ -1405,7 +1395,7 @@ mod test_engine {
                 buffer.seek(10);
                 assert_eq!(
                     remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', true)),
-                    Ok(Some((11..6, "r baz".to_string())))
+                    Ok(Some((10..6, "r ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
             }
@@ -1416,9 +1406,9 @@ mod test_engine {
                 buffer.seek(10);
                 assert_eq!(
                     remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', false)),
-                    Ok(Some((11..7, " baz".to_string())))
+                    Ok(Some((10..7, " ba".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 6);
+                assert_eq!(buffer.get_offset(), 7);
             }
         }
 
@@ -1431,7 +1421,7 @@ mod test_engine {
                 remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true)),
                 Ok(Some((0..4, "foo ".to_string())))
             );
-            assert_eq!(buffer.get_offset(), 3);
+            assert_eq!(buffer.get_offset(), 4);
 
             // Then seek back a few characters
             assert_eq!(
@@ -1450,9 +1440,9 @@ mod test_engine {
             // Then seek back a few characters again, NOT INCLUDING IT
             assert_eq!(
                 remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', false)),
-                Ok(Some((4..1, "oo ".to_string())))
+                Ok(Some((3..1, "oo".to_string())))
             );
-            assert_eq!(buffer.get_offset(), 0);
+            assert_eq!(buffer.get_offset(), 1);
         }
     }
 
