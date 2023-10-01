@@ -74,7 +74,7 @@ impl SequentialTokenRange {
         &self,
         tokens_collection: &mut Box<TokensCollection>,
         keep_first_token: bool,
-    ) -> Result<(), String> {
+    ) -> Result<SequentialTokenRange, String> {
         let mut chars_removed = 0;
         let mut is_first = true;
         let mut pointer_id = self.starting_token_id;
@@ -130,9 +130,21 @@ impl SequentialTokenRange {
                         } else {
                             chars_removed -= literal_text_length;
                             // Part of this token needs to stay around - also, this is the last token
-                            let number_of_chars_to_keep = self.char_count - chars_removed;
                             tokens_collection.get_by_id_mut(pointer_id, |pointer| {
-                                pointer.literal = Some(String::from(&literal_text[number_of_chars_to_keep..]));
+                                if is_first {
+                                    // This token is both the first and last token - so,
+                                    // this operation only effects this single token
+                                    let result_literal = format!(
+                                        "{}{}",
+                                        &literal_text[..self.starting_token_offset],
+                                        &literal_text[self.starting_token_offset+self.char_count..],
+                                    );
+                                    pointer.literal = Some(String::from(result_literal));
+                                } else {
+                                    let number_of_chars_to_keep = self.char_count - chars_removed;
+                                    println!("KEEP: {}", number_of_chars_to_keep);
+                                    pointer.literal = Some(String::from(&literal_text[number_of_chars_to_keep..]));
+                                }
                             });
                             break;
                         }
@@ -156,22 +168,22 @@ impl SequentialTokenRange {
             tokens_collection.remove_deep(token_id)?;
         }
 
-        Ok(())
+        // Clear out the char count now that all tokens inside have been removed
+        let mut new_range = self.clone();
+        new_range.char_count = 0;
+        Ok(new_range)
     }
 
-    // Replaces the given token range's text contents with the passed `new_text` value.
+    // Prepends the given token range's text contents with the passed `new_text` value.
     //
-    // Note that this is immediate, and that if you want to remove and update the contents after
-    // the fact / over time, call `remove_deep(..., false)` instead.
-    pub fn replace_text(
+    // On its own, this implements an insert at the start of the token range.
+    // It can also be used AFTER calling `remove_deep(.., false)` to implement a change.
+    pub fn prepend_text(
         &self,
         tokens_collection: &mut Box<TokensCollection>,
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<Option<uuid::Uuid>, String> {
-        // Remove all other tokens in the sequence EXCEPT for the first one:
-        self.remove_deep(tokens_collection, false)?;
-
         let mut complete_new_text = new_text;
         if let Some(starting_token) = tokens_collection.get_by_id(self.starting_token_id) {
             if let Some(literal_text) = &starting_token.literal {
@@ -184,13 +196,11 @@ impl SequentialTokenRange {
                     complete_new_text = String::from(format!(
                         "{}{}",
                         complete_new_text,
-                        literal_text,
+                        &literal_text[self.starting_token_offset..],
                     ));
                 }
             }
         };
-
-        println!("NEW: {} {}", self.starting_token_offset, complete_new_text);
 
         // Then change the first one to have the new token text:
         tokens_collection.change_token_literal_text(
@@ -231,6 +241,9 @@ impl SequentialTokenRange {
         ))
     }
 
+    // Given a second SequentialTokenRange, returns a copy of `self` expanded to fit the new
+    // specified range. If the ranges do not form a continuous range, the gap between the ranges is
+    // added to the resulting range.
     pub fn extend(
         &self,
         tokens_collection: &mut Box<TokensCollection>,
@@ -242,19 +255,23 @@ impl SequentialTokenRange {
 
         let mut existing_start_offset = tokens_collection.compute_offset(existing_range.starting_token_id);
         existing_start_offset += existing_range.starting_token_offset;
+        let existing_end_offset = existing_start_offset + existing_range.char_count;
 
         let mut new_start_offset = tokens_collection.compute_offset(new_range.starting_token_id);
         new_start_offset += new_range.starting_token_offset;
+        let new_end_offset = new_start_offset + new_range.char_count;
+
+        let smaller_start_offset = std::cmp::min(existing_start_offset, new_start_offset);
+        let larger_end_offset = std::cmp::max(existing_end_offset, new_end_offset);
+        let char_count = larger_end_offset - smaller_start_offset;
 
         if existing_start_offset < new_start_offset {
-            let char_count = (new_start_offset - existing_start_offset) + new_range.char_count;
             Ok(Self::new(
                 existing_range.starting_token_id,
                 existing_range.starting_token_offset,
                 char_count,
             ))
         } else {
-            let char_count = (existing_start_offset - new_start_offset) + existing_range.char_count;
             Ok(Self::new(
                 new_range.starting_token_id,
                 new_range.starting_token_offset,
@@ -539,7 +556,7 @@ impl Buffer {
             Ok(Some((
                 initial_offset+1..final_offset+1,
                 result[1..].to_string(),
-                SequentialTokenRange::new_backwards(token_id, token_offset, result_length-1),
+                SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
             )))
         } else {
             let initial_offset = *offset;
