@@ -44,10 +44,12 @@ impl SequentialTokenRange {
 
     // Creates a new SequentialTokenRange by taking two absolute offsets in the token stream
     pub fn new_from_offsets(
-        tokens_collection: &mut Box<TokensCollection>,
+        buffer: &mut Buffer,
         offset_a: usize,
         offset_b: usize,
     ) -> Result<SequentialTokenRange, String> {
+        let tokens_collection = buffer.tokens_mut();
+
         let (start_offset, end_offset, is_backwards) = if offset_a <= offset_b {
             (offset_a, offset_b, false)
         } else {
@@ -72,13 +74,14 @@ impl SequentialTokenRange {
     // is where the change text will end up
     pub fn remove_deep(
         &self,
-        tokens_collection: &mut Box<TokensCollection>,
+        buffer: &mut Buffer,
         keep_first_token: bool,
     ) -> Result<SequentialTokenRange, String> {
         let mut chars_removed = 0;
         let mut is_first = true;
         let mut pointer_id = self.starting_token_id;
         let mut token_ids_to_remove = vec![];
+        let mut tokens_collection = buffer.tokens_mut();
 
         loop {
             let result = {
@@ -180,10 +183,12 @@ impl SequentialTokenRange {
     // It can also be used AFTER calling `remove_deep(.., false)` to implement a change.
     pub fn prepend_text(
         &self,
-        tokens_collection: &mut Box<TokensCollection>,
+        buffer: &mut Buffer,
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<Option<uuid::Uuid>, String> {
+        let mut tokens_collection = buffer.tokens_mut();
+
         let mut complete_new_text = new_text;
         if let Some(starting_token) = tokens_collection.get_by_id(self.starting_token_id) {
             if let Some(literal_text) = &starting_token.literal {
@@ -214,11 +219,13 @@ impl SequentialTokenRange {
     // range. If the range is already forwards, then this is a no-op.
     pub fn as_forwards_range(
         &self,
-        tokens_collection: &mut Box<TokensCollection>,
+        buffer: &mut Buffer,
     ) -> Result<SequentialTokenRange, String> {
         if !self.is_backwards {
             return Ok(self.clone());
         }
+
+        let mut tokens_collection = buffer.tokens_mut();
 
         let mut start_offset = tokens_collection.compute_offset(self.starting_token_id);
         start_offset += self.starting_token_offset;
@@ -246,12 +253,14 @@ impl SequentialTokenRange {
     // added to the resulting range.
     pub fn extend(
         &self,
-        tokens_collection: &mut Box<TokensCollection>,
+        buffer: &mut Buffer,
         range: SequentialTokenRange,
     ) -> Result<SequentialTokenRange, String> {
         // NOTE: the below logic won't work unless the ranges are already forwards
-        let existing_range = self.as_forwards_range(tokens_collection)?;
-        let new_range = range.as_forwards_range(tokens_collection)?;
+        let existing_range = self.as_forwards_range(buffer)?;
+        let new_range = range.as_forwards_range(buffer)?;
+
+        let tokens_collection = buffer.tokens_mut();
 
         let mut existing_start_offset = tokens_collection.compute_offset(existing_range.starting_token_id);
         existing_start_offset += existing_range.starting_token_offset;
@@ -582,7 +591,7 @@ impl Buffer {
 
         let mut combined_result = String::from("");
         let mut combined_range = SequentialTokenRange::new_from_offsets(
-            &mut self.document,
+            self,
             initial_offset,
             initial_offset,
         )?;
@@ -689,7 +698,7 @@ impl Buffer {
                     } else {
                         combined_result = format!("{}{}", result, combined_result);
                     }
-                    combined_range = combined_range.extend(&mut self.document, range)?;
+                    combined_range = combined_range.extend(self, range)?;
                 },
                 Ok(None) => {
                     // Couldn't find a next match, so stick with whatever we've got already

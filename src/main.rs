@@ -375,8 +375,8 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 fn main() {
     // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
     let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
-    println!("OFFSET: {}", buffer.convert_rows_cols_to_offset((2, 10)));
-    println!("OFFSET: {:?}", buffer.convert_offset_to_rows_cols(13));
+    // println!("OFFSET: {}", buffer.convert_rows_cols_to_offset((2, 10)));
+    // println!("OFFSET: {:?}", buffer.convert_offset_to_rows_cols(13));
     // let (_, _, range) = buffer.read_forwards_until(|c, _| c == '.', false).unwrap().unwrap();
     println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::To('r'), 1));
     let (_, _, range) = buffer.read_to_pattern(TraversalPattern::UpperTo('.'), 1).unwrap().unwrap();
@@ -384,9 +384,12 @@ fn main() {
         let tokens_collection = buffer.tokens_mut();
         println!("READ: {:?}", range);
         println!("PRE: {}", tokens_collection.stringify());
-        range.remove_deep(tokens_collection, true);
-        let result = range.prepend_text(tokens_collection, String::from("TEST"), &HashMap::new());
-        println!("RESULT: {:?}", result);
+    }
+    range.remove_deep(&mut buffer, true);
+    let result = range.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+    println!("RESULT: {:?}", result);
+    {
+        let tokens_collection = buffer.tokens_mut();
         println!("POST: {}", tokens_collection.stringify());
     }
     // buffer.seek(3);
