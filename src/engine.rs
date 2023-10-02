@@ -4,6 +4,12 @@ use crate::token::*;
 use crate::token_match_template::*;
 
 const NEWLINE_CHAR: char = '\n';
+fn is_word_char(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_uppercase()
+}
+fn is_whitespace_char(c: char) -> bool {
+    c.is_ascii_whitespace()
+}
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -285,6 +291,36 @@ impl SequentialTokenRange {
                 char_count,
             ))
         }
+    }
+
+    // When called, scans forward in the token stream looking for whitespace, and returns a new
+    // SequentialTokenRange with the additional whitespace added to the end
+    //
+    // This is used in the `delete` operation to fully delete things like words without leaving
+    // double whitespaces.
+    pub fn add_whitespace_after(
+        &self,
+        buffer: &mut Buffer,
+    ) -> Result<SequentialTokenRange, String> {
+        let range = self.as_forwards_range(buffer)?;
+        let tokens_collection = buffer.tokens_mut();
+
+        // Start seeking from the end of the token forwards, looking for whitespace
+        let mut end_offset = tokens_collection.compute_offset(range.starting_token_id);
+        end_offset += range.starting_token_offset;
+        end_offset += range.char_count;
+        buffer.seek_push(end_offset);
+
+        let result = match buffer.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
+            Ok(Some((_, _, range))) => self.extend(buffer, range),
+            // If the range cannot be extended (maybe we're at the end of the file?) then
+            // just keep it as it is.
+            Ok(None) => Ok(self.clone()),
+            Err(e) => Err(e),
+        };
+
+        buffer.seek_pop();
+        result
     }
 }
 
@@ -626,44 +662,97 @@ impl Buffer {
                     }, true, false)
                 },
                 TraversalPattern::LowerWord => {
-                    let mut hit_whitespace = false;
+                    // The current seek position is either a word char or not. Keep going
+                    // forward until that classification changes.
+                    // FIXME: a character is omitted from the match when the match goes all the way
+                    // to the end. This is a special case that needs to be handles.
+                    let mut started_in_word: Option<bool> = None;
                     self.read_forwards_until(|c, _| {
+                        let is_current_word_char = is_word_char(c);
                         if c == '\n' {
                             hit_newline = true;
                             true
-                        } else if c.is_ascii_lowercase() || c.is_ascii_uppercase() {
-                            hit_whitespace
+                        } else if let Some(started_in_word) = started_in_word {
+                            started_in_word != is_current_word_char
                         } else {
-                            hit_whitespace = true;
+                            started_in_word = Some(is_current_word_char);
                             false
                         }
                     }, false, true)
                 },
                 TraversalPattern::UpperWord => {
-                    let mut hit_whitespace = false;
+                    // The current seek position is either a whitespace char or not. Keep going
+                    // forward until that classification changes.
+                    // FIXME: a character is omitted from the match when the match goes all the way
+                    // to the end. This is a special case that needs to be handles.
+                    let mut started_in_whitespace: Option<bool> = None;
                     self.read_forwards_until(|c, _| {
-                        if c == '\n' {
-                            hit_newline = true;
+                        let is_whitespace_char = is_whitespace_char(c);
+                        // FIXME: the behavior when pressing w/W and one reaches the end of the
+                        // line doesn't work right
+                        if hit_newline {
                             true
-                        } else if !c.is_ascii_whitespace() {
-                            hit_whitespace
+                        } else if c == '\n' {
+                            hit_newline = true;
+                            false
+                        } else if let Some(started_in_whitespace_val) = started_in_whitespace {
+                            if started_in_whitespace_val && !is_whitespace_char {
+                                true
+                            } else if !started_in_whitespace_val && is_whitespace_char {
+                                started_in_whitespace = Some(true);
+                                false
+                            } else {
+                                false
+                            }
                         } else {
-                            hit_whitespace = true;
+                            started_in_whitespace = Some(is_whitespace_char);
                             false
                         }
                     }, false, false)
                 },
                 TraversalPattern::LowerBack => {
-                    self.read_backwards_until(|c, _| {
-                        if c.is_ascii_lowercase() || c.is_ascii_uppercase() {
-                            false
-                        } else {
+                    // The current seek position is either a word char or not. Keep going
+                    // backwards until that classification changes.
+                    // FIXME: a character is omitted from the match when the match goes back to the
+                    // start. This is a special case that needs to be handles.
+                    let mut started_in_word: Option<bool> = None;
+                    self.read_backwards_until(|c, i| {
+                        let is_current_word_char = is_word_char(c);
+                        if i == 0 {
+                            // If we're back at the start, that always finishes a match
                             true
+                        } else if c == '\n' {
+                            hit_newline = true;
+                            true
+                        } else if let Some(started_in_word) = started_in_word {
+                            started_in_word != is_current_word_char
+                        } else {
+                            started_in_word = Some(is_current_word_char);
+                            false
                         }
                     }, false)
                 },
                 TraversalPattern::UpperBack => {
-                    self.read_backwards_until(|c, _| !c.is_ascii_whitespace(), true)
+                    // The current seek position is either a whitespace char or not. Keep going
+                    // backwards until that classification changes.
+                    // FIXME: a character is omitted from the match when the match goes back to the
+                    // start. This is a special case that needs to be handles.
+                    let mut started_in_whitespace: Option<bool> = None;
+                    self.read_backwards_until(|c, i| {
+                        let is_current_whitespace_char = is_whitespace_char(c);
+                        if i == 0 {
+                            // If we're back at the start, that always finishes a match
+                            true
+                        } else if c == '\n' {
+                            hit_newline = true;
+                            true
+                        } else if let Some(started_in_whitespace) = started_in_whitespace {
+                            started_in_whitespace != is_current_whitespace_char
+                        } else {
+                            started_in_whitespace = Some(is_current_whitespace_char);
+                            false
+                        }
+                    }, false)
                 },
                 TraversalPattern::LowerEnd => {
                     self.read_forwards_until(|c, _| {
@@ -1029,7 +1118,7 @@ impl View {
     // a new command is successfully parsed
     pub fn raw_parse_input<F>(&mut self, input: &str, mut on_complete: F) where F: FnMut(&mut Self) {
         for character in input.chars() {
-            println!("CHAR: {}", character);
+            // println!("CHAR: {}", character);
             match character {
                 // TODO:
                 // "+y - yank register
@@ -1456,13 +1545,128 @@ mod test_engine {
             );
             assert_eq!(buffer.get_offset(), 1);
         }
+
+        mod read_to_pattern {
+            use super::*;
+
+            #[test]
+            fn it_should_change_lower_word_at_start() {
+                let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+
+                // Get the first lower word
+                let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    TraversalPattern::LowerWord,
+                    1,
+                ).unwrap().unwrap();
+                assert_eq!(range, 0..3);
+                assert_eq!(matched_chars, "foo");
+
+                // Delete it
+                selection.remove_deep(&mut buffer, true);
+                assert_eq!(buffer.tokens_mut().stringify(), ".foo bar baz");
+
+                // Replace it with TEST
+                selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                assert_eq!(buffer.tokens_mut().stringify(), "TEST.foo bar baz");
+            }
+
+            #[test]
+            fn it_should_change_lower_word_in_middle() {
+                let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                buffer.seek(8); // Move to the start of "bar"
+
+                // Get a lower word
+                let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    TraversalPattern::LowerWord,
+                    1,
+                ).unwrap().unwrap();
+                assert_eq!(range, 8..11);
+                assert_eq!(matched_chars, "bar");
+
+                // Delete it
+                selection.remove_deep(&mut buffer, true);
+                assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  baz");
+
+                // Replace it with TEST
+                selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST baz");
+            }
+
+            #[test]
+            fn it_should_change_lower_word_at_end() {
+                let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                buffer.seek(12); // Move to the start of "baz"
+
+                // Get a lower word
+                let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    TraversalPattern::LowerWord,
+                    1,
+                ).unwrap().unwrap();
+                assert_eq!(range, 12..15);
+                assert_eq!(matched_chars, "baz");
+
+                // Delete it
+                selection.remove_deep(&mut buffer, true);
+                assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+
+                // Replace it with TEST
+                selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+            }
+
+            // FIXME: make this pass
+            // #[test]
+            // fn it_should_change_2_lower_words_in_middle() {
+            //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+            //     buffer.seek(8); // Move to the start of "bar"
+            //
+            //     // Get a lower word
+            //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+            //         TraversalPattern::LowerWord,
+            //         2,
+            //     ).unwrap().unwrap();
+            //     assert_eq!(range, 8..12);
+            //     assert_eq!(matched_chars, "bar baz");
+            //
+            //     // Delete it
+            //     selection.remove_deep(&mut buffer, true);
+            //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+            //
+            //     // Replace it with TEST
+            //     selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+            //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+            // }
+
+            #[test]
+            fn it_should_delete_lower_word_in_middle() {
+                let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                buffer.seek(8); // Move to the start of "bar"
+
+                // Get a lower word
+                let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    TraversalPattern::LowerWord,
+                    1,
+                ).unwrap().unwrap();
+                assert_eq!(range, 8..11);
+                assert_eq!(matched_chars, "bar");
+                assert_eq!(selection.char_count, 3);
+
+                // Add the whitespace to the end of the lower word
+                let updated_selection = selection.add_whitespace_after(&mut buffer).unwrap();
+                assert_eq!(updated_selection.char_count, 4);
+
+                // Delete it
+                updated_selection.remove_deep(&mut buffer, true);
+                assert_eq!(buffer.tokens_mut().stringify(), "foo.foo baz");
+            }
+        }
     }
 
     mod test_view {
         use super::*;
 
         #[test]
-        fn it_should_change_word() {
+        fn it_should_parse_many_different_sequences() {
             let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
             let mut view = buffer.create_view();
 

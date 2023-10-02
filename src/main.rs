@@ -378,8 +378,13 @@ fn main() {
     // println!("OFFSET: {}", buffer.convert_rows_cols_to_offset((2, 10)));
     // println!("OFFSET: {:?}", buffer.convert_offset_to_rows_cols(13));
     // let (_, _, range) = buffer.read_forwards_until(|c, _| c == '.', false).unwrap().unwrap();
-    println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::To('r'), 1));
-    let (_, _, range) = buffer.read_to_pattern(TraversalPattern::UpperTo('.'), 1).unwrap().unwrap();
+    // println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::To('r'), 1));
+    println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::UpperWord, 1));
+    println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::UpperBack, 1));
+    // println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord, 1));
+    // println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord, 1));
+    // let (_, _, range) = buffer.read_to_pattern(TraversalPattern::UpperTo('.'), 1).unwrap().unwrap();
+    let (_, _, range) = buffer.read_to_pattern(TraversalPattern::LowerWord, 1).unwrap().unwrap();
     {
         let tokens_collection = buffer.tokens_mut();
         println!("READ: {:?}", range);
@@ -387,7 +392,7 @@ fn main() {
     }
     range.remove_deep(&mut buffer, true);
     let result = range.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-    println!("RESULT: {:?}", result);
+    // println!("RESULT: {:?}", result);
     {
         let tokens_collection = buffer.tokens_mut();
         println!("POST: {}", tokens_collection.stringify());
