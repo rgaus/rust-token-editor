@@ -409,6 +409,7 @@ impl Buffer {
         &mut self,
         mut needle_func: F,
         include_matched_char: bool,
+        should_match_at_end: bool,
     ) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
         String, /* The matched literal data in all tokens, concatenated */
@@ -462,12 +463,17 @@ impl Buffer {
             is_first = false;
         }
 
+        let mut result_length = result.len();
+
         if !is_done {
+            result_length += 1;
+
             // No character ever matched!
-            return Ok(None);
+            if !should_match_at_end {
+                return Ok(None);
+            }
         };
 
-        let result_length = result.len();
         let final_offset = initial_offset + (result_length-1);
 
         if !include_matched_char && result_length > 0 {
@@ -617,7 +623,7 @@ impl Buffer {
                         } else {
                             offset < i
                         }
-                    }, true)
+                    }, true, false)
                 },
                 TraversalPattern::LowerWord => {
                     let mut hit_whitespace = false;
@@ -631,7 +637,7 @@ impl Buffer {
                             hit_whitespace = true;
                             false
                         }
-                    }, true)
+                    }, false, true)
                 },
                 TraversalPattern::UpperWord => {
                     let mut hit_whitespace = false;
@@ -645,7 +651,7 @@ impl Buffer {
                             hit_whitespace = true;
                             false
                         }
-                    }, true)
+                    }, false, false)
                 },
                 TraversalPattern::LowerBack => {
                     self.read_backwards_until(|c, _| {
@@ -654,7 +660,7 @@ impl Buffer {
                         } else {
                             true
                         }
-                    }, true)
+                    }, false)
                 },
                 TraversalPattern::UpperBack => {
                     self.read_backwards_until(|c, _| !c.is_ascii_whitespace(), true)
@@ -662,21 +668,21 @@ impl Buffer {
                 TraversalPattern::LowerEnd => {
                     self.read_forwards_until(|c, _| {
                         !c.is_ascii_lowercase() && !c.is_ascii_uppercase()
-                    }, false)
+                    }, false, false)
                 },
                 TraversalPattern::UpperEnd => {
                     self.read_forwards_until(|c, _| {
                         c.is_ascii_whitespace()
-                    }, false)
+                    }, false, false)
                 },
                 TraversalPattern::To(character) => {
-                    self.read_forwards_until(|c, _| c == character, false)
+                    self.read_forwards_until(|c, _| c == character, false, false)
                 },
                 TraversalPattern::UpperTo(character) => {
                     self.read_backwards_until(|c, _| c == character, false)
                 },
                 TraversalPattern::Find(character) => {
-                    self.read_forwards_until(|c, _| c == character, true)
+                    self.read_forwards_until(|c, _| c == character, true, false)
                 },
                 TraversalPattern::UpperFind(character) => {
                     self.read_backwards_until(|c, _| c == character, true)
@@ -769,7 +775,7 @@ impl Buffer {
         self.seek_push(current_offset);
         while current_row < row {
             self.seek(current_offset);
-            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true, false) else {
                 // There must not be an end of line for the rest of the text document
                 // So we are done
                 break;
@@ -814,7 +820,7 @@ impl Buffer {
         self.seek_push(current_offset);
         while current_offset < offset {
             self.seek(current_offset);
-            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true) else {
+            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true, false) else {
                 // There must not be an end of line for the rest of the text document
                 // So we are done
                 break;
@@ -1319,7 +1325,7 @@ mod test_engine {
             fn it_should_seek_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', true, false)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
@@ -1329,7 +1335,7 @@ mod test_engine {
             fn it_should_seek_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', false, false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
@@ -1339,7 +1345,7 @@ mod test_engine {
             fn it_should_seek_by_index_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, true, false)),
                     Ok(Some((0..6, "foo ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
@@ -1349,7 +1355,7 @@ mod test_engine {
             fn it_should_seek_by_index_not_including_matched_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, false, false)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
@@ -1359,7 +1365,7 @@ mod test_engine {
             fn it_should_never_match_a_char() {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'X', false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'X', false, false)),
                     Ok(None)
                 );
                 assert_eq!(buffer.get_offset(), 0);
@@ -1371,21 +1377,21 @@ mod test_engine {
 
                 // First seek to the first space
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true, false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 4);
 
                 // Then seek to right before the `a`
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'a', false)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'a', false, false)),
                     Ok(Some((4..5, "b".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 5);
 
                 // Then seek by index most of the way to the end
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 9, true)),
+                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 9, true, false)),
                     Ok(Some((5..10, "ar ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 10);
@@ -1424,7 +1430,7 @@ mod test_engine {
 
             // First seek to the first space
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true)),
+                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true, false)),
                 Ok(Some((0..4, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 4);
@@ -1438,7 +1444,7 @@ mod test_engine {
 
             // Then seek to the first space, NOT INCLUDING IT
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', false)),
+                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', false, false)),
                 Ok(Some((0..3, "foo".to_string())))
             );
             assert_eq!(buffer.get_offset(), 3);
