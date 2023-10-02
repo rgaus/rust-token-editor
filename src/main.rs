@@ -38,7 +38,7 @@ fn stringify_colors(
     head_id: uuid::Uuid,
     tokens_collection: &TokensCollection,
 ) -> String {
-    let mut result = String::from("");
+    let result = String::from("");
     let mut pointer_id = head_id;
 
     let color_sequence = vec![
@@ -64,7 +64,7 @@ fn stringify_colors(
     let mut last_depth = 0;
 
     loop {
-        let Some(mut pointer) = tokens_collection.get_by_id(pointer_id) else {
+        let Some(pointer) = tokens_collection.get_by_id(pointer_id) else {
             println!("BAD POINTER! {:?}", pointer_id);
             break;
         };
@@ -102,7 +102,7 @@ fn stringify_colors(
                 "bright_cyan" => literal_text.clone().bright_cyan(),
                 "bright_magenta" => literal_text.clone().bright_magenta(),
                 "bright_purple" => literal_text.clone().bright_purple(),
-                _ | "normal" => literal_text.clone().normal(),
+                "normal" | _ => literal_text.clone().normal(),
             };
             // result = format!("{}{}", result, colored_literal_text);
             println!("{}", colored_literal_text);

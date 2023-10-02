@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use regex::Regex;
-use colored::Colorize;
 
 use crate::token::*;
 use crate::token_match_template::*;
@@ -50,10 +48,10 @@ impl SequentialTokenRange {
     ) -> Result<SequentialTokenRange, String> {
         let tokens_collection = buffer.tokens_mut();
 
-        let (start_offset, end_offset, is_backwards) = if offset_a <= offset_b {
-            (offset_a, offset_b, false)
+        let (start_offset, end_offset) = if offset_a <= offset_b {
+            (offset_a, offset_b)
         } else {
-            (offset_b, offset_a, true)
+            (offset_b, offset_a)
         };
 
         let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(start_offset) else {
@@ -81,7 +79,7 @@ impl SequentialTokenRange {
         let mut is_first = true;
         let mut pointer_id = self.starting_token_id;
         let mut token_ids_to_remove = vec![];
-        let mut tokens_collection = buffer.tokens_mut();
+        let tokens_collection = buffer.tokens_mut();
 
         loop {
             let result = {
@@ -187,7 +185,7 @@ impl SequentialTokenRange {
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<Option<uuid::Uuid>, String> {
-        let mut tokens_collection = buffer.tokens_mut();
+        let tokens_collection = buffer.tokens_mut();
 
         let mut complete_new_text = new_text;
         if let Some(starting_token) = tokens_collection.get_by_id(self.starting_token_id) {
@@ -225,7 +223,7 @@ impl SequentialTokenRange {
             return Ok(self.clone());
         }
 
-        let mut tokens_collection = buffer.tokens_mut();
+        let tokens_collection = buffer.tokens_mut();
 
         let mut start_offset = tokens_collection.compute_offset(self.starting_token_id);
         start_offset += self.starting_token_offset;
@@ -432,7 +430,7 @@ impl Buffer {
         let mut result = String::from("");
         let mut pointer_id = token_id;
         loop {
-            let Some(mut pointer) = self.document.get_by_id(pointer_id) else {
+            let Some(pointer) = self.document.get_by_id(pointer_id) else {
                 break;
             };
 
@@ -519,7 +517,7 @@ impl Buffer {
         let mut result = String::from("");
         let mut pointer_id = token_id;
         loop {
-            let Some(mut pointer) = self.document.get_by_id(pointer_id) else {
+            let Some(pointer) = self.document.get_by_id(pointer_id) else {
                 break;
             };
 
@@ -1008,11 +1006,9 @@ impl View {
 
     // When this function return true, the next token being parsed can be a noun
     fn next_can_be_noun(&self) -> bool {
-        (
-            self.state == ViewState::HasVerb || 
-            self.state == ViewState::IsInside ||
-            self.state == ViewState::IsAround
-        )
+        self.state == ViewState::HasVerb || 
+        self.state == ViewState::IsInside ||
+        self.state == ViewState::IsAround
     }
 
     fn in_g_mode(&self) -> bool {
@@ -1183,6 +1179,7 @@ impl View {
 
 #[cfg(test)]
 mod test_engine {
+    use regex::Regex;
     use super::*;
 
     fn remove_sequentialtokenrange(v: Result<Option<(

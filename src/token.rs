@@ -73,7 +73,7 @@ impl TokensCollection {
         let index_or_none = {
             let mut found = false;
             let mut index = 0;
-            for mut token in &self.tokens {
+            for token in &self.tokens {
                 println!("TOKEN? {} {}", token.id, id);
                 if token.id == id {
                     found = true;
@@ -100,7 +100,7 @@ impl TokensCollection {
         let index_or_none = {
             let mut found = false;
             let mut index = 0;
-            for mut token in &self.tokens {
+            for token in &self.tokens {
                 if token.id == id {
                     found = true;
                     break;
@@ -342,7 +342,7 @@ impl TokensCollection {
         let Some(old_token) = self.get_by_id(token_id) else {
             return Err(format!("Cannot find token with id {}", token_id));
         };
-        let mut token_offset = 0;
+        let token_offset = 0;
 
         // Create a clone of the token to modify in-memory
         let mut working_token = old_token.clone();
@@ -376,9 +376,8 @@ impl TokensCollection {
                 0,
                 token_match_templates_map,
             ) {
-                Ok((match_status, offset, last_token_id, child_ids, mut new_tokens)) => {
+                Ok((match_status, _offset, last_token_id, child_ids, new_tokens)) => {
                     println!("MATCHED STATUS: {:?} => {:?}", working_token.template, match_status);
-                    let mut is_done = false;
 
                     if match_status != TokenParseStatus::FullParse {
                         if let Some(value) = regular_parse_max_upward_traverals {
@@ -399,8 +398,6 @@ impl TokensCollection {
                                     continue;
                                 };
                             }
-
-                            is_done = true;
                         }
                     }
 
@@ -466,15 +463,10 @@ impl TokensCollection {
                     let (
                         Some(parent_id), // FIXME: it might be wrong to bail if parent_id is None?
                         Some(first_child_id),
-                        Some(last_child_id),
+                        Some(_last_child_id),
                     ) = (working_token.parent_id, child_ids.first(), child_ids.last()) else {
                         return Ok(None);
                     };
-
-                    let parent = self.get_by_id(parent_id) else {
-                        return Ok(None);
-                    };
-
 
                     self.get_by_id_mut(parent_id, |parent| {
                         parent.children_ids = child_ids.clone();
@@ -507,8 +499,6 @@ impl TokensCollection {
                 }
             }
         }
-
-        Ok(None)
     }
 
     // When called, removes a token from the token tree, also removing all of its children.
@@ -625,7 +615,7 @@ impl TokensCollection {
         let mut result = String::from("");
         let mut pointer_id = starting_token_id;
         loop {
-            let Some(mut pointer) = self.get_by_id(pointer_id) else {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
                 break;
             };
             if let Some(literal_text) = &pointer.literal {
@@ -655,7 +645,7 @@ impl TokensCollection {
             if result.len() > at_least_offset {
                 return result;
             };
-            let Some(mut pointer) = self.get_by_id(pointer_id) else {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
                 break;
             };
             if let Some(literal_text) = &pointer.literal {

@@ -140,7 +140,7 @@ impl TokenMatchTemplate {
                                 first_non_parsable_char_index = Some(offset);
                             }
 
-                            let mut new_token = Box::new(Token {
+                            let new_token = Box::new(Token {
                                 id: Uuid::new_v4(),
                                 template: TokenMatchTemplateMatcher::Skipped,
                                 literal: Some(String::from(&input[offset..index])),
@@ -374,7 +374,7 @@ impl TokenMatchTemplate {
                                 first_non_parsable_char_index = Some(offset);
                             }
 
-                            let mut new_token = Box::new(Token {
+                            let new_token = Box::new(Token {
                                 id: Uuid::new_v4(),
                                 template: TokenMatchTemplateMatcher::Skipped,
                                 literal: Some(String::from(&input[offset..index])),
@@ -565,9 +565,7 @@ impl TokenMatchTemplate {
                                     // Both matches do have non parsable characters, so pick the
                                     // match where the non parsable characters begin later in the
                                     // token stream
-                                    let new_non_parsables_start_later = (
-                                        existing_non_parsable_char_start_index < first_non_parsable_char_index
-                                    );
+                                    let new_non_parsables_start_later = existing_non_parsable_char_start_index < first_non_parsable_char_index;
                                     new_non_parsables_start_later
                                 } else {
                                     // println!("OLD HAS NON PARSABLE");
@@ -578,7 +576,7 @@ impl TokenMatchTemplate {
                             } else {
                                 // The existing match DOES NOT have non parsable characters
                                 // Does the current match?
-                                if let Some(first_non_parsable_char_index) = first_non_parsable_char_index {
+                                if let Some(_first_non_parsable_char_index) = first_non_parsable_char_index {
                                     // println!("NEW HAS NON PARSABLE");
                                     // The existing match is a better match since it has no non
                                     // parsable chars
@@ -630,7 +628,7 @@ impl TokenMatchTemplate {
                     let Some((mut new_token, (
                         ephemeral_parse_status,
                         ephemeral_offset,
-                        ephemeral_last_token_id,
+                        _ephemeral_last_token_id,
                         ephemeral_child_ids,
                         ephemeral_tokens,
                     ))) = result else {
@@ -1219,7 +1217,7 @@ impl TokenMatchTemplate {
                     first_non_parsable_char_index = Some(offset);
                 }
 
-                let mut new_token = Box::new(Token {
+                let new_token = Box::new(Token {
                     id: Uuid::new_v4(),
                     template: TokenMatchTemplateMatcher::Skipped,
                     literal: Some(String::from(remaining_chars)),
