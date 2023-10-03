@@ -296,9 +296,6 @@ impl SequentialTokenRange {
 
     // When called, scans forward in the token stream looking for whitespace, and returns a new
     // SequentialTokenRange with the additional whitespace added to the end
-    //
-    // This is used in the `delete` operation to fully delete things like words without leaving
-    // double whitespaces.
     pub fn add_whitespace_after(
         &self,
         buffer: &mut Buffer,
@@ -314,6 +311,43 @@ impl SequentialTokenRange {
 
         let result = match buffer.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
             Ok(Some((_, _, range))) => self.extend(buffer, range),
+            // If the range cannot be extended (maybe we're at the end of the file?) then
+            // just keep it as it is.
+            Ok(None) => Ok(self.clone()),
+            Err(e) => Err(e),
+        };
+
+        buffer.seek_pop();
+        result
+    }
+
+    // When called, scans bcakwards in the token range, removing all whitespace characters at the
+    // end of the SequentialTokenRange, returning a new range with these changes.
+    //
+    // This is used in the `change` operation to preserve whitespace after a selection
+    pub fn remove_whitespace_after(
+        &self,
+        buffer: &mut Buffer,
+    ) -> Result<SequentialTokenRange, String> {
+        let range = self.as_forwards_range(buffer)?;
+        let tokens_collection = buffer.tokens_mut();
+
+        // Start seeking from the end of the token forwards, looking for whitespace
+        let mut end_offset = tokens_collection.compute_offset(range.starting_token_id);
+        end_offset += range.starting_token_offset;
+        end_offset += range.char_count;
+        buffer.seek_push(end_offset);
+
+        let result = match buffer.read_backwards_until(
+            |c, _| !is_whitespace_char(c),
+            false,
+        ) {
+            Ok(Some((_, matched_chars, _))) => {
+                println!("MATCHED CHARS: {}", matched_chars);
+                let mut new_sequence = range.clone();
+                new_sequence.char_count -= matched_chars.len();
+                Ok(new_sequence)
+            },
             // If the range cannot be extended (maybe we're at the end of the file?) then
             // just keep it as it is.
             Ok(None) => Ok(self.clone()),
