@@ -201,6 +201,7 @@ impl SequentialTokenRange {
                     &literal_text[..self.starting_token_offset],
                     complete_new_text, /* this is equal to `new_text` here */
                 ));
+                println!("AFTER: '{}' {} > {}+{}", literal_text, literal_text.len(), self.starting_token_offset, self.char_count);
                 if literal_text.len() > self.starting_token_offset + self.char_count {
                     complete_new_text = String::from(format!(
                         "{}{}",
@@ -600,13 +601,23 @@ impl Buffer {
         let result_length = result.len();
         let final_offset = initial_offset - (result_length-1);
 
-        if !include_matched_char && result.len() > 0 {
+        if !include_matched_char {
             self.seek(final_offset+1);
-            Ok(Some((
-                initial_offset+1..final_offset+1,
-                result[1..].to_string(),
-                SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
-            )))
+            if result.len() > 1 {
+                Ok(Some((
+                    initial_offset+1..final_offset+1,
+                    result[1..].to_string(),
+                    SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
+                )))
+            } else {
+                // One character might have been matched, but because `include_matched_char` is
+                // false, this match results in being empty
+                Ok(Some((
+                    initial_offset+1..final_offset+1,
+                    result[1..].to_string(),
+                    SequentialTokenRange::new_backwards(token_id, token_offset, 0),
+                )))
+            }
         } else {
             self.seek(final_offset);
             Ok(Some((
