@@ -735,19 +735,10 @@ impl Buffer {
                 TraversalPattern::UpperWord => {
                     // The current seek position is either a whitespace char or not. Keep going
                     // forward until that classification changes.
-                    // FIXME: a character is omitted from the match when the match goes all the way
-                    // to the end. This is a special case that needs to be handles.
                     let mut started_in_whitespace: Option<bool> = None;
                     self.read_forwards_until(|c, _| {
                         let is_whitespace_char = is_whitespace_char(c);
-                        // FIXME: the behavior when pressing w/W and one reaches the end of the
-                        // line doesn't work right
-                        if hit_newline {
-                            true
-                        } else if c == '\n' {
-                            hit_newline = true;
-                            false
-                        } else if let Some(started_in_whitespace_val) = started_in_whitespace {
+                        if let Some(started_in_whitespace_val) = started_in_whitespace {
                             if started_in_whitespace_val && !is_whitespace_char {
                                 true
                             } else if !started_in_whitespace_val && is_whitespace_char {
@@ -760,7 +751,7 @@ impl Buffer {
                             started_in_whitespace = Some(is_whitespace_char);
                             false
                         }
-                    }, false, false)
+                    }, false, true)
                 },
                 TraversalPattern::LowerBack => {
                     // The current seek position is either a word char or not. Keep going
@@ -1666,7 +1657,7 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_lower_word_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar   baz");
                     buffer.seek(8); // Move to the start of "bar"
 
                     // Get a lower word
@@ -1674,8 +1665,10 @@ mod test_engine {
                         TraversalPattern::LowerWord,
                         1,
                     ).unwrap().unwrap();
-                    assert_eq!(range, 8..12);
-                    assert_eq!(matched_chars, "bar ");
+                    assert_eq!(range, 8..14);
+                    assert_eq!(matched_chars, "bar   ");
+                    assert_eq!(selection.starting_token_offset, 8);
+                    assert_eq!(selection.char_count, 6);
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
@@ -1685,11 +1678,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  baz");
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST baz");
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST   baz");
                 }
 
                 #[test]
@@ -1810,6 +1803,256 @@ mod test_engine {
                     let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 11);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  quux");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
+                }
+
+                #[test]
+                fn it_should_change_lower_words_at_end_of_string_ending_with_whitespace() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz     ");
+                    buffer.seek(12); // Move to the start of "baz"
+
+                    // Get a lower word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::LowerWord,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 12..20);
+                    assert_eq!(matched_chars, "baz     ");
+                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.char_count, 8);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 12);
+                    assert_eq!(modified_selection.char_count, 3);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar      ");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST     ");
+                }
+            }
+
+            mod upper_word {
+                use super::*;
+
+                #[test]
+                fn it_should_change_upper_word_then_whitespace_at_start() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+
+                    // Get the first upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 0..8);
+                    assert_eq!(matched_chars, "foo.foo ");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 8);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 0);
+                    assert_eq!(modified_selection.char_count, 7);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                }
+
+                #[test]
+                fn it_should_change_upper_word_at_start() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+
+                    // Get the first upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 0..8);
+                    assert_eq!(matched_chars, "foo.foo ");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 8);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 0);
+                    assert_eq!(modified_selection.char_count, 7);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new()).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                }
+
+                #[test]
+                fn it_should_change_upper_word_with_punctuation_and_spaces_after_in_middle() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar..b_ar   baz");
+                    buffer.seek(8); // Move to the start of "bar"
+
+                    // Get a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 8..20);
+                    assert_eq!(matched_chars, "bar..b_ar   ");
+                    assert_eq!(selection.starting_token_offset, 8);
+                    assert_eq!(selection.char_count, 12);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 8);
+                    assert_eq!(modified_selection.char_count, 9);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo    baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST   baz");
+                }
+
+                #[test]
+                fn it_should_change_upper_word_with_numbers_at_end() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz1!");
+                    buffer.seek(12); // Move to the start of "baz"
+
+                    // Get a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 12..17);
+                    assert_eq!(matched_chars, "baz1!");
+                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.char_count, 5);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    //
+                    // NOTE: for this case, there is no whitespace after the token, so this is a no-op
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 12);
+                    assert_eq!(modified_selection.char_count, 5);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                }
+
+                #[test]
+                fn it_should_change_2_upper_words_in_middle_right_up_to_end() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar.bar baz.baz quux");
+                    buffer.seek(8); // Move to the start of "bar"
+
+                    // Get a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        2,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 8..24);
+                    assert_eq!(matched_chars, "bar.bar baz.baz ");
+                    assert_eq!(selection.starting_token_offset, 8);
+                    assert_eq!(selection.char_count, 16);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    //
+                    // NOTE: for this case, there is no whitespace after the token, so this is a no-op
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 8);
+                    assert_eq!(modified_selection.char_count, 15);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  quux");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
+                }
+
+                #[test]
+                fn it_should_change_3_upper_words_at_end_and_run_out_of_chars() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar.bar baz.baz");
+                    buffer.seek(8); // Move to the start of "bar"
+
+                    // Get a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        // NOTE: there isn't enough characters for three words! Only two.
+                        // But, it matches to the end anyway.
+                        3,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 8..23);
+                    assert_eq!(matched_chars, "bar.bar baz.baz");
+                    assert_eq!(selection.starting_token_offset, 8);
+                    assert_eq!(selection.char_count, 15);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    //
+                    // NOTE: for this case, there is no whitespace after the token, so this is a no-op
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 8);
+                    assert_eq!(modified_selection.char_count, 15);
+
+                    // Delete it
+                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+                }
+
+                #[test]
+                fn it_should_change_3_upper_words_at_end_and_spill_over_to_next_line() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz.baz\nqux.qux quux");
+                    buffer.seek(8); // Move to the start of "bar"
+
+                    // Get a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperWord,
+                        3, // NOTE: this spills over to the next line!
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 8..28);
+                    assert_eq!(matched_chars, "bar baz.baz\nqux.qux ");
+                    assert_eq!(selection.starting_token_offset, 8);
+                    assert_eq!(selection.char_count, 20);
+
+                    // When performing a CHANGE, remove whitespace after the token prior to executing
+                    // the operation
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    assert_eq!(modified_selection.starting_token_offset, 8);
+                    assert_eq!(modified_selection.char_count, 19);
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
