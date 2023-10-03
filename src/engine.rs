@@ -296,7 +296,7 @@ impl SequentialTokenRange {
 
     // When called, scans forward in the token stream looking for whitespace, and returns a new
     // SequentialTokenRange with the additional whitespace added to the end
-    pub fn add_whitespace_after(
+    pub fn select_whitespace_after(
         &self,
         buffer: &mut Buffer,
     ) -> Result<SequentialTokenRange, String> {
@@ -325,7 +325,7 @@ impl SequentialTokenRange {
     // end of the SequentialTokenRange, returning a new range with these changes.
     //
     // This is used in the `change` operation to preserve whitespace after a selection
-    pub fn remove_whitespace_after(
+    pub fn unselect_whitespace_after(
         &self,
         buffer: &mut Buffer,
     ) -> Result<SequentialTokenRange, String> {
@@ -1620,7 +1620,7 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 0);
                     assert_eq!(modified_selection.char_count, 3);
 
@@ -1651,7 +1651,7 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 0);
                     assert_eq!(modified_selection.char_count, 3);
 
@@ -1679,7 +1679,7 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 3);
 
@@ -1711,7 +1711,7 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 12);
                     assert_eq!(modified_selection.char_count, 3);
 
@@ -1743,7 +1743,7 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 7);
 
@@ -1777,7 +1777,7 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 7);
 
@@ -1807,7 +1807,7 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.remove_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 11);
 
