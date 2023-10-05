@@ -81,9 +81,11 @@ impl SequentialTokenRange {
         buffer: &mut Buffer,
         keep_first_token: bool,
     ) -> Result<SequentialTokenRange, String> {
+        let forwards_range = self.as_forwards_range(buffer)?;
+
         let mut chars_removed = 0;
         let mut is_first = true;
-        let mut pointer_id = self.starting_token_id;
+        let mut pointer_id = forwards_range.starting_token_id;
         let mut token_ids_to_remove = vec![];
         let tokens_collection = buffer.tokens_mut();
 
@@ -93,25 +95,18 @@ impl SequentialTokenRange {
                     return Err(format!("Unable to find token with id {} ({} chars in to removal)", pointer_id, chars_removed));
                 };
 
-                // If moving backwards, then select the right field to move to next:
-                let subsequent_id = if self.is_backwards {
-                    pointer.previous_id
-                } else {
-                    pointer.next_id
-                };
-
-                Ok((subsequent_id, pointer.literal.clone()))
+                Ok((pointer.next_id, pointer.literal.clone()))
             };
 
             match result {
-                Ok((pointer_subsequent_id, pointer_literal)) => {
+                Ok((pointer_next_id, pointer_literal)) => {
                     if let Some(literal_text) = pointer_literal {
                         let literal_text_length = literal_text.len();
                         chars_removed += literal_text_length;
 
-                        if chars_removed <= self.char_count {
+                        if chars_removed <= forwards_range.char_count {
                             if is_first {
-                                if self.starting_token_offset > 0 {
+                                if forwards_range.starting_token_offset > 0 {
                                     // Keep the first `self.starting_token_offset` chars of this token
                                     tokens_collection.get_by_id_mut(pointer_id, |pointer| {
                                         pointer.literal = Some(String::from(
@@ -131,7 +126,7 @@ impl SequentialTokenRange {
                                 // Remove this token, its bounds are fully within `chars_removed`
                                 token_ids_to_remove.push(pointer_id);
                             }
-                            if chars_removed == self.char_count {
+                            if chars_removed == forwards_range.char_count {
                                 break;
                             }
                         } else {
@@ -143,12 +138,12 @@ impl SequentialTokenRange {
                                     // this operation only effects this single token
                                     let result_literal = format!(
                                         "{}{}",
-                                        &literal_text[..self.starting_token_offset],
-                                        &literal_text[self.starting_token_offset+self.char_count..],
+                                        &literal_text[..forwards_range.starting_token_offset],
+                                        &literal_text[forwards_range.starting_token_offset+forwards_range.char_count..],
                                     );
                                     pointer.literal = Some(String::from(result_literal));
                                 } else {
-                                    let number_of_chars_to_keep = self.char_count - chars_removed;
+                                    let number_of_chars_to_keep = forwards_range.char_count - chars_removed;
                                     println!("KEEP: {}", number_of_chars_to_keep);
                                     pointer.literal = Some(String::from(&literal_text[number_of_chars_to_keep..]));
                                 }
@@ -157,11 +152,11 @@ impl SequentialTokenRange {
                         }
                     };
 
-                    if let Some(subsequent_id) = pointer_subsequent_id {
-                        pointer_id = subsequent_id;
+                    if let Some(next_id) = pointer_next_id {
+                        pointer_id = next_id;
                     } else {
                         // Reached the end of the token stream
-                        return Err(format!("Unable to remove SequentialTokenRange: ran out of tokens (start at {} offset {} and went {} of {} chars)", self.starting_token_id, self.starting_token_offset, chars_removed, self.char_count));
+                        return Err(format!("Unable to remove SequentialTokenRange: ran out of tokens (start at {} offset {} and went {} of {} chars)", forwards_range.starting_token_id, forwards_range.starting_token_offset, chars_removed, forwards_range.char_count));
                     }
                     is_first = false;
                 },
@@ -176,7 +171,7 @@ impl SequentialTokenRange {
         }
 
         // Clear out the char count now that all tokens inside have been removed
-        let mut new_range = self.clone();
+        let mut new_range = forwards_range.clone();
         new_range.char_count = 0;
         Ok(new_range)
     }
@@ -201,7 +196,7 @@ impl SequentialTokenRange {
                     &literal_text[..self.starting_token_offset],
                     complete_new_text, /* this is equal to `new_text` here */
                 ));
-                println!("AFTER: '{}' {} > {}+{}", literal_text, literal_text.len(), self.starting_token_offset, self.char_count);
+                // println!("AFTER: '{}' {} > {}+{}", literal_text, literal_text.len(), self.starting_token_offset, self.char_count);
                 if literal_text.len() > self.starting_token_offset + self.char_count {
                     complete_new_text = String::from(format!(
                         "{}{}",
@@ -234,6 +229,7 @@ impl SequentialTokenRange {
 
         let mut start_offset = tokens_collection.compute_offset(self.starting_token_id);
         start_offset += self.starting_token_offset;
+        start_offset += 1; // Add one because when going backwards, the "side" of the cursor is different
 
         let end_offset = if self.char_count > start_offset {
             // This range seems to go to before the start of the document?
@@ -340,6 +336,7 @@ impl SequentialTokenRange {
 
         let result = match buffer.read_backwards_until(
             |c, _| !is_whitespace_char(c),
+            false,
             false,
         ) {
             Ok(Some((_, matched_chars, _))) => {
@@ -476,6 +473,9 @@ impl Buffer {
     //
     // If `include_matched_char` is true, the final matched character is included, otherwise it is
     // not.
+    //
+    // If `should_match_at_end` is true, then if the match gets to the start of the token stream
+    // and has not yet matched, automatically match at this point.
     pub fn read_forwards_until<F>(
         &mut self,
         mut needle_func: F,
@@ -570,10 +570,14 @@ impl Buffer {
     //
     // If `include_matched_char` is true, the final matched character is included, otherwise it is
     // not.
+    //
+    // If `should_match_at_start` is true, then if the match gets to the start of the token stream
+    // and has not yet matched, automatically match at this point.
     pub fn read_backwards_until<F>(
         &mut self,
         mut needle_func: F,
         include_matched_char: bool,
+        should_match_at_start: bool,
     ) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
         String, /* The matched literal data in all tokens, concatenated */
@@ -582,12 +586,16 @@ impl Buffer {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
+        if *offset == 0 {
+            // If already at the start, then there's nothing to match!
+            return Ok(None);
+        };
         let initial_offset = *offset - 1;
-        let Some((token, token_offset)) = self.document.get_by_offset(initial_offset) else {
+        let Some((token, mut token_offset)) = self.document.get_by_offset(initial_offset) else {
             return Err(format!("Cannot get token at offset {} in document!", initial_offset));
         };
         let token_id = token.id;
-        // println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
+        println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
 
         let mut is_first = true;
         let mut is_done = false;
@@ -608,6 +616,7 @@ impl Buffer {
                     result = format!("{}{}", character, result);
                     println!("FOO {} {} - {}", character, initial_offset, result.len()-1);
                     if needle_func(character, initial_offset - (result.len() - 1)) {
+                        println!("NEEDLE DONE!");
                         is_done = true;
                         break;
                     }
@@ -627,22 +636,43 @@ impl Buffer {
             is_first = false;
         }
 
+        let mut result_length = result.len();
+        let mut final_offset = initial_offset - (result_length-1);
+        println!("BACK: '{}' {} - ({}-1)", result, initial_offset, result_length);
+
         if !is_done {
+            println!("DONE!");
+            // final_offset -= 1;
+
             // No character ever matched!
-            return Ok(None);
+            if !should_match_at_start {
+                return Ok(None);
+            }
         };
 
-        let result_length = result.len();
-        let final_offset = initial_offset - (result_length-1);
+        if !include_matched_char && final_offset > 0 && result_length > 0 {
+            // if !is_done {
+            //     self.seek(final_offset);
+            // } else {
+                self.seek(final_offset+1);
+            // }
 
-        if !include_matched_char {
-            self.seek(final_offset+1);
             if result.len() > 1 {
-                Ok(Some((
-                    initial_offset+1..final_offset+1,
-                    result[1..].to_string(),
-                    SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
-                )))
+                // let mut result_text = result[1..].to_string();
+                if !is_done {
+                    self.seek(0);
+                    Ok(Some((
+                        initial_offset+1..0,
+                        result,
+                        SequentialTokenRange::new_backwards(token_id, token_offset, result_length),
+                    )))
+                } else {
+                    Ok(Some((
+                        initial_offset+1..final_offset+1,
+                        result[1..].to_string(),
+                        SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
+                    )))
+                }
             } else {
                 // One character might have been matched, but because `include_matched_char` is
                 // false, this match results in being empty
@@ -671,17 +701,13 @@ impl Buffer {
         String, /* The matched literal data in all tokens, concatenated */
         SequentialTokenRange, /* The token range that was matched */
     )>, String> {
-        let initial_offset = self.get_offset();
+        let mut initial_offset = self.get_offset();
         let mut final_offset = initial_offset;
 
         let mut combined_result = String::from("");
-        let mut combined_range = SequentialTokenRange::new_from_offsets(
-            self,
-            initial_offset,
-            initial_offset,
-        )?;
+        let mut combined_range: Option<SequentialTokenRange> = None;
 
-        for _index in 0..repeat_count {
+        for index in 0..repeat_count {
             let mut hit_newline = false;
             let result = match pattern {
                 TraversalPattern::Left => {
@@ -693,7 +719,7 @@ impl Buffer {
                         } else {
                             offset > i
                         }
-                    }, true)
+                    }, true, false)
                 },
                 TraversalPattern::Right => {
                     let offset = self.get_offset();
@@ -714,7 +740,7 @@ impl Buffer {
                     self.read_forwards_until(|c, _| {
                         let is_current_word_char = is_word_char(c);
 
-                        // Once whotespace is reached, continue matching until that whitespace ends
+                        // Once whitespace is reached, continue matching until that whitespace ends
                         if hit_whitespace && !is_whitespace_char(c) {
                             true
                         } else if is_whitespace_char(c) {
@@ -755,47 +781,78 @@ impl Buffer {
                 },
                 TraversalPattern::LowerBack => {
                     // The current seek position is either a word char or not. Keep going
-                    // backwards until that classification changes.
-                    // FIXME: a character is omitted from the match when the match goes back to the
-                    // start. This is a special case that needs to be handles.
+                    // forward until that classification changes.
+                    let mut is_first = true;
+                    let mut second_char_was_whitespace: Option<bool> = None;
+                    let mut finished_whitespace = false;
                     let mut started_in_word: Option<bool> = None;
-                    self.read_backwards_until(|c, i| {
+
+                    self.read_backwards_until(|c, _| {
+                        if is_first {
+                            is_first = false;
+                            return false;
+                        }
                         let is_current_word_char = is_word_char(c);
-                        if i == 0 {
-                            // If we're back at the start, that always finishes a match
+
+                        // First, if there is immediately whitespace, scan through all of that
+                        if second_char_was_whitespace.is_none() {
+                            second_char_was_whitespace = Some(is_whitespace_char(c));
+
+                            // If there isn't any whitespace as the second character, then skip
+                            // past the prefixed whitespace section of the match
+                            println!("------- {}", is_current_word_char);
+                            started_in_word = Some(is_current_word_char);
+                            if !is_whitespace_char(c) {
+                                finished_whitespace = true;
+                            }
+                            false
+                        } else if second_char_was_whitespace == Some(true) && !finished_whitespace && is_whitespace_char(c) {
+                            println!("HERE {:?}", second_char_was_whitespace);
+                            finished_whitespace = false;
+                            false
+
+                        } else if second_char_was_whitespace == Some(true) && !finished_whitespace && !is_whitespace_char(c) {
+                            // If the second char was whitespace, finish matching once the
+                            // whitespace ends
                             true
-                        } else if c == '\n' {
-                            hit_newline = true;
-                            true
+
                         } else if let Some(started_in_word) = started_in_word {
+                            println!("------- {} != {}", started_in_word, is_current_word_char);
+                            // Keep matching characters until whether it is a word char or not
+                            // changes
                             started_in_word != is_current_word_char
                         } else {
+                            // Is the first non whitespace character a word character or not?
                             started_in_word = Some(is_current_word_char);
                             false
                         }
-                    }, false)
+                    }, false, true)
                 },
                 TraversalPattern::UpperBack => {
-                    // The current seek position is either a whitespace char or not. Keep going
-                    // backwards until that classification changes.
-                    // FIXME: a character is omitted from the match when the match goes back to the
-                    // start. This is a special case that needs to be handles.
-                    let mut started_in_whitespace: Option<bool> = None;
-                    self.read_backwards_until(|c, i| {
-                        let is_current_whitespace_char = is_whitespace_char(c);
-                        if i == 0 {
-                            // If we're back at the start, that always finishes a match
+                    // The current seek position is either a word char or not. Keep going
+                    // forward until that classification changes.
+                    let mut started_in_word: Option<bool> = None;
+                    let mut hit_whitespace = false;
+                    self.read_backwards_until(|c, _| {
+                        let is_current_word_char = is_word_char(c);
+
+                        // Once whotespace is reached, continue matching until that whitespace ends
+                        if hit_whitespace && !is_whitespace_char(c) {
                             true
-                        } else if c == '\n' {
-                            hit_newline = true;
-                            true
-                        } else if let Some(started_in_whitespace) = started_in_whitespace {
-                            started_in_whitespace != is_current_whitespace_char
+                        } else if is_whitespace_char(c) {
+                            hit_whitespace = true;
+                            false
+
+                        } else if let Some(started_in_word) = started_in_word {
+                            // Keep matching characters until whether it is a word char or not
+                            // changes
+                            started_in_word != is_current_word_char
                         } else {
-                            started_in_whitespace = Some(is_current_whitespace_char);
+                            // Is the first character a word character or not?
+                            started_in_word = Some(is_current_word_char);
                             false
                         }
-                    }, false)
+                    }, false, true)
                 },
                 TraversalPattern::LowerEnd => {
                     self.read_forwards_until(|c, _| {
@@ -811,13 +868,13 @@ impl Buffer {
                     self.read_forwards_until(|c, _| c == character, false, false)
                 },
                 TraversalPattern::UpperTo(character) => {
-                    self.read_backwards_until(|c, _| c == character, false)
+                    self.read_backwards_until(|c, _| c == character, false, false)
                 },
                 TraversalPattern::Find(character) => {
                     self.read_forwards_until(|c, _| c == character, true, false)
                 },
                 TraversalPattern::UpperFind(character) => {
-                    self.read_backwards_until(|c, _| c == character, true)
+                    self.read_backwards_until(|c, _| c == character, true, false)
                 },
             };
 
@@ -828,13 +885,20 @@ impl Buffer {
             match result {
                 Ok(Some((_, result, range))) => {
                     final_offset = self.get_offset();
+                    println!("OFFSETS: {} {}", initial_offset, final_offset);
 
                     if final_offset > initial_offset {
                         combined_result = format!("{}{}", combined_result, result);
                     } else {
                         combined_result = format!("{}{}", result, combined_result);
                     }
-                    combined_range = combined_range.extend(self, range)?;
+                    if let Some(value) = combined_range {
+                        combined_range = Some(value.extend(self, range)?);
+                    } else {
+                        println!("BACKWARDS: {:?}", range);
+                        combined_range = Some(range.as_forwards_range(self)?);
+                        println!("FORWARDS: {:?}", combined_range);
+                    }
                 },
                 Ok(None) => {
                     // Couldn't find a next match, so stick with whatever we've got already
@@ -846,13 +910,13 @@ impl Buffer {
             }
         }
 
-        if initial_offset == final_offset {
+        if initial_offset == final_offset || combined_range.is_none() {
             Ok(None)
         } else {
             Ok(Some((
                 initial_offset..final_offset,
                 combined_result,
-                combined_range,
+                combined_range.unwrap(),
             )))
         }
     }
@@ -1538,7 +1602,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 buffer.seek(10);
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', true)),
+                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', true, false)),
                     Ok(Some((10..6, "r ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 6);
@@ -1549,7 +1613,7 @@ mod test_engine {
                 let mut buffer = Buffer::new_from_literal("foo bar baz");
                 buffer.seek(10);
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', false)),
+                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', false, false)),
                     Ok(Some((10..7, " ba".to_string())))
                 );
                 assert_eq!(buffer.get_offset(), 7);
@@ -1569,7 +1633,7 @@ mod test_engine {
 
             // Then seek back a few characters
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', true)),
+                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', true, false)),
                 Ok(Some((4..0, "foo ".to_string())))
             );
             assert_eq!(buffer.get_offset(), 0);
@@ -1583,7 +1647,7 @@ mod test_engine {
 
             // Then seek back a few characters again, NOT INCLUDING IT
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', false)),
+                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', false, false)),
                 Ok(Some((3..1, "oo".to_string())))
             );
             assert_eq!(buffer.get_offset(), 1);
@@ -2062,6 +2126,217 @@ mod test_engine {
                     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
                     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
                 }
+            }
+
+            mod lower_back {
+                use super::*;
+
+                #[test]
+                fn it_should_change_lower_back_at_start() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    buffer.seek(4); // Move to the start of "bar"
+
+                    // Get the first lower word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::LowerBack,
+                        1,
+                    ).unwrap().unwrap();
+                    // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 4..0);
+                    assert_eq!(matched_chars, "foo ");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 4);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                }
+
+                // #[test]
+                // fn it_should_change_lower_back_in_middle() {
+                //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                //     buffer.seek(8); // Move to the start of "bar"
+                //
+                //     // Go back a lower word
+                //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+                //         TraversalPattern::LowerBack,
+                //         1,
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 8..4);
+                //     assert_eq!(matched_chars, "foo ");
+                //     assert_eq!(selection.starting_token_offset, 4);
+                //     assert_eq!(selection.char_count, 4);
+                //
+                //     // Delete it
+                //     let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.bar baz");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.TESTbar baz");
+                // }
+                //
+                // #[test]
+                // fn it_should_change_lower_back_at_end() {
+                //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                //     buffer.seek(12); // Move to the start of "baz"
+                //
+                //     // Get a lower word
+                //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+                //         TraversalPattern::LowerBack,
+                //         1,
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 12..15);
+                //     assert_eq!(matched_chars, "baz");
+                //     assert_eq!(selection.starting_token_offset, 12);
+                //     assert_eq!(selection.char_count, 3);
+                //
+                //     // When performing a CHANGE, remove whitespace after the token prior to executing
+                //     // the operation
+                //     //
+                //     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
+                //     let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                //     assert_eq!(modified_selection.starting_token_offset, 12);
+                //     assert_eq!(modified_selection.char_count, 3);
+                //
+                //     // Delete it
+                //     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                // }
+                //
+                // #[test]
+                // fn it_should_change_2_lower_backs_in_middle_right_up_to_end() {
+                //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                //     buffer.seek(8); // Move to the start of "bar"
+                //
+                //     // Get a lower word
+                //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+                //         TraversalPattern::LowerBack,
+                //         2,
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 8..15);
+                //     assert_eq!(matched_chars, "bar baz");
+                //     assert_eq!(selection.starting_token_offset, 8);
+                //     assert_eq!(selection.char_count, 7);
+                //
+                //     // When performing a CHANGE, remove whitespace after the token prior to executing
+                //     // the operation
+                //     //
+                //     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
+                //     let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                //     assert_eq!(modified_selection.starting_token_offset, 8);
+                //     assert_eq!(modified_selection.char_count, 7);
+                //
+                //     // Delete it
+                //     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+                // }
+                //
+                // #[test]
+                // fn it_should_change_3_lower_backs_at_end_and_run_out_of_chars() {
+                //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                //     buffer.seek(8); // Move to the start of "bar"
+                //
+                //     // Get a lower word
+                //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+                //         TraversalPattern::LowerBack,
+                //         // NOTE: there isn't enough characters for three words! Only two.
+                //         // But, it matches to the end anyway.
+                //         3,
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 8..15);
+                //     assert_eq!(matched_chars, "bar baz");
+                //     assert_eq!(selection.starting_token_offset, 8);
+                //     assert_eq!(selection.char_count, 7);
+                //
+                //     // When performing a CHANGE, remove whitespace after the token prior to executing
+                //     // the operation
+                //     //
+                //     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
+                //     let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                //     assert_eq!(modified_selection.starting_token_offset, 8);
+                //     assert_eq!(modified_selection.char_count, 7);
+                //
+                //     // Delete it
+                //     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+                // }
+                //
+                // #[test]
+                // fn it_should_change_3_lower_backs_at_end_and_spill_over_to_next_line() {
+                //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz\nqux quux");
+                //     buffer.seek(8); // Move to the start of "bar"
+                //
+                //     // Get a lower word
+                //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+                //         TraversalPattern::LowerBack,
+                //         3, // NOTE: this spills over to the next line!
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 8..20);
+                //     assert_eq!(matched_chars, "bar baz\nqux ");
+                //     assert_eq!(selection.starting_token_offset, 8);
+                //     assert_eq!(selection.char_count, 12);
+                //
+                //     // When performing a CHANGE, remove whitespace after the token prior to executing
+                //     // the operation
+                //     let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                //     assert_eq!(modified_selection.starting_token_offset, 8);
+                //     assert_eq!(modified_selection.char_count, 11);
+                //
+                //     // Delete it
+                //     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  quux");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
+                // }
+                //
+                // #[test]
+                // fn it_should_change_lower_backs_at_end_of_string_ending_with_whitespace() {
+                //     let mut buffer = Buffer::new_from_literal("foo.foo bar baz     ");
+                //     buffer.seek(12); // Move to the start of "baz"
+                //
+                //     // Get a lower word
+                //     let (range, matched_chars, selection) = buffer.read_to_pattern(
+                //         TraversalPattern::LowerBack,
+                //         1,
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 12..20);
+                //     assert_eq!(matched_chars, "baz     ");
+                //     assert_eq!(selection.starting_token_offset, 12);
+                //     assert_eq!(selection.char_count, 8);
+                //
+                //     // When performing a CHANGE, remove whitespace after the token prior to executing
+                //     // the operation
+                //     let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                //     assert_eq!(modified_selection.starting_token_offset, 12);
+                //     assert_eq!(modified_selection.char_count, 3);
+                //
+                //     // Delete it
+                //     let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar      ");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST     ");
+                // }
             }
         }
     }

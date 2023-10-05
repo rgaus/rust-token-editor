@@ -374,25 +374,27 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 
 fn main() {
     // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-    let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
-    // println!("OFFSET: {}", buffer.convert_rows_cols_to_offset((2, 10)));
-    // println!("OFFSET: {:?}", buffer.convert_offset_to_rows_cols(13));
-    // let (_, _, range) = buffer.read_forwards_until(|c, _| c == '.', false).unwrap().unwrap();
-    // println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::To('r'), 1));
-    println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::UpperWord, 1));
-    println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::UpperBack, 1));
-    // println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord, 1));
-    // println!("FIRST SEEK: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord, 1));
-    // let (_, _, range) = buffer.read_to_pattern(TraversalPattern::UpperTo('.'), 1).unwrap().unwrap();
-    let (_, _, range) = buffer.read_to_pattern(TraversalPattern::LowerWord, 1).unwrap().unwrap();
+    // let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
+    let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+    buffer.seek(3); // First space
+    buffer.seek(4); // First char of "bar"
+    buffer.seek(5); // Second char of "bar"
+    buffer.seek(6); // Third char of "bar"
+    //
+    // buffer.seek(7); // Period
+    // buffer.seek(8); // First char of "baaa"
+    // buffer.seek(9); // Move to the start of "baaaa" <==== THIS ONE FAILS
+    // buffer.seek(14); // Move to the last "a" in "baaaaar"
+    // buffer.seek(12); // Move to the start of "baz"
+    let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::LowerBack, 1).unwrap().unwrap();
+    println!("READ: {:?}", selection);
     {
         let tokens_collection = buffer.tokens_mut();
-        println!("READ: {:?}", range);
         println!("PRE: {}", tokens_collection.stringify());
     }
-    range.remove_deep(&mut buffer, true);
-    let result = range.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-    // println!("RESULT: {:?}", result);
+    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+    println!("DELETED: {:?}", deleted_selection);
+    let result = deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
     {
         let tokens_collection = buffer.tokens_mut();
         println!("POST: {}", tokens_collection.stringify());
