@@ -376,14 +376,15 @@ fn main() {
     // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
     // let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
     let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-    buffer.seek(3); // First space
-    buffer.seek(4); // First char of "bar"
-    buffer.seek(5); // Second char of "bar"
-    buffer.seek(6); // Third char of "bar"
-    //
-    // buffer.seek(7); // Period
-    // buffer.seek(8); // First char of "baaa"
-    // buffer.seek(9); // Move to the start of "baaaa" <==== THIS ONE FAILS
+    buffer.seek(3); // First space          ----> "TEST bar.baaaaar baz"
+    buffer.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
+    buffer.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"
+    buffer.seek(6); // Third char of "bar"  -> "foo TESTr.baaaaar baz"
+    buffer.seek(7); // Period               -> "foo TEST.baaaaar baz"
+    buffer.seek(8); // First char of "baaa" -> "foo barTESTbaaaaar baz"
+    buffer.seek(9); // Second char of "baaa" > "foo bar.TESTaaaaar baz"
+    buffer.seek(10); // Third char of "baaa" > "foo bar.TESTaaaar baz"
+    buffer.seek(15); // Space after "baaaar" > "foo bar.TEST baz"
     // buffer.seek(14); // Move to the last "a" in "baaaaar"
     // buffer.seek(12); // Move to the start of "baz"
     let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::LowerBack, 1).unwrap().unwrap();

@@ -10,6 +10,9 @@ fn is_word_char(c: char) -> bool {
 fn is_whitespace_char(c: char) -> bool {
     c.is_ascii_whitespace()
 }
+fn is_other_char(c: char) -> bool {
+    !is_word_char(c) && !is_whitespace_char(c)
+}
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -670,7 +673,7 @@ impl Buffer {
                     Ok(Some((
                         initial_offset+1..final_offset+1,
                         result[1..].to_string(),
-                        SequentialTokenRange::new_backwards(token_id, token_offset, result_length-2),
+                        SequentialTokenRange::new_backwards(token_id, token_offset, result_length-1),
                     )))
                 }
             } else {
@@ -783,34 +786,41 @@ impl Buffer {
                     // The current seek position is either a word char or not. Keep going
                     // forward until that classification changes.
                     let mut is_first = true;
+                    let mut first_char_was_other = false;
                     let mut second_char_was_whitespace: Option<bool> = None;
                     let mut finished_whitespace = false;
                     let mut started_in_word: Option<bool> = None;
 
                     self.read_backwards_until(|c, _| {
                         if is_first {
+                            first_char_was_other = is_other_char(c);
                             is_first = false;
                             return false;
                         }
                         let is_current_word_char = is_word_char(c);
 
+                        if first_char_was_other {
+                            println!("IS OTHER {:?}", first_char_was_other);
+                            !is_other_char(c)
+
                         // First, if there is immediately whitespace, scan through all of that
-                        if second_char_was_whitespace.is_none() {
+                        } else if second_char_was_whitespace.is_none() {
                             second_char_was_whitespace = Some(is_whitespace_char(c));
 
                             // If there isn't any whitespace as the second character, then skip
                             // past the prefixed whitespace section of the match
-                            println!("------- {}", is_current_word_char);
                             started_in_word = Some(is_current_word_char);
-                            if !is_whitespace_char(c) {
+                            if is_whitespace_char(c) || is_other_char(c) {
+                                true
+                            } else {
                                 finished_whitespace = true;
+                                false
                             }
-                            false
+
                         } else if second_char_was_whitespace == Some(true) && !finished_whitespace && is_whitespace_char(c) {
                             println!("HERE {:?}", second_char_was_whitespace);
                             finished_whitespace = false;
                             false
-
                         } else if second_char_was_whitespace == Some(true) && !finished_whitespace && !is_whitespace_char(c) {
                             // If the second char was whitespace, finish matching once the
                             // whitespace ends
