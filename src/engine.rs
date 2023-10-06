@@ -2291,6 +2291,138 @@ mod test_engine {
                         deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
                         assert_eq!(buffer.tokens_mut().stringify(), "foo TESTar.baaaaar baz");
                     }
+
+                    // Third char of "bar"  -> "foo TESTr.baaaaar baz"
+                    {
+                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+                        buffer.seek(6);
+                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                            TraversalPattern::LowerBack,
+                            1,
+                        ).unwrap().unwrap();
+                        assert_eq!(range, 6..4);
+                        assert_eq!(matched_chars, "ba");
+                        assert_eq!(selection.starting_token_offset, 4);
+                        assert_eq!(selection.char_count, 2);
+
+                        // Delete it
+                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo r.baaaaar baz");
+
+                        // Replace it with TEST
+                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo TESTr.baaaaar baz");
+                    }
+
+                    // Period               -> "foo TEST.baaaaar baz"
+                    {
+                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+                        buffer.seek(7);
+                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                            TraversalPattern::LowerBack,
+                            1,
+                        ).unwrap().unwrap();
+                        assert_eq!(range, 7..4);
+                        assert_eq!(matched_chars, "bar");
+                        assert_eq!(selection.starting_token_offset, 4);
+                        assert_eq!(selection.char_count, 3);
+
+                        // Delete it
+                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo .baaaaar baz");
+
+                        // Replace it with TEST
+                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo TEST.baaaaar baz");
+                    }
+
+                    // First char of "baaa" -> "foo barTESTbaaaaar baz"
+                    {
+                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+                        buffer.seek(8);
+                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                            TraversalPattern::LowerBack,
+                            1,
+                        ).unwrap().unwrap();
+                        assert_eq!(range, 8..7);
+                        assert_eq!(matched_chars, ".");
+                        assert_eq!(selection.starting_token_offset, 7);
+                        assert_eq!(selection.char_count, 1);
+
+                        // Delete it
+                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo barbaaaaar baz");
+
+                        // Replace it with TEST
+                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo barTESTbaaaaar baz");
+                    }
+
+                    // Second char of "baaa" > "foo bar.TESTaaaaar baz"
+                    {
+                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+                        buffer.seek(9);
+                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                            TraversalPattern::LowerBack,
+                            1,
+                        ).unwrap().unwrap();
+                        assert_eq!(range, 9..8);
+                        assert_eq!(matched_chars, "b");
+                        assert_eq!(selection.starting_token_offset, 8);
+                        assert_eq!(selection.char_count, 1);
+
+                        // Delete it
+                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.aaaaar baz");
+
+                        // Replace it with TEST
+                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TESTaaaaar baz");
+                    }
+
+                    // Third char of "baaa" > "foo bar.TESTaaaar baz"
+                    {
+                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+                        buffer.seek(10);
+                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                            TraversalPattern::LowerBack,
+                            1,
+                        ).unwrap().unwrap();
+                        assert_eq!(range, 10..8);
+                        assert_eq!(matched_chars, "ba");
+                        assert_eq!(selection.starting_token_offset, 8);
+                        assert_eq!(selection.char_count, 2);
+
+                        // Delete it
+                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.aaaar baz");
+
+                        // Replace it with TEST
+                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TESTaaaar baz");
+                    }
+
+                    // Space after "baaaar" > "foo bar.TEST baz"
+                    {
+                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+                        buffer.seek(15);
+                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                            TraversalPattern::LowerBack,
+                            1,
+                        ).unwrap().unwrap();
+                        assert_eq!(range, 15..8);
+                        assert_eq!(matched_chars, "baaaaar");
+                        assert_eq!(selection.starting_token_offset, 8);
+                        assert_eq!(selection.char_count, 7);
+
+                        // Delete it
+                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar. baz");
+
+                        // Replace it with TEST
+                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TEST baz");
+                    }
                 }
             }
         }
