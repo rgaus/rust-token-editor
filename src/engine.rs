@@ -848,28 +848,42 @@ impl Buffer {
                     }, false, true)
                 },
                 TraversalPattern::UpperBack => {
-                    // The current seek position is either a word char or not. Keep going
-                    // forward until that classification changes.
-                    let mut started_in_word: Option<bool> = None;
-                    let mut hit_whitespace = false;
+                    let mut is_first = true;
+                    let mut second_char_was_whitespace: Option<bool> = None;
+                    let mut finished_whitespace = false;
+
                     self.read_backwards_until(|c, _| {
-                        let is_current_word_char = is_word_char(c);
+                        if is_first {
+                            is_first = false;
+                            return false;
+                        }
+                        let is_current_not_whitespace_char = !is_whitespace_char(c);
 
-                        // Once whotespace is reached, continue matching until that whitespace ends
-                        if hit_whitespace && !is_whitespace_char(c) {
+                        // First, if there is immediately whitespace, scan through all of that
+                        if second_char_was_whitespace.is_none() {
+                            second_char_was_whitespace = Some(is_whitespace_char(c));
+
+                            // If there isn't any whitespace as the second character, then skip
+                            // past the prefixed whitespace section of the match
+                            if !is_whitespace_char(c) {
+                                finished_whitespace = true;
+                                false
+                            } else {
+                                true
+                            }
+
+                        } else if second_char_was_whitespace == Some(true) && !finished_whitespace && is_whitespace_char(c) {
+                            finished_whitespace = false;
+                            false
+                        } else if second_char_was_whitespace == Some(true) && !finished_whitespace && !is_whitespace_char(c) {
+                            // If the second char was whitespace, finish matching once the
+                            // whitespace ends
                             true
-                        } else if is_whitespace_char(c) {
-                            hit_whitespace = true;
-                            false
 
-                        } else if let Some(started_in_word) = started_in_word {
-                            // Keep matching characters until whether it is a word char or not
-                            // changes
-                            started_in_word != is_current_word_char
                         } else {
-                            // Is the first character a word character or not?
-                            started_in_word = Some(is_current_word_char);
-                            false
+                            // Keep matching characters until another whitespace character shows up
+                            // changes
+                            is_whitespace_char(c)
                         }
                     }, false, true)
                 },
@@ -2423,6 +2437,83 @@ mod test_engine {
                         deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
                         assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TEST baz");
                     }
+                }
+            }
+
+            mod upper_back {
+                use super::*;
+
+                #[test]
+                fn it_should_change_upper_back_at_start() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    buffer.seek(4); // Move to the start of "bar"
+
+                    // Go back an upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperBack,
+                        1,
+                    ).unwrap().unwrap();
+                    println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 4..0);
+                    assert_eq!(matched_chars, "foo ");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 4);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                }
+
+                #[test]
+                fn it_should_change_lower_back_in_middle() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    buffer.seek(8); // Move to the start of "bar"
+
+                    // Go back an upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperBack,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 8..0);
+                    assert_eq!(matched_chars, "foo.foo ");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 8);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                }
+
+                #[test]
+                fn it_should_change_lower_back_at_end() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    buffer.seek(14); // Move to the end of "baz"
+
+                    // Go back an upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperBack,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 14..12);
+                    assert_eq!(matched_chars, "ba");
+                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.char_count, 2);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar z");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TESTz");
                 }
             }
         }
