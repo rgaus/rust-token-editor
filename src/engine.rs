@@ -941,9 +941,19 @@ impl Buffer {
                     }, false, true)
                 },
                 TraversalPattern::UpperEnd => {
+                    let mut finished_leading_space = false;
                     self.read_forwards_until(|c, _| {
-                        c.is_ascii_whitespace()
-                    }, false, false)
+                        // Read through a run of leading whitespace
+                        if !finished_leading_space && is_whitespace_char(c) {
+                            false
+                        } else if !finished_leading_space && !is_whitespace_char(c) {
+                            finished_leading_space = true;
+                            false
+                        } else {
+                            // Otherwise though, stop at a whitespace character
+                            is_whitespace_char(c)
+                        }
+                    }, false, true)
                 },
                 TraversalPattern::To(character) => {
                     self.read_forwards_until(|c, _| c == character, false, false)
@@ -2817,6 +2827,82 @@ mod test_engine {
                         deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
                         assert_eq!(buffer.tokens_mut().stringify(), "foo bar.baaaaarTEST");
                     }
+                }
+            }
+
+            mod upper_end {
+                use super::*;
+
+                #[test]
+                fn it_should_change_upper_end_at_start() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+
+                    // Go to the end of the first word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperEnd,
+                        1,
+                    ).unwrap().unwrap();
+                    // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 0..3);
+                    assert_eq!(matched_chars, "foo");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 3);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                }
+
+                #[test]
+                fn it_should_change_upper_end_in_middle() {
+                    let mut buffer = Buffer::new_from_literal("foo bar.bar baz");
+                    buffer.seek(4); // Move to the start of "bar.bar"
+
+                    // Get the end of the second word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperEnd,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 4..11);
+                    assert_eq!(matched_chars, "bar.bar");
+                    assert_eq!(selection.starting_token_offset, 4);
+                    assert_eq!(selection.char_count, 7);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo  baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo TEST baz");
+                }
+
+                #[test]
+                fn it_should_change_upper_back_at_end() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    buffer.seek(12); // Move to the start of "baz"
+
+                    // Get a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperEnd,
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 12..15);
+                    assert_eq!(matched_chars, "baz");
+                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.char_count, 3);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
                 }
             }
         }

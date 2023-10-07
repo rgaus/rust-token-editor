@@ -376,7 +376,7 @@ fn main() {
     // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
     // let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
     let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-    buffer.seek(3); // First space          ----> "TEST bar.baaaaar baz"
+    // buffer.seek(3); // First space          ----> "TEST bar.baaaaar baz"
     // buffer.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
     // buffer.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"
     // buffer.seek(6); // Third char of "bar"  -> "foo TESTr.baaaaar baz"
@@ -387,7 +387,7 @@ fn main() {
     // buffer.seek(15); // Space after "baaaar" > "foo bar.TEST baz"
     // buffer.seek(14); // Move to the last "a" in "baaaaar"
     // buffer.seek(12); // Move to the start of "baz"
-    let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::LowerEnd, 1).unwrap().unwrap();
+    let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::UpperEnd, 1).unwrap().unwrap();
     println!("READ: {:?}", selection);
     {
         let tokens_collection = buffer.tokens_mut();
