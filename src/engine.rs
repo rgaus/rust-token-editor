@@ -1236,7 +1236,7 @@ impl View {
         Self {
             buffer: buffer,
             mode: Mode::Normal,
-            position: (0, 0),
+            position: (1, 1),
             state: ViewState::Initial,
             command_count: String::from(""),
             is_backwards: false,
