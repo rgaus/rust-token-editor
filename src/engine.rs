@@ -1301,13 +1301,6 @@ impl View {
         self.state = ViewState::Complete;
     }
 
-    // When this function return true, the next token being parsed can be a noun
-    fn next_can_be_noun(&self) -> bool {
-        self.state == ViewState::HasVerb || 
-        self.state == ViewState::IsInside ||
-        self.state == ViewState::IsAround
-    }
-
     fn in_g_mode(&self) -> bool {
         if let ViewState::PressedG(_) = self.state {
             true
@@ -1325,9 +1318,9 @@ impl View {
                 // TODO:
                 // "+y - yank register
                 // h / j / k / l - moving around
-                // w / W / b / B / e / E - word+back+end
+                // w / W / b / B / e / E - word+back+end DONE
                 // 0 / ^ / $ - start + end of line
-                // f / F / t / T - to+until
+                // f / F / t / T - to+until DONE
                 // gg / G / 123G - go to line number
                 // % - matching brace
                 //
@@ -1392,17 +1385,17 @@ impl View {
                 },
 
                 // "Nouns"
-                'w' if self.next_can_be_noun() => self.set_noun(Noun::LowerWord),
-                'W' if self.next_can_be_noun() => self.set_noun(Noun::UpperWord),
-                'b' if self.next_can_be_noun() => self.set_noun(Noun::LowerBack),
-                'B' if self.next_can_be_noun() => self.set_noun(Noun::UpperBack),
-                'e' if self.next_can_be_noun() => self.set_noun(Noun::LowerEnd),
-                'E' if self.next_can_be_noun() => self.set_noun(Noun::UpperEnd),
+                'w' => self.set_noun(Noun::LowerWord),
+                'W' => self.set_noun(Noun::UpperWord),
+                'b' => self.set_noun(Noun::LowerBack),
+                'B' => self.set_noun(Noun::UpperBack),
+                'e' => self.set_noun(Noun::LowerEnd),
+                'E' => self.set_noun(Noun::UpperEnd),
 
-                't' if self.next_can_be_noun() => self.state = ViewState::PressedT,
-                'T' if self.next_can_be_noun() => self.state = ViewState::PressedUpperT,
-                'f' if self.next_can_be_noun() => self.state = ViewState::PressedF,
-                'F' if self.next_can_be_noun() => self.state = ViewState::PressedUpperF,
+                't' => self.state = ViewState::PressedT,
+                'T' => self.state = ViewState::PressedUpperT,
+                'f' => self.state = ViewState::PressedF,
+                'F' => self.state = ViewState::PressedUpperF,
 
                 // A number: adjust the number of times the command should be run
                 '0'..='9' => {
