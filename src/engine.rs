@@ -1282,6 +1282,12 @@ impl View {
         }
     }
 
+    pub fn dump_string(&mut self) {
+        let offset = self.buffer.convert_rows_cols_to_offset(self.position);
+        let tokens_collection = self.buffer.tokens_mut();
+        println!("---\n{}\n--- {:?}", tokens_collection.debug_stringify_highlight(offset, offset+1), self.position);
+    }
+
     fn set_verb(&mut self, verb: Verb) {
         self.state = ViewState::HasVerb;
         self.verb = Some(verb);
@@ -1461,7 +1467,7 @@ impl View {
         }
 
         let command_count = self.command_count.parse::<usize>().unwrap_or(1);
-        let range = match self.noun {
+        let noun_match = match self.noun {
             Some(Noun::Character) => {
                 if self.is_backwards {
                     self.buffer.read_to_pattern(TraversalPattern::Left, command_count)
@@ -1479,7 +1485,33 @@ impl View {
             Some(Noun::UpperTo(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperTo(c), command_count),
             Some(Noun::Find(c)) => self.buffer.read_to_pattern(TraversalPattern::Find(c), command_count),
             Some(Noun::UpperFind(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperFind(c), command_count),
-            // Paragraph,
+
+            // Some(Noun::Inside(n)) | Some(Noun::Around(n)) if n == Noun::Paragraph {
+            //     let mut last_char = ' ';
+            //
+            //     let is_inside = if let Some(Noun::Inside(_n)) = self.Noun {
+            //         true
+            //     } else {
+            //         false
+            //     };
+            //
+            //     let initial_offset = self.buffer.get_offset();
+            //
+            //     let (_, _, backwards_selection) = self.read_backwards_until(|c, _| {
+            //     });
+            //
+            //     self.seek(initial_offset);
+            //
+            //     // Read from the current position up to a double newline
+            //     let (_, _, forwards_selection) = self.read_forwards_until(|c, _| {
+            //         if last_char == NEWLINE_CHAR && c == NEWLINE_CHAR {
+            //             true
+            //         } else {
+            //             last_char = c;
+            //             false
+            //         }
+            //     }, is_around, true);
+            // },
             // Sentence,
             // Line,
             // BlockSquare,
@@ -1497,7 +1529,59 @@ impl View {
             _ => self.buffer.read(1),
         };
 
-        self.dump();
+        let (_, _, selection) = noun_match.unwrap().unwrap();
+
+        match self.verb {
+            Some(Verb::Delete) => {
+                let deleted_selection = selection.remove_deep(&mut self.buffer, false).unwrap();
+
+                // After the delete, reset the offset to the start of the deletion operation
+                let tokens_collection = self.buffer.tokens_mut();
+                let mut new_offset = tokens_collection.compute_offset(deleted_selection.starting_token_id);
+                new_offset += deleted_selection.starting_token_offset;
+                self.buffer.seek(new_offset);
+            },
+            // Yank,
+            // Change,
+            // IndentRight,
+            // IndentLeft,
+            // AutoIndent,
+            // SwapCase,
+            // Uppercase,
+            // Lowercase,
+
+            None => {
+                let offset = self.buffer.get_offset();
+                // Chagne the cursor to be at the end of the selection
+                let tokens_collection = self.buffer.tokens_mut();
+                let mut new_offset = tokens_collection.compute_offset(selection.starting_token_id);
+                new_offset += selection.starting_token_offset;
+
+                // FIXME: this whole system of trying to auto detect the right end of the selection
+                // is a bad idea. Make `read_to_pattern` return a range that goes in the right
+                // direction and use the "end" of that range instead.
+                let start_offset = new_offset;
+                let end_offset = if selection.is_backwards {
+                    new_offset - selection.char_count
+                } else {
+                    new_offset + selection.char_count
+                };
+
+                let new_offset = if start_offset == offset {
+                    start_offset
+                } else {
+                    end_offset
+                };
+
+                self.buffer.seek(new_offset);
+                println!("NEW SEEK: {start_offset}-{end_offset}  {offset} => {new_offset}");
+
+                self.position = self.buffer.convert_offset_to_rows_cols(new_offset);
+            },
+            _ => {},
+        }
+
+        // self.dump();
         self.clear_command();
     }
 }

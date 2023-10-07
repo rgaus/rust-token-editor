@@ -1,3 +1,4 @@
+use std::io;
 use std::collections::HashMap;
 use regex::Regex;
 use colored::Colorize;
@@ -375,7 +376,7 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 fn main() {
     // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
     // let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
-    let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
+    let mut buffer = Buffer::new_from_literal("foo bar....baaaaar baz");
     // buffer.seek(3); // First space          ----> "TEST bar.baaaaar baz"
     // buffer.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
     // buffer.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"
@@ -387,18 +388,31 @@ fn main() {
     // buffer.seek(15); // Space after "baaaar" > "foo bar.TEST baz"
     // buffer.seek(14); // Move to the last "a" in "baaaaar"
     // buffer.seek(12); // Move to the start of "baz"
-    let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::UpperEnd, 1).unwrap().unwrap();
-    println!("READ: {:?}", selection);
-    {
-        let tokens_collection = buffer.tokens_mut();
-        println!("PRE: {}", tokens_collection.stringify());
-    }
-    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-    println!("DELETED: {:?}", deleted_selection);
-    let result = deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-    {
-        let tokens_collection = buffer.tokens_mut();
-        println!("POST: {}", tokens_collection.stringify());
+    // let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::To('.'), 1).unwrap().unwrap();
+    // println!("READ: {:?}", selection);
+    // {
+    //     let tokens_collection = buffer.tokens_mut();
+    //     println!("PRE: {}", tokens_collection.stringify());
+    // }
+    // let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+    // println!("DELETED: {:?}", deleted_selection);
+    // let result = deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+    // {
+    //     let tokens_collection = buffer.tokens_mut();
+    //     println!("POST: {}", tokens_collection.stringify());
+    // }
+
+    let mut view = buffer.create_view();
+    view.dump_string();
+    loop {
+        let mut input = String::new();
+        match io::stdin().read_line(&mut input) {
+            Ok(_) => {
+                view.process_input(&input);
+                view.dump_string();
+            }
+            Err(error) => panic!("{}", error),
+        }
     }
 }
 

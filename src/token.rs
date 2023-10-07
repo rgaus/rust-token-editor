@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use rangemap::RangeMap;
+use colored::Colorize;
 
 use crate::token_match_template::*;
 
@@ -671,6 +672,41 @@ impl TokensCollection {
         };
 
         self.stringify_to_end(first_root_node.id)
+    }
+
+    pub fn debug_stringify_highlight(&self, offset_start: usize, offset_end: usize) -> String {
+        let Some(first_root_node) = self.get_first_root_node() else {
+            return String::from("");
+        };
+        let starting_token_id = first_root_node.id;
+
+        let mut index = 0;
+        let mut result = String::from("");
+        let mut pointer_id = starting_token_id;
+        loop {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
+                break;
+            };
+            if let Some(literal_text) = &pointer.literal {
+                for character in literal_text.chars() {
+                    let character_as_string = format!("{}", character);
+                    let colored_character = if index >= offset_start && index < offset_end {
+                        character_as_string.red().on_white()
+                    } else {
+                        character_as_string.normal()
+                    };
+                    result = format!("{}{}", result, colored_character);
+                    index += 1;
+                }
+            };
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+            } else {
+                break;
+            }
+        }
+
+        result
     }
 }
 
