@@ -1359,18 +1359,34 @@ impl View {
                 'U' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Uppercase) => self.set_noun(Noun::Line),
                 'u' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Lowercase) => self.set_noun(Noun::Line),
 
-                // "Nouns"
-                'w' if self.next_can_be_noun() => self.set_noun(Noun::LowerWord),
-                'p' if self.next_can_be_noun() => self.set_noun(Noun::Paragraph),
-                's' if self.next_can_be_noun() => self.set_noun(Noun::Sentence),
-                '[' | ']' if self.next_can_be_noun() => self.set_noun(Noun::BlockSquare),
-                '(' | ')' if self.next_can_be_noun() => self.set_noun(Noun::BlockParenthesis),
-                '{' | '}' if self.next_can_be_noun() => self.set_noun(Noun::BlockCurly),
-                '<' | '>' if self.next_can_be_noun() => self.set_noun(Noun::BlockAngle),
-                'b' if self.next_can_be_noun() => self.set_noun(Noun::BlockSquareOrParenthesis),
-                'B' if self.next_can_be_noun() => self.set_noun(Noun::BlockSquareOrCurly),
-
                 // Noun-like objects that are only valid after `i`nside or `a`round
+                //
+                // NOTE: this must go before regular nouns, because there are things like `b` that
+                // mean different things: `cib` is  "change inside block" BUT `cb`is "change back"
+                'p' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::Paragraph);
+                },
+                's' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::Sentence)
+                },
+                '[' | ']' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::BlockSquare)
+                },
+                '(' | ')' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::BlockParenthesis)
+                },
+                '{' | '}' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::BlockCurly)
+                },
+                '<' | '>' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::BlockAngle)
+                },
+                'b' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::BlockSquareOrParenthesis)
+                },
+                'B' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
+                    self.set_noun(Noun::BlockSquareOrCurly)
+                },
                 't' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
                     self.set_noun(Noun::BlockXMLTag)
                 },
@@ -2996,6 +3012,18 @@ mod test_engine {
                     command_count: 1,
                     verb: Some(Verb::Change),
                     noun: Some(Noun::Inside(Box::new(Noun::QuoteSingle))),
+                }),
+                ("cib", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Change),
+                    noun: Some(Noun::Inside(Box::new(Noun::BlockSquareOrParenthesis))),
+                }),
+                ("ciB", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Change),
+                    noun: Some(Noun::Inside(Box::new(Noun::BlockSquareOrCurly))),
                 }),
 
                 // Linewise operations
