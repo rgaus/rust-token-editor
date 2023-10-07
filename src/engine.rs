@@ -1199,6 +1199,10 @@ enum ViewState {
     HasVerb,
     IsInside,
     IsAround,
+    PressedT,
+    PressedUpperT,
+    PressedF,
+    PressedUpperF,
     PressedG(Box<ViewState>),
     Complete,
 }
@@ -1336,6 +1340,13 @@ impl View {
                 // <C-U> / <C-D> - half page up / half page down
                 // <C-B> / <C-F> - page up / down
 
+                // When the noun "t"/"T"/"f"/"F" is used, the enxt character refers to the
+                // character that should be navigated to.
+                c if self.state == ViewState::PressedT => self.set_noun(Noun::To(c)),
+                c if self.state == ViewState::PressedUpperT => self.set_noun(Noun::UpperTo(c)),
+                c if self.state == ViewState::PressedF => self.set_noun(Noun::Find(c)),
+                c if self.state == ViewState::PressedUpperF => self.set_noun(Noun::UpperFind(c)),
+
                 // "Verbs"
                 'd' if self.state == ViewState::Initial => self.set_verb(Verb::Delete),
                 'y' if self.state == ViewState::Initial => self.set_verb(Verb::Yank),
@@ -1379,6 +1390,19 @@ impl View {
                 '`' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
                     self.set_noun(Noun::QuoteBacktick)
                 },
+
+                // "Nouns"
+                'w' if self.next_can_be_noun() => self.set_noun(Noun::LowerWord),
+                'W' if self.next_can_be_noun() => self.set_noun(Noun::UpperWord),
+                'b' if self.next_can_be_noun() => self.set_noun(Noun::LowerBack),
+                'B' if self.next_can_be_noun() => self.set_noun(Noun::UpperBack),
+                'e' if self.next_can_be_noun() => self.set_noun(Noun::LowerEnd),
+                'E' if self.next_can_be_noun() => self.set_noun(Noun::UpperEnd),
+
+                't' if self.next_can_be_noun() => self.state = ViewState::PressedT,
+                'T' if self.next_can_be_noun() => self.state = ViewState::PressedUpperT,
+                'f' if self.next_can_be_noun() => self.state = ViewState::PressedF,
+                'F' if self.next_can_be_noun() => self.state = ViewState::PressedUpperF,
 
                 // A number: adjust the number of times the command should be run
                 '0'..='9' => {
@@ -2917,6 +2941,25 @@ mod test_engine {
             let mut view = buffer.create_view();
 
             for (input_text, dumped_data) in vec![
+                ("w", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: None,
+                    noun: Some(Noun::LowerWord),
+                }),
+                ("2w", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 2,
+                    verb: None,
+                    noun: Some(Noun::LowerWord),
+                }),
+                ("5B", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 5,
+                    verb: None,
+                    noun: Some(Noun::UpperBack),
+                }),
+
                 ("cw", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 1,
@@ -3008,6 +3051,81 @@ mod test_engine {
                     noun: Some(Noun::Character),
                 }),
                 // TODO: "cx" should not work
+
+                ("db", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::LowerBack),
+                }),
+                ("d5b", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 5,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::LowerBack),
+                }),
+                ("dB", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::UpperBack),
+                }),
+                ("de", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::LowerEnd),
+                }),
+                ("2dE", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 2,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::UpperEnd),
+                }),
+
+                // "t"/"T"/"f"/"F" commands
+                ("dte", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::To('e')),
+                }),
+                ("dTe", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::UpperTo('e')),
+                }),
+                ("dfe", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::Find('e')),
+                }),
+                ("dFe", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::UpperFind('e')),
+                }),
+                ("d2Fe", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 2,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::UpperFind('e')),
+                }),
+                ("2dFe", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 2,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::UpperFind('e')),
+                }),
+                ("dff", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 1,
+                    verb: Some(Verb::Delete),
+                    noun: Some(Noun::Find('f')),
+                }),
             ] {
                 view.raw_parse_input(input_text, |_| {});
                 assert_eq!(view.dump(), dumped_data, "Assertion failed: `{}`", input_text);
