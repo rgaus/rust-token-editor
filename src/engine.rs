@@ -1454,16 +1454,18 @@ impl View {
         }
     }
 
-    pub fn process_input(&mut self, input: &str) {
+    pub fn process_input(&mut self, input: &str) -> Result<bool, String> {
+        let mut result = Ok(false);
         self.raw_parse_input(input, |inner_self| {
             // Once a command has completed processing, execute it!
-            inner_self.execute_command();
-        })
+            result = inner_self.execute_command();
+        });
+        result
     }
 
-    fn execute_command(&mut self) {
+    fn execute_command(&mut self) -> Result<bool, String> {
         if self.state != ViewState::Complete {
-            return;
+            return Err(format!("Unable to run execute_command when self.state != ViewState::Complete (value was {:?})", self.state));
         }
 
         let command_count = self.command_count.parse::<usize>().unwrap_or(1);
@@ -1529,7 +1531,10 @@ impl View {
             _ => self.buffer.read(1),
         };
 
-        let (_, _, selection) = noun_match.unwrap().unwrap();
+        let Some((_, _, selection)) = noun_match.unwrap() else {
+            // Nothing matched the given noun
+            return Ok(false);
+        };
 
         match self.verb {
             Some(Verb::Delete) => {
@@ -1583,6 +1588,8 @@ impl View {
 
         // self.dump();
         self.clear_command();
+
+        Ok(true)
     }
 }
 

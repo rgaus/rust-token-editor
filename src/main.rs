@@ -408,7 +408,11 @@ fn main() {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
-                view.process_input(&input);
+                match view.process_input(&input) {
+                    Ok(false) => println!("Unable to perform action."),
+                    Err(err) => panic!("{:?}", err),
+                    _ => {},
+                }
                 view.dump_string();
             }
             Err(error) => panic!("{}", error),
