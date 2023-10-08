@@ -1305,7 +1305,12 @@ enum Noun {
     UpperFind(char),
     Paragraph,
     Sentence,
-    Line,
+    CurrentLine,
+    NextLine,
+    RestOfLine,
+    StartOfLine,
+    StartOfLineAfterIndentation,
+    EndOfLine,
     BlockSquare,
     BlockParenthesis,
     BlockCurly,
@@ -1452,7 +1457,7 @@ impl View {
             match character {
                 // TODO:
                 // "+y - yank register
-                // h / j / k / l - moving around
+                // h / j / k / l - moving around - NOTE: dl and l select different lengths
                 // w / W / b / B / e / E - word+back+end DONE
                 // 0 / ^ / $ - start + end of line
                 // f / F / t / T - to+until DONE
@@ -1490,9 +1495,9 @@ impl View {
                 'a' if self.state == ViewState::HasVerb => { self.state = ViewState::IsAround },
 
                 // Repeated Verbs - ie, `cc`, `gUU`
-                'c' | 'd' | 'y' if self.state == ViewState::HasVerb => self.set_noun(Noun::Line),
-                'U' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Uppercase) => self.set_noun(Noun::Line),
-                'u' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Lowercase) => self.set_noun(Noun::Line),
+                'c' | 'd' | 'y' if self.state == ViewState::HasVerb => self.set_noun(Noun::CurrentLine),
+                'U' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Uppercase) => self.set_noun(Noun::CurrentLine),
+                'u' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Lowercase) => self.set_noun(Noun::CurrentLine),
 
                 // Noun-like objects that are only valid after `i`nside or `a`round
                 //
@@ -1543,6 +1548,15 @@ impl View {
                 'e' => self.set_noun(Noun::LowerEnd),
                 'E' => self.set_noun(Noun::UpperEnd),
 
+                'h' => {
+                    self.set_noun(Noun::Character);
+                    self.is_backwards = true;
+                },
+                'j' => self.set_noun(Noun::NextLine),
+                'k' => {
+                    self.set_noun(Noun::NextLine);
+                    self.is_backwards = true;
+                },
                 'l' => self.set_noun(Noun::Character),
 
                 't' => self.state = ViewState::PressedT,
@@ -1551,13 +1565,24 @@ impl View {
                 'F' => self.state = ViewState::PressedUpperF,
 
                 // A number: adjust the number of times the command should be run
-                '0'..='9' => {
+                '1'..='9' => {
                     if self.should_clear_command_count {
                         self.command_count = String::from("");
                     }
                     self.command_count = format!("{}{}", self.command_count, character);
                     self.should_clear_command_count = false;
                 },
+                '0' if !self.command_count.is_empty() => {
+                    if self.should_clear_command_count {
+                        self.command_count = String::from("");
+                    }
+                    self.command_count = format!("{}0", self.command_count);
+                    self.should_clear_command_count = false;
+                },
+
+                '$' => self.set_noun(Noun::EndOfLine),
+                '0' => self.set_noun(Noun::StartOfLine),
+                '^' => self.set_noun(Noun::StartOfLineAfterIndentation),
 
                 // `g` is weird, it's used as a prefix for a lot of other commands
                 // So go into a different mode once it is pressed
@@ -1606,6 +1631,25 @@ impl View {
                     self.buffer.read_to_pattern(TraversalPattern::Left, &self.verb, command_count)
                 } else {
                     self.buffer.read_to_pattern(TraversalPattern::Right, &self.verb, command_count)
+                }
+            },
+            Some(Noun::StartOfLine) => self.buffer.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
+            Some(Noun::StartOfLineAfterIndentation) => {
+                // Go to the start of the line
+                self.buffer.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+
+                // Then read forwards until the whitespace at the beginning stops
+                self.buffer.read_forwards_until(|c, _| !is_whitespace_char(c), false, true)
+            },
+            Some(Noun::EndOfLine) => {
+                let result = self.buffer.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                match result {
+                    Ok(Some((range, literal, selection))) => {
+                        self.buffer.seek(self.buffer.get_offset() - 1);
+
+                        Ok(Some((range, literal, selection)))
+                    },
+                    other => other,
                 }
             },
             Some(Noun::LowerWord) => self.buffer.read_to_pattern(TraversalPattern::LowerWord, &self.verb, command_count),
@@ -3254,31 +3298,31 @@ mod test_engine {
                     mode: Mode::Normal,
                     command_count: 1,
                     verb: Some(Verb::Delete),
-                    noun: Some(Noun::Line),
+                    noun: Some(Noun::CurrentLine),
                 }),
                 ("3cc", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 3,
                     verb: Some(Verb::Change),
-                    noun: Some(Noun::Line),
+                    noun: Some(Noun::CurrentLine),
                 }),
                 ("5guu", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 5,
                     verb: Some(Verb::Lowercase),
-                    noun: Some(Noun::Line),
+                    noun: Some(Noun::CurrentLine),
                 }),
                 ("gUU", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 1,
                     verb: Some(Verb::Uppercase),
-                    noun: Some(Noun::Line),
+                    noun: Some(Noun::CurrentLine),
                 }),
                 ("12gUU", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 12,
                     verb: Some(Verb::Uppercase),
-                    noun: Some(Noun::Line),
+                    noun: Some(Noun::CurrentLine),
                 }),
 
                 // "x" command
