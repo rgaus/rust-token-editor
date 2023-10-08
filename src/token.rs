@@ -662,6 +662,47 @@ impl TokensCollection {
         result
     }
 
+    pub fn stringify_for_selection(
+        &self,
+        starting_token_id: uuid::Uuid,
+        starting_token_offset: usize,
+        char_count: usize,
+    ) -> String {
+        if char_count == 0 {
+            return String::from("");
+        }
+
+        let mut index = 0;
+        let mut result = String::from("");
+        let mut pointer_id = starting_token_id;
+        loop {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
+                break;
+            };
+            if let Some(literal_text) = &pointer.literal {
+                for character in literal_text.chars() {
+                    if index < starting_token_offset {
+                        index += 1;
+                        continue;
+                    }
+                    // println!("stringify_for_selection: {index} {character} starting_token_offset={starting_token_offset} char_count={char_count}");
+                    result = format!("{}{}", result, character);
+                    if index >= starting_token_offset + char_count - 1 {
+                        return result;
+                    };
+                    index += 1;
+                }
+            };
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
+
     // Outputs the entire document as a text string.
     //
     // NOTE: This function should almost never be used outside of a testing context, as it requires
