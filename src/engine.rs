@@ -260,36 +260,55 @@ impl SequentialTokenRange {
         buffer: &mut Buffer,
         range: SequentialTokenRange,
     ) -> Result<SequentialTokenRange, String> {
-        // NOTE: the below logic won't work unless the ranges are already forwards
-        let existing_range = self.as_forwards_range(buffer)?;
-        let new_range = range.as_forwards_range(buffer)?;
-
         let tokens_collection = buffer.tokens_mut();
 
-        let mut existing_start_offset = tokens_collection.compute_offset(existing_range.starting_token_id);
-        existing_start_offset += existing_range.starting_token_offset;
-        let existing_end_offset = existing_start_offset + existing_range.char_count;
-
-        let mut new_start_offset = tokens_collection.compute_offset(new_range.starting_token_id);
-        new_start_offset += new_range.starting_token_offset;
-        let new_end_offset = new_start_offset + new_range.char_count;
-
-        let smaller_start_offset = std::cmp::min(existing_start_offset, new_start_offset);
-        let larger_end_offset = std::cmp::max(existing_end_offset, new_end_offset);
-        let char_count = larger_end_offset - smaller_start_offset;
-
-        if existing_start_offset < new_start_offset {
-            Ok(Self::new(
-                existing_range.starting_token_id,
-                existing_range.starting_token_offset,
-                char_count,
-            ))
+        let mut existing_start_offset = tokens_collection.compute_offset(self.starting_token_id);
+        existing_start_offset += self.starting_token_offset;
+        let existing_end_offset = if self.is_backwards {
+            existing_start_offset - self.char_count
         } else {
-            Ok(Self::new(
-                new_range.starting_token_id,
-                new_range.starting_token_offset,
-                char_count,
-            ))
+            existing_start_offset + self.char_count
+        };
+
+        let mut new_start_offset = tokens_collection.compute_offset(range.starting_token_id);
+        new_start_offset += range.starting_token_offset;
+        let new_end_offset = if range.is_backwards {
+            new_start_offset - range.char_count
+        } else {
+            new_start_offset + range.char_count
+        };
+
+        let offsets = vec![
+            existing_start_offset,
+            existing_end_offset,
+            new_start_offset,
+            new_end_offset,
+        ];
+        println!("OFFSETS: {:?}", offsets);
+        let Some(smallest_offset) = offsets.iter().min() else {
+            return Err(format!("Cannot get smallest offset in vec: {:?}", offsets));
+        };
+        let Some(largest_offset) = offsets.iter().max() else {
+            return Err(format!("Cannot get smallest offset in vec: {:?}", offsets));
+        };
+        let char_count = largest_offset - smallest_offset;
+        println!("CHAR COUNT? {} - {} = {}", largest_offset, smallest_offset, char_count);
+
+        // NOTE: the direction of the resulting range is based off `range` so that if ranges of
+        // different directions are put in, the most recent range is the one that dictates
+        // direction
+        if range.is_backwards {
+            let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*largest_offset) else {
+                return Err(format!("Cannot get token at offset {} in document!", largest_offset));
+            };
+            println!("EXTEND RESULT: is_backwards=true char_count={char_count}");
+            Ok(Self::new_backwards(start_token.id, start_token_offset, char_count))
+        } else {
+            let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*smallest_offset) else {
+                return Err(format!("Cannot get token at offset {} in document!", smallest_offset));
+            };
+            println!("EXTEND RESULT: is_backwards=false char_count={char_count}");
+            Ok(Self::new(start_token.id, start_token_offset, char_count))
         }
     }
 
@@ -984,11 +1003,13 @@ impl Buffer {
                         combined_result = format!("{}{}", result, combined_result);
                     }
                     if let Some(value) = combined_range {
+                        println!("{:?}.EXTEND({:?})", value, range);
                         combined_range = Some(value.extend(self, range)?);
                     } else {
-                        println!("BACKWARDS: {:?}", range);
-                        combined_range = Some(range.as_forwards_range(self)?);
-                        println!("FORWARDS: {:?}", combined_range);
+                        // println!("BACKWARDS: {:?}", range);
+                        // combined_range = Some(range.as_forwards_range(self)?);
+                        combined_range = Some(range);
+                        // println!("FORWARDS: {:?}", combined_range);
                     }
                 },
                 Ok(None) => {
@@ -2360,7 +2381,8 @@ mod test_engine {
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
                     assert_eq!(range, 4..0);
                     assert_eq!(matched_chars, "foo ");
-                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 3);
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
@@ -2384,7 +2406,8 @@ mod test_engine {
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..4);
                     assert_eq!(matched_chars, "foo ");
-                    assert_eq!(selection.starting_token_offset, 4);
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 7);
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
@@ -2408,7 +2431,8 @@ mod test_engine {
                     ).unwrap().unwrap();
                     assert_eq!(range, 14..12);
                     assert_eq!(matched_chars, "ba");
-                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 13);
                     assert_eq!(selection.char_count, 2);
 
                     // Delete it
@@ -2432,7 +2456,8 @@ mod test_engine {
                         ).unwrap().unwrap();
                         assert_eq!(range, 3..0);
                         assert_eq!(matched_chars, "foo");
-                        assert_eq!(selection.starting_token_offset, 0);
+                        assert_eq!(selection.is_backwards, true);
+                        assert_eq!(selection.starting_token_offset, 2);
                         assert_eq!(selection.char_count, 3);
 
                         // Delete it
@@ -2454,7 +2479,8 @@ mod test_engine {
                         ).unwrap().unwrap();
                         assert_eq!(range, 4..0);
                         assert_eq!(matched_chars, "foo ");
-                        assert_eq!(selection.starting_token_offset, 0);
+                        assert_eq!(selection.is_backwards, true);
+                        assert_eq!(selection.starting_token_offset, 3);
                         assert_eq!(selection.char_count, 4);
 
                         // Delete it
@@ -2498,7 +2524,8 @@ mod test_engine {
                         ).unwrap().unwrap();
                         assert_eq!(range, 6..4);
                         assert_eq!(matched_chars, "ba");
-                        assert_eq!(selection.starting_token_offset, 4);
+                        assert_eq!(selection.is_backwards, true);
+                        assert_eq!(selection.starting_token_offset, 5);
                         assert_eq!(selection.char_count, 2);
 
                         // Delete it
@@ -2520,7 +2547,8 @@ mod test_engine {
                         ).unwrap().unwrap();
                         assert_eq!(range, 7..4);
                         assert_eq!(matched_chars, "bar");
-                        assert_eq!(selection.starting_token_offset, 4);
+                        assert_eq!(selection.is_backwards, true);
+                        assert_eq!(selection.starting_token_offset, 6);
                         assert_eq!(selection.char_count, 3);
 
                         // Delete it
@@ -2586,7 +2614,8 @@ mod test_engine {
                         ).unwrap().unwrap();
                         assert_eq!(range, 10..8);
                         assert_eq!(matched_chars, "ba");
-                        assert_eq!(selection.starting_token_offset, 8);
+                        assert_eq!(selection.is_backwards, true);
+                        assert_eq!(selection.starting_token_offset, 9);
                         assert_eq!(selection.char_count, 2);
 
                         // Delete it
@@ -2608,7 +2637,8 @@ mod test_engine {
                         ).unwrap().unwrap();
                         assert_eq!(range, 15..8);
                         assert_eq!(matched_chars, "baaaaar");
-                        assert_eq!(selection.starting_token_offset, 8);
+                        assert_eq!(selection.is_backwards, true);
+                        assert_eq!(selection.starting_token_offset, 14);
                         assert_eq!(selection.char_count, 7);
 
                         // Delete it
@@ -2638,7 +2668,8 @@ mod test_engine {
                     println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
                     assert_eq!(range, 4..0);
                     assert_eq!(matched_chars, "foo ");
-                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 3);
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
@@ -2662,7 +2693,8 @@ mod test_engine {
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..0);
                     assert_eq!(matched_chars, "foo.foo ");
-                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 7);
                     assert_eq!(selection.char_count, 8);
 
                     // Delete it
@@ -2686,7 +2718,8 @@ mod test_engine {
                     ).unwrap().unwrap();
                     assert_eq!(range, 14..12);
                     assert_eq!(matched_chars, "ba");
-                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 13);
                     assert_eq!(selection.char_count, 2);
 
                     // Delete it
