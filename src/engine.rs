@@ -1576,36 +1576,12 @@ impl View {
             // Uppercase,
             // Lowercase,
 
-            None => {
-                let offset = self.buffer.get_offset();
-                // Chagne the cursor to be at the end of the selection
-                let tokens_collection = self.buffer.tokens_mut();
-                let mut new_offset = tokens_collection.compute_offset(selection.starting_token_id);
-                new_offset += selection.starting_token_offset;
-
-                // FIXME: this whole system of trying to auto detect the right end of the selection
-                // is a bad idea. Make `read_to_pattern` return a range that goes in the right
-                // direction and use the "end" of that range instead.
-                let start_offset = new_offset;
-                let end_offset = if selection.is_backwards {
-                    new_offset - selection.char_count
-                } else {
-                    new_offset + selection.char_count
-                };
-
-                let new_offset = if start_offset == offset {
-                    start_offset
-                } else {
-                    end_offset
-                };
-
-                self.buffer.seek(new_offset);
-                println!("NEW SEEK: {start_offset}-{end_offset}  {offset} => {new_offset}");
-
-                self.position = self.buffer.convert_offset_to_rows_cols(new_offset);
-            },
             _ => {},
         }
+
+        // Update the cursor to be in the right spot
+        let offset = self.buffer.get_offset();
+        self.position = self.buffer.convert_offset_to_rows_cols(offset);
 
         // self.dump();
         self.clear_command();
