@@ -1173,11 +1173,10 @@ impl Buffer {
     // a new command is successfully parsed
     pub fn raw_parse_input<F>(&mut self, input: &str, mut on_complete: F) where F: FnMut(&mut Self) {
         for character in input.chars() {
-            // println!("CHAR: {}", character);
             match character {
                 // TODO:
                 // "+y - yank register
-                // h / j / k / l - moving around - NOTE: dl and l select different lengths
+                // h / j / k / l - moving around
                 // w / W / b / B / e / E - word+back+end DONE
                 // 0 / ^ / $ - start + end of line
                 // f / F / t / T / ; / , - to+find DONE
