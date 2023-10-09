@@ -12,6 +12,12 @@ use token_match_template::*;
 mod engine;
 use engine::*;
 
+mod token_selection;
+use token_selection::*;
+
+mod text_utils;
+use text_utils::*;
+
 
 fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: String) {
     for child_id in child_ids {
