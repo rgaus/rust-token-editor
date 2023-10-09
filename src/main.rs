@@ -374,35 +374,35 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 }
 
 fn main() {
-    // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-    // let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
-    let mut buffer = Buffer::new_from_literal("foo   bar....baaaaar baz\n  baz\nfinal");
-    // buffer.seek(3); // First space          ----> "TEST bar.baaaaar baz"
-    // buffer.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
-    // buffer.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"
-    // buffer.seek(6); // Third char of "bar"  -> "foo TESTr.baaaaar baz"
-    // buffer.seek(7); // Period               -> "foo TEST.baaaaar baz"
-    // buffer.seek(8); // First char of "baaa" -> "foo barTESTbaaaaar baz"
-    // buffer.seek(9); // Second char of "baaa" > "foo bar.TESTaaaaar baz"
-    // buffer.seek(10); // Third char of "baaa" > "foo bar.TESTaaaar baz"
-    // buffer.seek(15); // Space after "baaaar" > "foo bar.TEST baz"
-    // buffer.seek(14); // Move to the last "a" in "baaaaar"
-    // buffer.seek(12); // Move to the start of "baz"
-    // let (_, _, selection) = buffer.read_to_pattern(TraversalPattern::To('.'), 1).unwrap().unwrap();
+    // let mut document = Document::new_from_literal("foo.foo bar baz");
+    // let mut document = Document::new_from_literal("foo.foo bar\nbaz\nfinal");
+    let mut document = Document::new_from_literal("foo   bar....baaaaar baz\n  baz\nfinal");
+    // document.seek(3); // First space          ----> "TEST bar.baaaaar baz"
+    // document.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
+    // document.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"
+    // document.seek(6); // Third char of "bar"  -> "foo TESTr.baaaaar baz"
+    // document.seek(7); // Period               -> "foo TEST.baaaaar baz"
+    // document.seek(8); // First char of "baaa" -> "foo barTESTbaaaaar baz"
+    // document.seek(9); // Second char of "baaa" > "foo bar.TESTaaaaar baz"
+    // document.seek(10); // Third char of "baaa" > "foo bar.TESTaaaar baz"
+    // document.seek(15); // Space after "baaaar" > "foo bar.TEST baz"
+    // document.seek(14); // Move to the last "a" in "baaaaar"
+    // document.seek(12); // Move to the start of "baz"
+    // let (_, _, selection) = document.read_to_pattern(TraversalPattern::To('.'), 1).unwrap().unwrap();
     // println!("READ: {:?}", selection);
     // {
-    //     let tokens_collection = buffer.tokens_mut();
+    //     let tokens_collection = document.tokens_mut();
     //     println!("PRE: {}", tokens_collection.stringify());
     // }
-    // let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+    // let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
     // println!("DELETED: {:?}", deleted_selection);
-    // let result = deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+    // let result = deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
     // {
-    //     let tokens_collection = buffer.tokens_mut();
+    //     let tokens_collection = document.tokens_mut();
     //     println!("POST: {}", tokens_collection.stringify());
     // }
 
-    let mut view = buffer.create_view();
+    let mut view = document.create_view();
     view.dump_string();
     loop {
         let mut input = String::new();
@@ -453,41 +453,41 @@ fn main() {
 //         Ok((match_status, offset, _last_token_id, child_ids, mut tokens_collection)) => {
 //             println!("RESULT: {:?} {:?}", offset, match_status);
 //             println!("Offset: {}\nInput:\n{}\n---\n", offset, input);
-//             let mut buffer = Buffer::new_from_tokenscollection(Box::new(tokens_collection));
+//             let mut document = Document::new_from_tokenscollection(Box::new(tokens_collection));
 //             println!("--------");
-//             buffer.seek(0);
-//             println!("READ: {:?}", buffer.read(3));
-//             println!("READ: {:?}", buffer.read(3));
-//             // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::Find('l'), 1));
-//             println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::UpperWord, 1));
-//             println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::UpperBack, 1));
-//             // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord));
-//             // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord));
-//             // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord));
-//             // println!("READ: {:?}", buffer.read_to_pattern(TraversalPattern::LowerWord));
-//             // println!("READ: {:?}", buffer.read_forwards_until(|c| c == 'e', true));
-//             // println!("READ: {:?}", buffer.read_forwards_until(|c| c == 'a', true));
-//             // println!("READ: {:?}", buffer.read_backwards_until(|c| c == 'l', true));
-//             println!("READ: {:?}", buffer.read(7));
-//             println!("OFFSET: {:?}", buffer.get_offset());
+//             document.seek(0);
+//             println!("READ: {:?}", document.read(3));
+//             println!("READ: {:?}", document.read(3));
+//             // println!("READ: {:?}", document.read_to_pattern(TraversalPattern::Find('l'), 1));
+//             println!("READ: {:?}", document.read_to_pattern(TraversalPattern::UpperWord, 1));
+//             println!("READ: {:?}", document.read_to_pattern(TraversalPattern::UpperBack, 1));
+//             // println!("READ: {:?}", document.read_to_pattern(TraversalPattern::LowerWord));
+//             // println!("READ: {:?}", document.read_to_pattern(TraversalPattern::LowerWord));
+//             // println!("READ: {:?}", document.read_to_pattern(TraversalPattern::LowerWord));
+//             // println!("READ: {:?}", document.read_to_pattern(TraversalPattern::LowerWord));
+//             // println!("READ: {:?}", document.read_forwards_until(|c| c == 'e', true));
+//             // println!("READ: {:?}", document.read_forwards_until(|c| c == 'a', true));
+//             // println!("READ: {:?}", document.read_backwards_until(|c| c == 'l', true));
+//             println!("READ: {:?}", document.read(7));
+//             println!("OFFSET: {:?}", document.get_offset());
 //             println!("--------");
-//             // buffer.seek(1);
-//             // println!("READ: {:?}", buffer.read(7));
+//             // document.seek(1);
+//             // println!("READ: {:?}", document.read(7));
 //             // println!("--------");
-//             // buffer.seek(2);
-//             // println!("READ: {:?}", buffer.read(7));
+//             // document.seek(2);
+//             // println!("READ: {:?}", document.read(7));
 //             // println!("--------");
-//             // buffer.seek(3);
-//             // println!("READ: {:?}", buffer.read(7));
+//             // document.seek(3);
+//             // println!("READ: {:?}", document.read(7));
 //             // println!("--------");
-//             // buffer.seek(4);
-//             // println!("READ: {:?}", buffer.read(7));
+//             // document.seek(4);
+//             // println!("READ: {:?}", document.read(7));
 //             // println!("--------");
-//             // buffer.seek(5);
-//             // println!("READ: {:?}", buffer.read(7));
+//             // document.seek(5);
+//             // println!("READ: {:?}", document.read(7));
 //             // println!("--------");
-//             // buffer.seek(6);
-//             // println!("READ: {:?}", buffer.read(7));
+//             // document.seek(6);
+//             // println!("READ: {:?}", document.read(7));
 //
 //             // println!("=========");
 //             // println!("= TOKENS: {} {}", tokens_collection.tokens.len(), input.len());

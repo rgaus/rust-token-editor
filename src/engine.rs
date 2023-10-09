@@ -51,11 +51,11 @@ impl SequentialTokenRange {
 
     // Creates a new SequentialTokenRange by taking two absolute offsets in the token stream
     pub fn new_from_offsets(
-        buffer: &mut Buffer,
+        document: &mut Document,
         offset_a: usize,
         offset_b: usize,
     ) -> Result<SequentialTokenRange, String> {
-        let tokens_collection = buffer.tokens_mut();
+        let tokens_collection = document.tokens_mut();
 
         let (start_offset, end_offset) = if offset_a <= offset_b {
             (offset_a, offset_b)
@@ -64,7 +64,7 @@ impl SequentialTokenRange {
         };
 
         let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(start_offset) else {
-            return Err(format!("Cannot get start token at offset {} in document!", start_offset));
+            return Err(format!("Cannot get start token at offset {} in tokens collection!", start_offset));
         };
 
         Ok(Self::new(
@@ -81,16 +81,16 @@ impl SequentialTokenRange {
     // is where the change text will end up
     pub fn remove_deep(
         &self,
-        buffer: &mut Buffer,
+        document: &mut Document,
         keep_first_token: bool,
     ) -> Result<SequentialTokenRange, String> {
-        let forwards_range = self.as_forwards_range(buffer)?;
+        let forwards_range = self.as_forwards_range(document)?;
 
         let mut chars_removed = 0;
         let mut is_first = true;
         let mut pointer_id = forwards_range.starting_token_id;
         let mut token_ids_to_remove = vec![];
-        let tokens_collection = buffer.tokens_mut();
+        let tokens_collection = document.tokens_mut();
 
         loop {
             let result = {
@@ -185,11 +185,11 @@ impl SequentialTokenRange {
     // It can also be used AFTER calling `remove_deep(.., false)` to implement a change.
     pub fn prepend_text(
         &self,
-        buffer: &mut Buffer,
+        document: &mut Document,
         new_text: String,
         token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<Option<uuid::Uuid>, String> {
-        let tokens_collection = buffer.tokens_mut();
+        let tokens_collection = document.tokens_mut();
 
         let mut complete_new_text = new_text;
         if let Some(starting_token) = tokens_collection.get_by_id(self.starting_token_id) {
@@ -222,13 +222,13 @@ impl SequentialTokenRange {
     // range. If the range is already forwards, then this is a no-op.
     pub fn as_forwards_range(
         &self,
-        buffer: &mut Buffer,
+        document: &mut Document,
     ) -> Result<SequentialTokenRange, String> {
         if !self.is_backwards {
             return Ok(self.clone());
         }
 
-        let tokens_collection = buffer.tokens_mut();
+        let tokens_collection = document.tokens_mut();
 
         let mut start_offset = tokens_collection.compute_offset(self.starting_token_id);
         start_offset += self.starting_token_offset;
@@ -242,7 +242,7 @@ impl SequentialTokenRange {
         };
 
         let Some((token, token_offset)) = tokens_collection.get_by_offset(end_offset) else {
-            return Err(format!("Cannot get token at offset {} in document!", end_offset));
+            return Err(format!("Cannot get token at offset {} in tokens collection!", end_offset));
         };
 
         Ok(Self::new(
@@ -257,10 +257,10 @@ impl SequentialTokenRange {
     // added to the resulting range.
     pub fn extend(
         &self,
-        buffer: &mut Buffer,
+        document: &mut Document,
         range: SequentialTokenRange,
     ) -> Result<SequentialTokenRange, String> {
-        let tokens_collection = buffer.tokens_mut();
+        let tokens_collection = document.tokens_mut();
 
         let mut existing_start_offset = tokens_collection.compute_offset(self.starting_token_id);
         existing_start_offset += self.starting_token_offset;
@@ -299,13 +299,13 @@ impl SequentialTokenRange {
         // direction
         if range.is_backwards {
             let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*largest_offset) else {
-                return Err(format!("Cannot get token at offset {} in document!", largest_offset));
+                return Err(format!("Cannot get token at offset {} in tokens collection!", largest_offset));
             };
             println!("EXTEND RESULT: is_backwards=true char_count={char_count}");
             Ok(Self::new_backwards(start_token.id, start_token_offset, char_count))
         } else {
             let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*smallest_offset) else {
-                return Err(format!("Cannot get token at offset {} in document!", smallest_offset));
+                return Err(format!("Cannot get token at offset {} in tokens collection!", smallest_offset));
             };
             println!("EXTEND RESULT: is_backwards=false char_count={char_count}");
             Ok(Self::new(start_token.id, start_token_offset, char_count))
@@ -316,39 +316,39 @@ impl SequentialTokenRange {
     // SequentialTokenRange with the additional whitespace added to the end
     pub fn select_whitespace_after(
         &self,
-        buffer: &mut Buffer,
+        document: &mut Document,
     ) -> Result<SequentialTokenRange, String> {
-        let range = self.as_forwards_range(buffer)?;
-        let tokens_collection = buffer.tokens_mut();
+        let range = self.as_forwards_range(document)?;
+        let tokens_collection = document.tokens_mut();
 
         // Start seeking from the end of the token forwards, looking for whitespace
         let mut end_offset = tokens_collection.compute_offset(range.starting_token_id);
         end_offset += range.starting_token_offset;
         end_offset += range.char_count;
-        buffer.seek_push(end_offset);
+        document.seek_push(end_offset);
 
-        let result = match buffer.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
-            Ok(Some((_, _, range))) => self.extend(buffer, range),
+        let result = match document.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
+            Ok(Some((_, _, range))) => self.extend(document, range),
             // If the range cannot be extended (maybe we're at the end of the file?) then
             // just keep it as it is.
             Ok(None) => Ok(self.clone()),
             Err(e) => Err(e),
         };
 
-        buffer.seek_pop();
+        document.seek_pop();
         result
     }
 
-    pub fn text(&self, buffer: &mut Buffer) -> String {
-        buffer.document.stringify_for_selection(
+    pub fn text(&self, document: &mut Document) -> String {
+        document.tokens_collection.stringify_for_selection(
             self.starting_token_id,
             self.starting_token_offset,
             self.char_count
         )
     }
 
-    pub fn range(&self, buffer: &mut Buffer) -> std::ops::Range<usize> {
-        let mut start_offset = buffer.tokens_mut().compute_offset(self.starting_token_id);
+    pub fn range(&self, document: &mut Document) -> std::ops::Range<usize> {
+        let mut start_offset = document.tokens_mut().compute_offset(self.starting_token_id);
         start_offset += self.starting_token_offset;
         let end_offset = start_offset + self.char_count;
         start_offset..end_offset
@@ -366,18 +366,18 @@ impl SequentialTokenRange {
     // This is used in the `change` operation to preserve whitespace after a selection
     pub fn unselect_whitespace_after(
         &self,
-        buffer: &mut Buffer,
+        document: &mut Document,
     ) -> Result<SequentialTokenRange, String> {
-        let range = self.as_forwards_range(buffer)?;
-        let tokens_collection = buffer.tokens_mut();
+        let range = self.as_forwards_range(document)?;
+        let tokens_collection = document.tokens_mut();
 
         // Start seeking from the end of the token forwards, looking for whitespace
         let mut end_offset = tokens_collection.compute_offset(range.starting_token_id);
         end_offset += range.starting_token_offset;
         end_offset += range.char_count;
-        buffer.seek_push(end_offset);
+        document.seek_push(end_offset);
 
-        let result = match buffer.read_backwards_until(
+        let result = match document.read_backwards_until(
             |c, _| !is_whitespace_char(c),
             false,
             false,
@@ -394,7 +394,7 @@ impl SequentialTokenRange {
             Err(e) => Err(e),
         };
 
-        buffer.seek_pop();
+        document.seek_pop();
         result
     }
 }
@@ -415,8 +415,8 @@ pub enum TraversalPattern {
 }
 
 #[derive(Debug)]
-pub struct Buffer {
-    document: Box<TokensCollection>,
+pub struct Document {
+    tokens_collection: Box<TokensCollection>,
     offset_stack: Vec<usize>,
 
     // A cache that maps 1-indexed row to the offset at the start of that row.
@@ -425,10 +425,10 @@ pub struct Buffer {
     newline_offset_cache: HashMap<usize, usize>,
 }
 
-impl Buffer {
-    pub fn new_from_tokenscollection(document: Box<TokensCollection>) -> Self {
+impl Document {
+    pub fn new_from_tokenscollection(tokens_collection: Box<TokensCollection>) -> Self {
         Self {
-            document: document,
+            tokens_collection: tokens_collection,
             offset_stack: vec![0],
             newline_offset_cache: HashMap::new(),
         }
@@ -443,12 +443,12 @@ impl Buffer {
         View::new(Box::new(self))
     }
 
-    // Allow one to extract the token collection from the buffer for lower level mutations
+    // Allow one to extract the token collection from the document for lower level mutations
     pub fn tokens(&self) -> &Box<TokensCollection> {
-        &self.document
+        &self.tokens_collection
     }
     pub fn tokens_mut(&mut self) -> &mut Box<TokensCollection> {
-        &mut self.document
+        &mut self.tokens_collection
     }
 
     pub fn seek_push(&mut self, offset: usize) {
@@ -480,15 +480,15 @@ impl Buffer {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
-        let Some((token, token_offset)) = self.document.get_by_offset(*offset) else {
-            return Err(format!("Cannot get token at offset {} in document!", offset));
+        let Some((token, token_offset)) = self.tokens_collection.get_by_offset(*offset) else {
+            return Err(format!("Cannot get token at offset {} in tokens collection!", offset));
         };
         let initial_offset = *offset;
         // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
 
         let token_id = token.id.clone();
 
-        let result = self.document.stringify_for_offset(token_id, token_offset+number_of_chars);
+        let result = self.tokens_collection.stringify_for_offset(token_id, token_offset+number_of_chars);
         if result.len() >= token_offset+number_of_chars {
             let final_offset = initial_offset + number_of_chars;
             self.seek(final_offset);
@@ -498,7 +498,7 @@ impl Buffer {
                 SequentialTokenRange::new(token_id, token_offset, final_offset),
             )));
         } else {
-            // The buffer isn't long enough to return the full length of data, so return what we
+            // The document isn't long enough to return the full length of data, so return what we
             // can
             let chars = &result[token_offset..];
             let final_offset = initial_offset + chars.len();
@@ -511,7 +511,55 @@ impl Buffer {
         }
     }
 
-    // Reads the buffer character by character until the passed `needle_func` passes, and then
+    // pub fn read_backwards(&mut self, number_of_chars: usize) -> Result<Option<(
+    //     std::ops::Range<usize>, #<{(| The matched token offset range |)}>#
+    //     String, #<{(| The matched literal data in all tokens, concatenated |)}>#
+    //     SequentialTokenRange, #<{(| The token range that was matched |)}>#
+    // )>, String> {
+    //     let Some(offset) = self.offset_stack.last() else {
+    //         panic!("offset_stack vector is empty!")
+    //     };
+    //     let initial_offset = *offset;
+    //
+    //     let final_offset = if number_of_chars > initial_offset {
+    //         initial_offset - number_of_chars
+    //     } else {
+    //         0
+    //     };
+    //     self.seek(final_offset);
+    //
+    //     let Some((initial_token, initial_token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
+    //         return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
+    //     };
+    //     let initial_token_id = initial_token.id.clone();
+    //
+    //     let Some((token, token_offset)) = self.tokens_collection.get_by_offset(final_offset) else {
+    //         return Err(format!("Cannot get token at offset {} in tokens collection!", final_offset));
+    //     };
+    //     let token_id = token.id.clone();
+    //
+    //     let result = self.tokens_collection.stringify_for_offset(token_id, token_offset+number_of_chars);
+    //     if result.len() >= token_offset+number_of_chars {
+    //         let final_offset = initial_offset + number_of_chars;
+    //         return Ok(Some((
+    //             final_offset..initial_offset,
+    //             String::from(&result[initial_token_offset..initial_token_offset+number_of_chars]),
+    //             SequentialTokenRange::new_backwards(initial_token_id, initial_token_offset, number_of_chars),
+    //         )));
+    //     } else {
+    //         // The document isn't long enough to return the full length of data, so return what we
+    //         // can
+    //         let chars = &result[token_offset..];
+    //         let final_offset = initial_offset + chars.len();
+    //         return Ok(Some((
+    //             final_offset..initial_offset,
+    //             String::from(chars),
+    //             SequentialTokenRange::new_backwards(initial_token_id, initial_token_offset, number_of_chars),
+    //         )));
+    //     }
+    // }
+
+    // Reads the document character by character until the passed `needle_func` passes, and then
     // returns the data that has been read.
     //
     // If `include_matched_char` is true, the final matched character is included, otherwise it is
@@ -534,8 +582,8 @@ impl Buffer {
         };
         let mut initial_offset = *offset;
 
-        let Some((token, token_offset)) = self.document.get_by_offset(initial_offset) else {
-            return Err(format!("Cannot get token at offset {} in document!", initial_offset));
+        let Some((token, token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
+            return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
         // println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
@@ -545,7 +593,7 @@ impl Buffer {
         let mut result = String::from("");
         let mut pointer_id = token_id;
         loop {
-            let Some(pointer) = self.document.get_by_id(pointer_id) else {
+            let Some(pointer) = self.tokens_collection.get_by_id(pointer_id) else {
                 break;
             };
 
@@ -613,8 +661,8 @@ impl Buffer {
         }
     }
 
-    // Reads the buffer character by character in reverse from the current location to the start of
-    // the document until the specified `needle_func` passes, and then returns the data that has been read.
+    // Reads the document character by character in reverse from the current location to the start of
+    // the tokens_collection until the specified `needle_func` passes, and then returns the data that has been read.
     //
     // If `include_matched_char` is true, the final matched character is included, otherwise it is
     // not.
@@ -639,8 +687,8 @@ impl Buffer {
             return Ok(None);
         };
         let initial_offset = *offset - 1;
-        let Some((token, mut token_offset)) = self.document.get_by_offset(initial_offset) else {
-            return Err(format!("Cannot get token at offset {} in document!", initial_offset));
+        let Some((token, mut token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
+            return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
         println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
@@ -650,7 +698,7 @@ impl Buffer {
         let mut result = String::from("");
         let mut pointer_id = token_id;
         loop {
-            let Some(pointer) = self.document.get_by_id(pointer_id) else {
+            let Some(pointer) = self.tokens_collection.get_by_id(pointer_id) else {
                 break;
             };
 
@@ -1223,7 +1271,7 @@ impl Buffer {
                     (previous_row, previous_offset)
                 }
             });
-        // Work from start_offset reading character by character through the document until we are
+        // Work from start_offset reading character by character through the tokens_collection until we are
         // at the right line
 
         // Then add `col_index` to get the offset
@@ -1234,7 +1282,7 @@ impl Buffer {
         while current_row < row {
             self.seek(current_offset);
             let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true, false) else {
-                // There must not be an end of line for the rest of the text document
+                // There must not be an end of line for the rest of the text tokens_collection
                 // So we are done
                 break;
             };
@@ -1279,7 +1327,7 @@ impl Buffer {
         while current_offset < offset {
             self.seek(current_offset);
             let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true, false) else {
-                // There must not be an end of line for the rest of the text document
+                // There must not be an end of line for the rest of the text tokens_collection
                 // So we are done
                 break;
             };
@@ -1387,7 +1435,7 @@ enum ViewState {
 
 #[derive(Debug)]
 pub struct View {
-    buffer: Box<Buffer>,
+    document: Box<Document>,
     mode: Mode,
 
     // Position in the document in (rows, columns) format
@@ -1417,9 +1465,9 @@ pub struct ViewDumpedData {
 }
 
 impl View {
-    pub fn new(buffer: Box<Buffer>) -> Self {
+    pub fn new(document: Box<Document>) -> Self {
         Self {
-            buffer: buffer,
+            document: document,
             mode: Mode::Normal,
             position: (1, 1),
             state: ViewState::Initial,
@@ -1483,8 +1531,8 @@ impl View {
     }
 
     pub fn dump_string(&mut self) {
-        let offset = self.buffer.convert_rows_cols_to_offset(self.position);
-        let tokens_collection = self.buffer.tokens_mut();
+        let offset = self.document.convert_rows_cols_to_offset(self.position);
+        let tokens_collection = self.document.tokens_mut();
         println!("---\n{}\n--- {:?} {:?}", tokens_collection.debug_stringify_highlight(offset, offset+1), self.mode, self.position);
     }
 
@@ -1708,40 +1756,66 @@ impl View {
         let noun_match = match self.noun {
             Some(Noun::Character) => {
                 if self.is_backwards {
-                    self.buffer.read_to_pattern(TraversalPattern::Left, &self.verb, command_count)
+                    self.document.read_to_pattern(TraversalPattern::Left, &self.verb, command_count)
                 } else {
-                    self.buffer.read_to_pattern(TraversalPattern::Right, &self.verb, command_count)
+                    self.document.read_to_pattern(TraversalPattern::Right, &self.verb, command_count)
                 }
             },
-            Some(Noun::StartOfLine) => self.buffer.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
+            Some(Noun::NextLine) => {
+                // FIXME: this doesn't work
+                if self.is_backwards {
+                    // Go to the start of the line
+                    self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+
+                    // Go to the start of the previous line
+                    self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                }
+
+                let initial_offset = self.document.get_offset();
+                let mut reached_newline = false;
+                let mut read_until_index = 0;
+                self.document.read_forwards_until(|c, i| {
+                    if reached_newline {
+                        i == read_until_index
+                    } else if c == NEWLINE_CHAR {
+                        reached_newline = true;
+                        read_until_index = i + self.position.0;
+                        println!("REACHED NEWLINE! initial_offset={initial_offset} read_until_index={read_until_index}");
+                        false
+                    } else {
+                        false
+                    }
+                }, false, false)
+            },
+            Some(Noun::StartOfLine) => self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
             Some(Noun::StartOfLineAfterIndentation) => {
                 // Go to the start of the line
-                self.buffer.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
 
                 // Then read forwards until the whitespace at the beginning stops
-                self.buffer.read_forwards_until(|c, _| !is_whitespace_char(c), false, true)
+                self.document.read_forwards_until(|c, _| !is_whitespace_char(c), false, true)
             },
             Some(Noun::EndOfLine) => {
-                let result = self.buffer.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                let result = self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
                 match result {
                     Ok(Some((range, literal, selection))) => {
-                        self.buffer.seek(self.buffer.get_offset() - 1);
+                        self.document.seek(self.document.get_offset() - 1);
 
                         Ok(Some((range, literal, selection)))
                     },
                     other => other,
                 }
             },
-            Some(Noun::LowerWord) => self.buffer.read_to_pattern(TraversalPattern::LowerWord, &self.verb, command_count),
-            Some(Noun::UpperWord) => self.buffer.read_to_pattern(TraversalPattern::UpperWord, &self.verb, command_count),
-            Some(Noun::LowerBack) => self.buffer.read_to_pattern(TraversalPattern::LowerBack, &self.verb, command_count),
-            Some(Noun::UpperBack) => self.buffer.read_to_pattern(TraversalPattern::UpperBack, &self.verb, command_count),
-            Some(Noun::LowerEnd) => self.buffer.read_to_pattern(TraversalPattern::LowerEnd, &self.verb, command_count),
-            Some(Noun::UpperEnd) => self.buffer.read_to_pattern(TraversalPattern::UpperEnd, &self.verb, command_count),
-            Some(Noun::To(c)) => self.buffer.read_to_pattern(TraversalPattern::To(c), &self.verb, command_count),
-            Some(Noun::UpperTo(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperTo(c), &self.verb, command_count),
-            Some(Noun::Find(c)) => self.buffer.read_to_pattern(TraversalPattern::Find(c), &self.verb, command_count),
-            Some(Noun::UpperFind(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperFind(c), &self.verb, command_count),
+            Some(Noun::LowerWord) => self.document.read_to_pattern(TraversalPattern::LowerWord, &self.verb, command_count),
+            Some(Noun::UpperWord) => self.document.read_to_pattern(TraversalPattern::UpperWord, &self.verb, command_count),
+            Some(Noun::LowerBack) => self.document.read_to_pattern(TraversalPattern::LowerBack, &self.verb, command_count),
+            Some(Noun::UpperBack) => self.document.read_to_pattern(TraversalPattern::UpperBack, &self.verb, command_count),
+            Some(Noun::LowerEnd) => self.document.read_to_pattern(TraversalPattern::LowerEnd, &self.verb, command_count),
+            Some(Noun::UpperEnd) => self.document.read_to_pattern(TraversalPattern::UpperEnd, &self.verb, command_count),
+            Some(Noun::To(c)) => self.document.read_to_pattern(TraversalPattern::To(c), &self.verb, command_count),
+            Some(Noun::UpperTo(c)) => self.document.read_to_pattern(TraversalPattern::UpperTo(c), &self.verb, command_count),
+            Some(Noun::Find(c)) => self.document.read_to_pattern(TraversalPattern::Find(c), &self.verb, command_count),
+            Some(Noun::UpperFind(c)) => self.document.read_to_pattern(TraversalPattern::UpperFind(c), &self.verb, command_count),
             Some(Noun::RepeatToFind) if self.last_to_or_find.is_some() => {
                 let noun_traversal = match self.last_to_or_find {
                     Some(Noun::To(c)) => Ok(TraversalPattern::To(c)),
@@ -1751,7 +1825,7 @@ impl View {
                     _ => Err(format!("Cannot compute traversal for noun {:?}", self.last_to_or_find)),
                 }?;
 
-                self.buffer.read_to_pattern(noun_traversal, &self.verb, command_count)
+                self.document.read_to_pattern(noun_traversal, &self.verb, command_count)
             },
             Some(Noun::RepeatToFindBackwards) if self.last_to_or_find.is_some() => {
                 let inverted_noun_traversal = match self.last_to_or_find {
@@ -1762,7 +1836,7 @@ impl View {
                     _ => Err(format!("Cannot inverted traversal for noun {:?}", self.last_to_or_find)),
                 }?;
 
-                self.buffer.read_to_pattern(
+                self.document.read_to_pattern(
                     inverted_noun_traversal,
                     &self.verb,
                     command_count,
@@ -1778,7 +1852,7 @@ impl View {
             //         false
             //     };
             //
-            //     let initial_offset = self.buffer.get_offset();
+            //     let initial_offset = self.document.get_offset();
             //
             //     let (_, _, backwards_selection) = self.read_backwards_until(|c, _| {
             //     });
@@ -1809,7 +1883,7 @@ impl View {
             // QuoteBacktick,
             // Inside(Box<Noun>),
             // Around(Box<Noun>),
-            _ => self.buffer.read(1),
+            _ => self.document.read(1),
         };
 
         let Some((_, _, selection)) = noun_match.unwrap() else {
@@ -1819,13 +1893,13 @@ impl View {
 
         match self.verb {
             Some(Verb::Delete) => {
-                let deleted_selection = selection.remove_deep(&mut self.buffer, false).unwrap();
+                let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
 
                 // After the delete, reset the offset to the start of the deletion operation
-                let tokens_collection = self.buffer.tokens_mut();
+                let tokens_collection = self.document.tokens_mut();
                 let mut new_offset = tokens_collection.compute_offset(deleted_selection.starting_token_id);
                 new_offset += deleted_selection.starting_token_offset;
-                self.buffer.seek(new_offset);
+                self.document.seek(new_offset);
             },
             // Yank,
             // Change,
@@ -1840,9 +1914,9 @@ impl View {
         }
 
         // Update the cursor to be in the right spot
-        let offset = self.buffer.get_offset();
+        let offset = self.document.get_offset();
         println!("FINAL OFFSET: {offset}");
-        self.position = self.buffer.convert_offset_to_rows_cols(offset);
+        self.position = self.document.convert_offset_to_rows_cols(offset);
 
         // self.dump();
         self.clear_command();
@@ -1878,7 +1952,7 @@ mod test_engine {
         }
     }
 
-    mod test_buffer {
+    mod test_document {
         use super::*;
 
         // This mini language is either:
@@ -1909,43 +1983,43 @@ mod test_engine {
         }
 
         #[test]
-        fn it_is_able_to_read_from_buffer_one_at_a_time() {
+        fn it_is_able_to_read_from_document_one_at_a_time() {
             let template_map = initialize_mini_language_twelve();
             let all_template = template_map.get("All").unwrap();
 
             // Get a few subranges to make sure they generate the right data
-            let mut buffer = {
+            let mut document = {
                 let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
-                Buffer::new_from_tokenscollection(Box::new(result.4))
+                Document::new_from_tokenscollection(Box::new(result.4))
             };
-            buffer.seek(0);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((0..3, String::from("111")))));
+            document.seek(0);
+            assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((0..3, String::from("111")))));
 
-            let mut buffer = {
+            let mut document = {
                 let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
-                Buffer::new_from_tokenscollection(Box::new(result.4))
+                Document::new_from_tokenscollection(Box::new(result.4))
             };
-            buffer.seek(1);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((1..4, String::from("112")))));
+            document.seek(1);
+            assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((1..4, String::from("112")))));
 
-            let mut buffer = {
+            let mut document = {
                 let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
-                Buffer::new_from_tokenscollection(Box::new(result.4))
+                Document::new_from_tokenscollection(Box::new(result.4))
             };
-            buffer.seek(2);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(2)), Ok(Some((2..4, String::from("12")))));
+            document.seek(2);
+            assert_eq!(remove_sequentialtokenrange(document.read(2)), Ok(Some((2..4, String::from("12")))));
 
             // Make sure that if at the end, as much data is returned as possible
-            let mut buffer = {
+            let mut document = {
                 let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
-                Buffer::new_from_tokenscollection(Box::new(result.4))
+                Document::new_from_tokenscollection(Box::new(result.4))
             };
-            buffer.seek(3);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(5)), Ok(Some((3..4, String::from("2")))));
+            document.seek(3);
+            assert_eq!(remove_sequentialtokenrange(document.read(5)), Ok(Some((3..4, String::from("2")))));
         }
 
         #[test]
-        fn it_is_able_to_read_from_buffer_repeatedly() {
+        fn it_is_able_to_read_from_document_repeatedly() {
             let template_map = initialize_mini_language_twelve();
             let all_template = template_map.get("All").unwrap();
 
@@ -1956,35 +2030,35 @@ mod test_engine {
             assert_eq!(result.4.stringify(), "1112");
 
             // Get a few subranges to make sure they generate the right data
-            let mut buffer = Buffer::new_from_tokenscollection(Box::new(result.4));
-            buffer.seek(0);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((0..3, String::from("111")))));
-            buffer.seek(1);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((1..4, String::from("112")))));
-            buffer.seek(2);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(2)), Ok(Some((2..4, String::from("12")))));
+            let mut document = Document::new_from_tokenscollection(Box::new(result.4));
+            document.seek(0);
+            assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((0..3, String::from("111")))));
+            document.seek(1);
+            assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((1..4, String::from("112")))));
+            document.seek(2);
+            assert_eq!(remove_sequentialtokenrange(document.read(2)), Ok(Some((2..4, String::from("12")))));
 
             // Make sure that if at the end, as much data is returned as possible
-            buffer.seek(3);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(5)), Ok(Some((3..4, String::from("2")))));
+            document.seek(3);
+            assert_eq!(remove_sequentialtokenrange(document.read(5)), Ok(Some((3..4, String::from("2")))));
         }
 
         #[test]
-        fn it_is_able_to_read_from_plain_text_buffer_repeatedly() {
+        fn it_is_able_to_read_from_plain_text_document_repeatedly() {
             // Get a few subranges to make sure they generate the right data
-            let mut buffer = Buffer::new_from_literal("foo bar baz");
-            buffer.seek(0);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((0..3, String::from("foo")))));
-            buffer.seek(1);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(3)), Ok(Some((1..4, String::from("oo ")))));
-            buffer.seek(2);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(5)), Ok(Some((2..7, String::from("o bar")))));
-            buffer.seek(6);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(4)), Ok(Some((6..10, String::from("r ba")))));
+            let mut document = Document::new_from_literal("foo bar baz");
+            document.seek(0);
+            assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((0..3, String::from("foo")))));
+            document.seek(1);
+            assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((1..4, String::from("oo ")))));
+            document.seek(2);
+            assert_eq!(remove_sequentialtokenrange(document.read(5)), Ok(Some((2..7, String::from("o bar")))));
+            document.seek(6);
+            assert_eq!(remove_sequentialtokenrange(document.read(4)), Ok(Some((6..10, String::from("r ba")))));
 
             // Make sure that if at the end, as much data is returned as possible
-            buffer.seek(9);
-            assert_eq!(remove_sequentialtokenrange(buffer.read(10)), Ok(Some((9..11, String::from("az")))));
+            document.seek(9);
+            assert_eq!(remove_sequentialtokenrange(document.read(10)), Ok(Some((9..11, String::from("az")))));
         }
 
         mod read_forwards_until {
@@ -1992,78 +2066,78 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_including_matched_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', true, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'b', true, false)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 5);
+                assert_eq!(document.get_offset(), 5);
             }
 
             #[test]
             fn it_should_seek_not_including_matched_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'b', false, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'b', false, false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 4);
+                assert_eq!(document.get_offset(), 4);
             }
 
             #[test]
             fn it_should_seek_by_index_including_matched_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, true, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|_, i| i >= 5, true, false)),
                     Ok(Some((0..5, "foo b".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 5);
+                assert_eq!(document.get_offset(), 5);
             }
 
             #[test]
             fn it_should_seek_by_index_not_including_matched_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 5, false, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|_, i| i >= 5, false, false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 4);
+                assert_eq!(document.get_offset(), 4);
             }
 
             #[test]
             fn it_should_never_match_a_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal("foo bar baz");
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'X', false, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'X', false, false)),
                     Ok(None)
                 );
-                assert_eq!(buffer.get_offset(), 0);
+                assert_eq!(document.get_offset(), 0);
             }
 
             #[test]
             fn it_should_seek_forward_in_sequence() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal("foo bar baz");
 
                 // First seek to the first space
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == ' ', true, false)),
                     Ok(Some((0..4, "foo ".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 4);
+                assert_eq!(document.get_offset(), 4);
 
                 // Then seek to right before the `a`
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == 'a', false, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'a', false, false)),
                     Ok(Some((4..5, "b".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 5);
+                assert_eq!(document.get_offset(), 5);
 
                 // Then seek by index most of the way to the end
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_forwards_until(|_, i| i >= 10, true, false)),
+                    remove_sequentialtokenrange(document.read_forwards_until(|_, i| i >= 10, true, false)),
                     Ok(Some((5..10, "ar ba".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 10);
+                assert_eq!(document.get_offset(), 10);
             }
         }
 
@@ -2072,59 +2146,59 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_including_matched_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
-                buffer.seek(10);
+                let mut document = Document::new_from_literal("foo bar baz");
+                document.seek(10);
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', true, false)),
+                    remove_sequentialtokenrange(document.read_backwards_until(|c, _| c == 'r', true, false)),
                     Ok(Some((10..6, "r ba".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 6);
+                assert_eq!(document.get_offset(), 6);
             }
 
             #[test]
             fn it_should_seek_not_including_matched_char() {
-                let mut buffer = Buffer::new_from_literal("foo bar baz");
-                buffer.seek(10);
+                let mut document = Document::new_from_literal("foo bar baz");
+                document.seek(10);
                 assert_eq!(
-                    remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'r', false, false)),
+                    remove_sequentialtokenrange(document.read_backwards_until(|c, _| c == 'r', false, false)),
                     Ok(Some((10..7, " ba".to_string())))
                 );
-                assert_eq!(buffer.get_offset(), 7);
+                assert_eq!(document.get_offset(), 7);
             }
         }
 
         #[test]
         fn it_should_seek_forward_and_backwards_in_sequence() {
-            let mut buffer = Buffer::new_from_literal("foo bar baz");
+            let mut document = Document::new_from_literal("foo bar baz");
 
             // First seek to the first space
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', true, false)),
+                remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == ' ', true, false)),
                 Ok(Some((0..4, "foo ".to_string())))
             );
-            assert_eq!(buffer.get_offset(), 4);
+            assert_eq!(document.get_offset(), 4);
 
             // Then seek back a few characters
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', true, false)),
+                remove_sequentialtokenrange(document.read_backwards_until(|c, _| c == 'f', true, false)),
                 Ok(Some((4..0, "foo ".to_string())))
             );
-            assert_eq!(buffer.get_offset(), 0);
+            assert_eq!(document.get_offset(), 0);
 
             // Then seek to the first space, NOT INCLUDING IT
             assert_eq!(
-                remove_sequentialtokenrange(buffer.read_forwards_until(|c, _| c == ' ', false, false)),
+                remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == ' ', false, false)),
                 Ok(Some((0..3, "foo".to_string())))
             );
-            assert_eq!(buffer.get_offset(), 3);
+            assert_eq!(document.get_offset(), 3);
 
             // FIXME: this is not working
             // // Then seek back a few characters again, NOT INCLUDING IT
             // assert_eq!(
-            //     remove_sequentialtokenrange(buffer.read_backwards_until(|c, _| c == 'f', false, false)),
+            //     remove_sequentialtokenrange(document.read_backwards_until(|c, _| c == 'f', false, false)),
             //     Ok(Some((3..1, "oo".to_string())))
             // );
-            // assert_eq!(buffer.get_offset(), 1);
+            // assert_eq!(document.get_offset(), 1);
         }
 
         mod read_to_pattern {
@@ -2135,10 +2209,10 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_lower_word_then_whitespace_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    let mut document = Document::new_from_literal("foo bar baz");
 
                     // Get the first lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         1,
@@ -2149,20 +2223,20 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_word_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
 
                     // Get the first lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         1,
@@ -2176,26 +2250,26 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 0);
                     assert_eq!(modified_selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), ".foo bar baz");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), ".foo bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TEST.foo bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TEST.foo bar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_word_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar   baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar   baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         1,
@@ -2206,21 +2280,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo    baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST   baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST   baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_word_at_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(12); // Move to the start of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(12); // Move to the start of "baz"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         1,
@@ -2234,26 +2308,26 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 12);
                     assert_eq!(modified_selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
                 }
 
                 #[test]
                 fn it_should_change_2_lower_words_in_middle_right_up_to_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         2,
@@ -2264,21 +2338,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 7);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST");
                 }
 
                 #[test]
                 fn it_should_change_3_lower_words_at_end_and_run_out_of_chars() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         // NOTE: there isn't enough characters for three words! Only two.
@@ -2294,26 +2368,26 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 7);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST");
                 }
 
                 #[test]
                 fn it_should_change_3_lower_words_at_end_and_spill_over_to_next_line() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz\nqux quux");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar baz\nqux quux");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         3, // NOTE: this spills over to the next line!
@@ -2324,21 +2398,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 11);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  quux");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST quux");
                 }
 
                 #[test]
                 fn it_should_change_lower_words_at_end_of_string_ending_with_whitespace() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz     ");
-                    buffer.seek(12); // Move to the start of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz     ");
+                    document.seek(12); // Move to the start of "baz"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
                         1,
@@ -2349,12 +2423,12 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar      ");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar      ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST     ");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST     ");
                 }
             }
 
@@ -2363,10 +2437,10 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_upper_word_then_whitespace_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
 
                     // Get the first upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         1,
@@ -2378,25 +2452,25 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 0);
                     assert_eq!(modified_selection.char_count, 7);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
                 }
 
                 #[test]
                 fn it_should_change_upper_word_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
 
                     // Get the first upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         1,
@@ -2408,26 +2482,26 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 0);
                     assert_eq!(modified_selection.char_count, 7);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new()).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new()).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
                 }
 
                 #[test]
                 fn it_should_change_upper_word_with_punctuation_and_spaces_after_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar..b_ar   baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar..b_ar   baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         1,
@@ -2439,26 +2513,26 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 9);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo    baz");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST   baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST   baz");
                 }
 
                 #[test]
                 fn it_should_change_upper_word_with_numbers_at_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz1!");
-                    buffer.seek(12); // Move to the start of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz1!");
+                    document.seek(12); // Move to the start of "baz"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         1,
@@ -2472,26 +2546,26 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 12);
                     assert_eq!(modified_selection.char_count, 5);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
                 }
 
                 #[test]
                 fn it_should_change_2_upper_words_in_middle_right_up_to_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar.bar baz.baz quux");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar.bar baz.baz quux");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         2,
@@ -2505,26 +2579,26 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 15);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  quux");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST quux");
                 }
 
                 #[test]
                 fn it_should_change_3_upper_words_at_end_and_run_out_of_chars() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar.bar baz.baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar.bar baz.baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         // NOTE: there isn't enough characters for three words! Only two.
@@ -2540,26 +2614,26 @@ mod test_engine {
                     // the operation
                     //
                     // NOTE: for this case, there is no whitespace after the token, so this is a no-op
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 15);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo ");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST");
                 }
 
                 #[test]
                 fn it_should_change_3_upper_words_at_end_and_spill_over_to_next_line() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz.baz\nqux.qux quux");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar baz.baz\nqux.qux quux");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         3, // NOTE: this spills over to the next line!
@@ -2571,17 +2645,17 @@ mod test_engine {
 
                     // When performing a CHANGE, remove whitespace after the token prior to executing
                     // the operation
-                    let modified_selection = selection.unselect_whitespace_after(&mut buffer).unwrap();
+                    let modified_selection = selection.unselect_whitespace_after(&mut document).unwrap();
                     assert_eq!(modified_selection.starting_token_offset, 8);
                     assert_eq!(modified_selection.char_count, 19);
 
                     // Delete it
-                    let deleted_selection = modified_selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo  quux");
+                    let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo TEST quux");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST quux");
                 }
             }
 
@@ -2590,11 +2664,11 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_lower_back_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
-                    buffer.seek(4); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo bar baz");
+                    document.seek(4); // Move to the start of "bar"
 
                     // Get the first lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
                         1,
@@ -2607,21 +2681,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_back_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Go back a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
                         1,
@@ -2633,21 +2707,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_back_in_middle_with_whitespace() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo      bar baz");
-                    buffer.seek(13); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo      bar baz");
+                    document.seek(13); // Move to the start of "bar"
 
                     // Go back a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
                         1,
@@ -2659,21 +2733,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 9);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_back_at_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(14); // Move to the end of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(14); // Move to the end of "baz"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
                         1,
@@ -2685,21 +2759,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 2);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar z");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar z");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TESTz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TESTz");
                 }
 
                 #[test]
                 fn it_should_seek_repeatedly() {
                     // First space          ----> "TEST bar.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(3);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(3);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2711,19 +2785,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 3);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), " bar.baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), " bar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "TEST bar.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "TEST bar.baaaaar baz");
                     }
 
                     // First char of "bar"  ----> "TESTbar.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(4);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(4);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2735,19 +2809,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 4);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "bar.baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "bar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "TESTbar.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "TESTbar.baaaaar baz");
                     }
 
                     // Second char of "bar"  ----> "foo TESTar.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(5);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(5);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2758,19 +2832,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 1);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo ar.baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo ar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo TESTar.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo TESTar.baaaaar baz");
                     }
 
                     // Third char of "bar"  -> "foo TESTr.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(6);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(6);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2782,19 +2856,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 2);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo r.baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo r.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo TESTr.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo TESTr.baaaaar baz");
                     }
 
                     // Period               -> "foo TEST.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(7);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(7);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2806,19 +2880,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 3);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo .baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo .baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo TEST.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo TEST.baaaaar baz");
                     }
 
                     // First char of "baaa" -> "foo barTESTbaaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(8);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(8);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2829,19 +2903,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 1);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo barbaaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo barbaaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo barTESTbaaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo barTESTbaaaaar baz");
                     }
 
                     // Second char of "baaa" > "foo bar.TESTaaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(9);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(9);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2852,19 +2926,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 1);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.aaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.aaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TESTaaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TESTaaaaar baz");
                     }
 
                     // Third char of "baaa" > "foo bar.TESTaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(10);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(10);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2876,19 +2950,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 2);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.aaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.aaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TESTaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TESTaaaar baz");
                     }
 
                     // Space after "baaaar" > "foo bar.TEST baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(15);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(15);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
                             1,
@@ -2900,12 +2974,12 @@ mod test_engine {
                         assert_eq!(selection.char_count, 7);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar. baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar. baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TEST baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TEST baz");
                     }
                 }
             }
@@ -2915,11 +2989,11 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_upper_back_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
-                    buffer.seek(4); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo bar baz");
+                    document.seek(4); // Move to the start of "bar"
 
                     // Go back an upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
                         1,
@@ -2932,21 +3006,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_back_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(8); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(8); // Move to the start of "bar"
 
                     // Go back an upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
                         1,
@@ -2958,21 +3032,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 8);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_upper_back_in_middle_with_whitespace() {
-                    let mut buffer = Buffer::new_from_literal("foo foo      bar baz");
-                    buffer.seek(13); // Move to the start of "bar"
+                    let mut document = Document::new_from_literal("foo foo      bar baz");
+                    document.seek(13); // Move to the start of "bar"
 
                     // Go back a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
                         1,
@@ -2984,21 +3058,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 9);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_back_at_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(14); // Move to the end of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(14); // Move to the end of "baz"
 
                     // Go back an upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
                         1,
@@ -3010,12 +3084,12 @@ mod test_engine {
                     assert_eq!(selection.char_count, 2);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar z");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar z");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TESTz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TESTz");
                 }
             }
 
@@ -3024,10 +3098,10 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_lower_end_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    let mut document = Document::new_from_literal("foo bar baz");
 
                     // Go to the end of the first word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerEnd,
                         &Some(Verb::Change),
                         1,
@@ -3039,21 +3113,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_end_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo bar.bar baz");
-                    buffer.seek(4); // Move to the start of "bar.bar"
+                    let mut document = Document::new_from_literal("foo bar.bar baz");
+                    document.seek(4); // Move to the start of "bar.bar"
 
                     // Get the end of the second word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerEnd,
                         &Some(Verb::Change),
                         1,
@@ -3064,21 +3138,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo .bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo .bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo TEST.bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo TEST.bar baz");
                 }
 
                 #[test]
                 fn it_should_change_lower_back_at_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(12); // Move to the start of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(12); // Move to the start of "baz"
 
                     // Get a lower word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerEnd,
                         &Some(Verb::Change),
                         1,
@@ -3089,21 +3163,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
                 }
 
                 #[test]
                 fn it_should_seek_repeatedly() {
                     // First space          ----> "fooTEST.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(3);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(3);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3114,19 +3188,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 4);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo.baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "fooTEST.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "fooTEST.baaaaar baz");
                     }
 
                     // First char of "bar"  ----> "foo TEST.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(4);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(4);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3137,19 +3211,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 3);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo .baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo .baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo TEST.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo TEST.baaaaar baz");
                     }
 
                     // Second char of "bar"  ----> "foo TESTar.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(5);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(5);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3160,19 +3234,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 2);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo b.baaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo b.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bTEST.baaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bTEST.baaaaar baz");
                     }
 
                     // Third char of "bar"  -> "foo baTESTbaaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(6);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(6);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3183,19 +3257,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 2);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo babaaaaar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo babaaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo baTESTbaaaaar baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo baTESTbaaaaar baz");
                     }
 
                     // Period               -> "foo TEST.baaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(7);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(7);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3206,19 +3280,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 8);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo barTEST baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo barTEST baz");
                     }
 
                     // First char of "baaa" -> "foo barTESTbaaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(8);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(8);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3229,19 +3303,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 7);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar. baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar. baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.TEST baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TEST baz");
                     }
 
                     // Second char of "baaa" > "foo bar.TESTaaaaar baz"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(9);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(9);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3252,19 +3326,19 @@ mod test_engine {
                         assert_eq!(selection.char_count, 6);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.b baz");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.b baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.bTEST baz");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.bTEST baz");
                     }
 
                     // Space after "baaaar" > "foo bar.baaaaarTEST"
                     {
-                        let mut buffer = Buffer::new_from_literal("foo bar.baaaaar baz");
-                        buffer.seek(15);
-                        let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        let mut document = Document::new_from_literal("foo bar.baaaaar baz");
+                        document.seek(15);
+                        let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
                             1,
@@ -3275,12 +3349,12 @@ mod test_engine {
                         assert_eq!(selection.char_count, 4);
 
                         // Delete it
-                        let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.baaaaar");
+                        let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.baaaaar");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                        assert_eq!(buffer.tokens_mut().stringify(), "foo bar.baaaaarTEST");
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        assert_eq!(document.tokens_mut().stringify(), "foo bar.baaaaarTEST");
                     }
                 }
             }
@@ -3290,10 +3364,10 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_upper_end_at_start() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    let mut document = Document::new_from_literal("foo bar baz");
 
                     // Go to the end of the first word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperEnd,
                         &Some(Verb::Change),
                         1,
@@ -3305,21 +3379,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), " bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TEST bar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
                 }
 
                 #[test]
                 fn it_should_change_upper_end_in_middle() {
-                    let mut buffer = Buffer::new_from_literal("foo bar.bar baz");
-                    buffer.seek(4); // Move to the start of "bar.bar"
+                    let mut document = Document::new_from_literal("foo bar.bar baz");
+                    document.seek(4); // Move to the start of "bar.bar"
 
                     // Get the end of the second word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperEnd,
                         &Some(Verb::Change),
                         1,
@@ -3330,21 +3404,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 7);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo  baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo  baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo TEST baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo TEST baz");
                 }
 
                 #[test]
                 fn it_should_change_upper_back_at_end() {
-                    let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-                    buffer.seek(12); // Move to the start of "baz"
+                    let mut document = Document::new_from_literal("foo.foo bar baz");
+                    document.seek(12); // Move to the start of "baz"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperEnd,
                         &Some(Verb::Change),
                         1,
@@ -3355,12 +3429,12 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar ");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
                 }
             }
 
@@ -3369,10 +3443,10 @@ mod test_engine {
 
                 #[test]
                 fn it_should_change_to_char() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    let mut document = Document::new_from_literal("foo bar baz");
 
                     // Go to the end of the first word
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::To('b'),
                         &Some(Verb::Change),
                         1,
@@ -3384,21 +3458,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
                 }
 
                 #[test]
                 fn it_should_change_backwards_to_char() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
-                    buffer.seek(6); // Seek to the end of "bar"
+                    let mut document = Document::new_from_literal("foo bar baz");
+                    document.seek(6); // Seek to the end of "bar"
 
                     // Go to the previous 'o'
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperTo('o'),
                         &Some(Verb::Change),
                         1,
@@ -3411,20 +3485,20 @@ mod test_engine {
                     assert_eq!(selection.char_count, 3);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "foor baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "foor baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "fooTESTr baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "fooTESTr baz");
                 }
 
                 #[test]
                 fn it_should_find_char_and_change() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    let mut document = Document::new_from_literal("foo bar baz");
 
                     // Find the next 'b'
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::Find('b'),
                         &Some(Verb::Change),
                         1,
@@ -3436,21 +3510,21 @@ mod test_engine {
                     assert_eq!(selection.char_count, 5);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "ar baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "ar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "TESTar baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "TESTar baz");
                 }
 
                 #[test]
                 fn it_should_find_char_backwards_and_change() {
-                    let mut buffer = Buffer::new_from_literal("foo bar baz");
-                    buffer.seek(6); // Seek to the end of "bar"
+                    let mut document = Document::new_from_literal("foo bar baz");
+                    document.seek(6); // Seek to the end of "bar"
 
                     // Find the previous 'o'
-                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                    let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperFind('o'),
                         &Some(Verb::Change),
                         1,
@@ -3463,13 +3537,49 @@ mod test_engine {
                     assert_eq!(selection.char_count, 4);
 
                     // Delete it
-                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
-                    assert_eq!(buffer.tokens_mut().stringify(), "for baz");
+                    let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                    assert_eq!(document.tokens_mut().stringify(), "for baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
-                    assert_eq!(buffer.tokens_mut().stringify(), "foTESTr baz");
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    assert_eq!(document.tokens_mut().stringify(), "foTESTr baz");
                 }
+
+                // #[test]
+                // fn it_should_find_char_and_repeat() {
+                //     let mut document = Document::new_from_literal("foo bar baz");
+                //
+                //     // Find the next 'b'
+                //     let (range, matched_chars, selection) = document.read_to_pattern(
+                //         TraversalPattern::Find('b'),
+                //         &None,
+                //         1,
+                //     ).unwrap().unwrap();
+                //     assert_eq!(range, 0..5);
+                //     assert_eq!(matched_chars, "foo b");
+                //     assert_eq!(selection.starting_token_offset, 0);
+                //     assert_eq!(selection.char_count, 5);
+                //
+                //     // Repeat the find again
+                //     let (range, matched_chars, selection) = document.read_to_pattern(
+                //         TraversalPattern::Find('b'),
+                //         &Some(Verb::Change),
+                //         1,
+                //     ).unwrap().unwrap();
+                //     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                //     assert_eq!(range, 4..9);
+                //     assert_eq!(matched_chars, "ar b");
+                //     assert_eq!(selection.starting_token_offset, 5);
+                //     assert_eq!(selection.char_count, 4);
+                //
+                //     // Delete it
+                //     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
+                //     assert_eq!(document.tokens_mut().stringify(), "foo az");
+                //
+                //     // Replace it with TEST
+                //     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                //     assert_eq!(document.tokens_mut().stringify(), "foTESTaz");
+                // }
             }
         }
     }
@@ -3479,8 +3589,8 @@ mod test_engine {
 
         #[test]
         fn it_should_parse_many_different_sequences() {
-            let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
-            let mut view = buffer.create_view();
+            let mut document = Document::new_from_literal("foo.foo bar baz");
+            let mut view = document.create_view();
 
             for (input_text, dumped_data) in vec![
                 ("w", ViewDumpedData {
