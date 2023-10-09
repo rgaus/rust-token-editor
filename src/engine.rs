@@ -875,21 +875,31 @@ impl Buffer {
                     // forward until that classification changes.
                     let mut is_first = true;
                     let mut first_char_was_other = false;
+                    let mut first_char_was_whitespace = false;
                     let mut second_char_was_whitespace: Option<bool> = None;
                     let mut finished_whitespace = false;
                     let mut started_in_word: Option<bool> = None;
 
                     self.read_backwards_until(|c, _| {
+                        println!("CHAR: {c}");
                         if is_first {
                             first_char_was_other = is_other_char(c);
+                            first_char_was_whitespace = is_whitespace_char(c);
                             is_first = false;
                             return false;
                         }
                         let is_current_word_char = is_word_char(c);
 
+                        if first_char_was_whitespace && !is_whitespace_char(c) {
+                            first_char_was_whitespace = false;
+                        }
+
                         if first_char_was_other {
                             println!("IS OTHER {:?}", first_char_was_other);
                             !is_other_char(c)
+                        } else if first_char_was_whitespace && is_whitespace_char(c) {
+                            println!("IS WHITESPACE {:?}", first_char_was_whitespace);
+                            false
 
                         // First, if there is immediately whitespace, scan through all of that
                         } else if second_char_was_whitespace.is_none() {
@@ -906,7 +916,6 @@ impl Buffer {
                             }
 
                         } else if second_char_was_whitespace == Some(true) && !finished_whitespace && is_whitespace_char(c) {
-                            println!("HERE {:?}", second_char_was_whitespace);
                             finished_whitespace = false;
                             false
                         } else if second_char_was_whitespace == Some(true) && !finished_whitespace && !is_whitespace_char(c) {
@@ -928,18 +937,28 @@ impl Buffer {
                 },
                 TraversalPattern::UpperBack => {
                     let mut is_first = true;
+                    let mut first_char_was_whitespace = false;
                     let mut second_char_was_whitespace: Option<bool> = None;
                     let mut finished_whitespace = false;
 
                     self.read_backwards_until(|c, _| {
                         if is_first {
                             is_first = false;
+                            first_char_was_whitespace = is_whitespace_char(c); 
                             return false;
                         }
                         let is_current_not_whitespace_char = !is_whitespace_char(c);
 
+                        if first_char_was_whitespace && !is_whitespace_char(c) {
+                            first_char_was_whitespace = false;
+                        }
+
+                        if first_char_was_whitespace && is_whitespace_char(c) {
+                            println!("IS WHITESPACE {:?}", first_char_was_whitespace);
+                            false
+
                         // First, if there is immediately whitespace, scan through all of that
-                        if second_char_was_whitespace.is_none() {
+                        } else if second_char_was_whitespace.is_none() {
                             second_char_was_whitespace = Some(is_whitespace_char(c));
 
                             // If there isn't any whitespace as the second character, then skip
@@ -2536,6 +2555,32 @@ mod test_engine {
                 }
 
                 #[test]
+                fn it_should_change_lower_back_in_middle_with_whitespace() {
+                    let mut buffer = Buffer::new_from_literal("foo.foo      bar baz");
+                    buffer.seek(13); // Move to the start of "bar"
+
+                    // Go back a lower word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::LowerBack,
+                        &Some(Verb::Change),
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 13..4);
+                    assert_eq!(matched_chars, "foo      ");
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.char_count, 9);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo.TESTbar baz");
+                }
+
+                #[test]
                 fn it_should_change_lower_back_at_end() {
                     let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
                     buffer.seek(14); // Move to the end of "baz"
@@ -2832,6 +2877,32 @@ mod test_engine {
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
                     assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                }
+
+                #[test]
+                fn it_should_change_upper_back_in_middle_with_whitespace() {
+                    let mut buffer = Buffer::new_from_literal("foo foo      bar baz");
+                    buffer.seek(13); // Move to the start of "bar"
+
+                    // Go back a upper word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperBack,
+                        &Some(Verb::Change),
+                        1,
+                    ).unwrap().unwrap();
+                    assert_eq!(range, 13..4);
+                    assert_eq!(matched_chars, "foo      ");
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 12);
+                    assert_eq!(selection.char_count, 9);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foo TESTbar baz");
                 }
 
                 #[test]
