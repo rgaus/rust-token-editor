@@ -376,7 +376,7 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 fn main() {
     // let mut buffer = Buffer::new_from_literal("foo.foo bar baz");
     // let mut buffer = Buffer::new_from_literal("foo.foo bar\nbaz\nfinal");
-    let mut buffer = Buffer::new_from_literal("foo bar....baaaaar baz\n  baz\nfinal");
+    let mut buffer = Buffer::new_from_literal("foo   bar....baaaaar baz\n  baz\nfinal");
     // buffer.seek(3); // First space          ----> "TEST bar.baaaaar baz"
     // buffer.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
     // buffer.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"

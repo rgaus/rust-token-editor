@@ -1096,7 +1096,18 @@ impl Buffer {
                     self.read_backwards_until(|c, _| c == character, false, false)
                 },
                 TraversalPattern::Find(character) => {
-                    self.seek(self.get_offset() + 1);
+                    // If the current character the cursor is on matches the character to look for,
+                    // then seek forward one character so that the current character doesn't match
+                    let mut seek_backwards_again = false;
+                    if let Ok(Some((_, next_character, _))) = self.read(1) {
+                        if next_character != format!("{character}") {
+                            seek_backwards_again = true;
+                        }
+                    }
+                    if seek_backwards_again {
+                        self.seek(self.get_offset() - 1);
+                    }
+
                     let result = self.read_forwards_until(|c, _| c == character, true, false);
                     match result {
                         Ok(Some((range, literal, selection))) => {
@@ -1110,7 +1121,19 @@ impl Buffer {
                     }
                 },
                 TraversalPattern::UpperFind(character) => {
-                    self.seek(self.get_offset() + 1);
+                    // If the current character the cursor is on matches the character to look for,
+                    // then seek forward one character so that the current character doesn't match
+                    let mut seek_backwards = false;
+                    self.seek(self.get_offset() - 1);
+                    if let Ok(Some((_, current_character, _))) = self.read(1) {
+                        if current_character == format!("{character}") {
+                            seek_backwards = true;
+                        }
+                    }
+                    if seek_backwards {
+                        self.seek(self.get_offset() - 1);
+                    }
+
                     self.read_backwards_until(|c, _| c == character, true, false)
                 },
             };
@@ -1322,6 +1345,8 @@ enum Noun {
     UpperTo(char),
     Find(char),
     UpperFind(char),
+    RepeatToFind,
+    RepeatToFindBackwards,
     Paragraph,
     Sentence,
     CurrentLine,
@@ -1376,6 +1401,9 @@ pub struct View {
     verb: Option<Verb>,
     noun: Option<Noun>,
     should_clear_command_count: bool,
+    last_verb: Option<Verb>,
+    last_noun: Option<Noun>,
+    last_to_or_find: Option<Noun>,
 }
 
 #[derive(PartialEq)]
@@ -1400,11 +1428,30 @@ impl View {
             verb: None,
             noun: None,
             should_clear_command_count: false,
+            last_verb: None,
+            last_noun: None,
+            last_to_or_find: None,
         }
     }
     fn clear_command(&mut self) {
         self.command_count = String::from("");
         self.is_backwards = false;
+
+        // Store the last character that was navigated to via t/T/f/F
+        // This is so that ; and , can function
+        match self.noun {
+            Some(Noun::To(_)) | Some(Noun::UpperTo(_)) | Some(Noun::Find(_)) | Some(Noun::UpperFind(_)) => {
+                self.last_to_or_find = self.noun.clone();
+            }
+            _ => {},
+        }
+
+        if self.verb.is_some() && self.noun.is_some() {
+            // ref: https://stackoverflow.com/a/61127366
+            self.last_verb = self.verb.take();
+            self.last_noun = self.noun.take();
+        }
+
         self.verb = None;
         self.noun = None;
     }
@@ -1479,18 +1526,25 @@ impl View {
                 // h / j / k / l - moving around - NOTE: dl and l select different lengths
                 // w / W / b / B / e / E - word+back+end DONE
                 // 0 / ^ / $ - start + end of line
-                // f / F / t / T - to+until DONE
+                // f / F / t / T / ; / , - to+find DONE
                 // gg / G / 123G - go to line number
                 // % - matching brace
+                // x/X - delete char DONE
+                // r - replace char
                 //
                 // p / P / "+p - paste
                 // ]p / [p - paste in current indentation level
-                // a / A / i / I / o / O / s / S / C / r / R - insert mode stuff
+                // a / A / i / I / o / O / s / S / C / R - insert mode stuff
                 // <C-C> / ESC - back to normal mode
                 // v / V / <C-V> - visual mode
                 // . - repeat last
+                // ma / dma / 'a - marks
                 // <C-U> / <C-D> - half page up / half page down
                 // <C-B> / <C-F> - page up / down
+                //
+                // Known issues:
+                // - b doesnt work on leading whitespace
+                // - f will find the same character that one is on currently as a match
 
                 // When the noun "t"/"T"/"f"/"F" is used, the enxt character refers to the
                 // character that should be navigated to.
@@ -1498,6 +1552,8 @@ impl View {
                 c if self.state == ViewState::PressedUpperT => self.set_noun(Noun::UpperTo(c)),
                 c if self.state == ViewState::PressedF => self.set_noun(Noun::Find(c)),
                 c if self.state == ViewState::PressedUpperF => self.set_noun(Noun::UpperFind(c)),
+                ';' if self.last_to_or_find.is_some() => self.set_noun(Noun::RepeatToFind),
+                ',' if self.last_to_or_find.is_some() => self.set_noun(Noun::RepeatToFindBackwards),
 
                 // "Verbs"
                 'd' if self.state == ViewState::Initial => self.set_verb(Verb::Delete),
@@ -1681,6 +1737,32 @@ impl View {
             Some(Noun::UpperTo(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperTo(c), &self.verb, command_count),
             Some(Noun::Find(c)) => self.buffer.read_to_pattern(TraversalPattern::Find(c), &self.verb, command_count),
             Some(Noun::UpperFind(c)) => self.buffer.read_to_pattern(TraversalPattern::UpperFind(c), &self.verb, command_count),
+            Some(Noun::RepeatToFind) if self.last_to_or_find.is_some() => {
+                let noun_traversal = match self.last_to_or_find {
+                    Some(Noun::To(c)) => Ok(TraversalPattern::To(c)),
+                    Some(Noun::Find(c)) => Ok(TraversalPattern::Find(c)),
+                    Some(Noun::UpperTo(c)) => Ok(TraversalPattern::UpperTo(c)),
+                    Some(Noun::UpperFind(c)) => Ok(TraversalPattern::UpperFind(c)),
+                    _ => Err(format!("Cannot compute traversal for noun {:?}", self.last_to_or_find)),
+                }?;
+
+                self.buffer.read_to_pattern(noun_traversal, &self.verb, command_count)
+            },
+            Some(Noun::RepeatToFindBackwards) if self.last_to_or_find.is_some() => {
+                let inverted_noun_traversal = match self.last_to_or_find {
+                    Some(Noun::To(c)) => Ok(TraversalPattern::UpperTo(c)),
+                    Some(Noun::Find(c)) => Ok(TraversalPattern::UpperFind(c)),
+                    Some(Noun::UpperTo(c)) => Ok(TraversalPattern::To(c)),
+                    Some(Noun::UpperFind(c)) => Ok(TraversalPattern::Find(c)),
+                    _ => Err(format!("Cannot inverted traversal for noun {:?}", self.last_to_or_find)),
+                }?;
+
+                self.buffer.read_to_pattern(
+                    inverted_noun_traversal,
+                    &self.verb,
+                    command_count,
+                )
+            },
 
             // Some(Noun::Inside(n)) | Some(Noun::Around(n)) if n == Noun::Paragraph {
             //     let mut last_char = ' ';
@@ -3274,6 +3356,114 @@ mod test_engine {
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
                     assert_eq!(buffer.tokens_mut().stringify(), "foo.foo bar TEST");
+                }
+            }
+
+            mod to_and_find {
+                use super::*;
+
+                #[test]
+                fn it_should_change_to_char() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+
+                    // Go to the end of the first word
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::To('b'),
+                        &Some(Verb::Change),
+                        1,
+                    ).unwrap().unwrap();
+                    // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 0..4);
+                    assert_eq!(matched_chars, "foo ");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 4);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "bar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TESTbar baz");
+                }
+
+                #[test]
+                fn it_should_change_backwards_to_char() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    buffer.seek(6); // Seek to the end of "bar"
+
+                    // Go to the previous 'o'
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperTo('o'),
+                        &Some(Verb::Change),
+                        1,
+                    ).unwrap().unwrap();
+                    // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 6..3);
+                    assert_eq!(matched_chars, " ba");
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 5);
+                    assert_eq!(selection.char_count, 3);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "foor baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "fooTESTr baz");
+                }
+
+                #[test]
+                fn it_should_find_char_and_change() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+
+                    // Find the next 'b'
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::Find('b'),
+                        &Some(Verb::Change),
+                        1,
+                    ).unwrap().unwrap();
+                    // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 0..5);
+                    assert_eq!(matched_chars, "foo b");
+                    assert_eq!(selection.starting_token_offset, 0);
+                    assert_eq!(selection.char_count, 5);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "ar baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "TESTar baz");
+                }
+
+                #[test]
+                fn it_should_find_char_backwards_and_change() {
+                    let mut buffer = Buffer::new_from_literal("foo bar baz");
+                    buffer.seek(6); // Seek to the end of "bar"
+
+                    // Find the previous 'o'
+                    let (range, matched_chars, selection) = buffer.read_to_pattern(
+                        TraversalPattern::UpperFind('o'),
+                        &Some(Verb::Change),
+                        1,
+                    ).unwrap().unwrap();
+                    // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
+                    assert_eq!(range, 6..2);
+                    assert_eq!(matched_chars, "o ba");
+                    assert_eq!(selection.is_backwards, true);
+                    assert_eq!(selection.starting_token_offset, 5);
+                    assert_eq!(selection.char_count, 4);
+
+                    // Delete it
+                    let deleted_selection = selection.remove_deep(&mut buffer, true).unwrap();
+                    assert_eq!(buffer.tokens_mut().stringify(), "for baz");
+
+                    // Replace it with TEST
+                    deleted_selection.prepend_text(&mut buffer, String::from("TEST"), &HashMap::new());
+                    assert_eq!(buffer.tokens_mut().stringify(), "foTESTr baz");
                 }
             }
         }
