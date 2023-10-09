@@ -402,18 +402,18 @@ fn main() {
     //     println!("POST: {}", tokens_collection.stringify());
     // }
 
-    let mut view = document.create_view();
-    view.dump_string();
+    let mut buffer = document.create_buffer();
+    buffer.dump_string();
     loop {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
-                match view.process_input(&input) {
+                match buffer.process_input(&input) {
                     Ok(false) => println!("Unable to perform action."),
                     Err(err) => panic!("{:?}", err),
                     _ => {},
                 }
-                view.dump_string();
+                buffer.dump_string();
             }
             Err(error) => panic!("{}", error),
         }

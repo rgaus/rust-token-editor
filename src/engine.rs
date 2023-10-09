@@ -439,8 +439,8 @@ impl Document {
         )
     }
 
-    pub fn create_view(self) -> View {
-        View::new(Box::new(self))
+    pub fn create_buffer(self) -> Buffer {
+        Buffer::new(Box::new(self))
     }
 
     // Allow one to extract the token collection from the document for lower level mutations
@@ -1434,7 +1434,7 @@ enum ViewState {
 }
 
 #[derive(Debug)]
-pub struct View {
+pub struct Buffer {
     document: Box<Document>,
     mode: Mode,
 
@@ -1464,7 +1464,7 @@ pub struct ViewDumpedData {
     noun: Option<Noun>,
 }
 
-impl View {
+impl Buffer {
     pub fn new(document: Box<Document>) -> Self {
         Self {
             document: document,
@@ -1511,7 +1511,7 @@ impl View {
 
     pub fn dump(&self) -> ViewDumpedData {
         println!("-------------");
-        println!("VIEW STATE:");
+        println!("BUFFER STATE:");
         println!("state={:?}", self.state);
         println!("mode={:?}", self.mode);
         println!("is_backwards={:?}", self.is_backwards);
@@ -3590,7 +3590,7 @@ mod test_engine {
         #[test]
         fn it_should_parse_many_different_sequences() {
             let mut document = Document::new_from_literal("foo.foo bar baz");
-            let mut view = document.create_view();
+            let mut buffer = document.create_buffer();
 
             for (input_text, dumped_data) in vec![
                 ("w", ViewDumpedData {
@@ -3791,9 +3791,9 @@ mod test_engine {
                     noun: Some(Noun::Find('f')),
                 }),
             ] {
-                view.raw_parse_input(input_text, |_| {});
-                assert_eq!(view.dump(), dumped_data, "Assertion failed: `{}`", input_text);
-                view.reset();
+                buffer.raw_parse_input(input_text, |_| {});
+                assert_eq!(buffer.dump(), dumped_data, "Assertion failed: `{}`", input_text);
+                buffer.reset();
             }
         }
     }
