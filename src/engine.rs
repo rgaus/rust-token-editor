@@ -1670,6 +1670,11 @@ impl View {
                     self.set_verb(Verb::Delete);
                     self.set_noun(Noun::Character);
                 },
+                'X' if self.state == ViewState::Initial => {
+                    self.set_verb(Verb::Delete);
+                    self.set_noun(Noun::Character);
+                    self.is_backwards = true;
+                },
 
                 // If an unknown character was specified for this part in a command, reset back to
                 // the start
