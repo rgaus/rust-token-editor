@@ -52,21 +52,23 @@ impl SequentialTokenSelection {
     ) -> Result<Self, String> {
         let tokens_collection = document.tokens_mut();
 
-        let (start_offset, end_offset) = if offset_a <= offset_b {
-            (offset_a, offset_b)
+        let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(offset_a) else {
+            return Err(format!("Cannot get start token at offset {} in tokens collection!", offset_a));
+        };
+
+        if offset_a <= offset_b {
+            Ok(Self::new(
+                start_token.id,
+                start_token_offset,
+                offset_b - offset_a,
+            ))
         } else {
-            (offset_b, offset_a)
-        };
-
-        let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(start_offset) else {
-            return Err(format!("Cannot get start token at offset {} in tokens collection!", start_offset));
-        };
-
-        Ok(Self::new(
-            start_token.id,
-            start_token_offset,
-            end_offset - start_offset,
-        ))
+            Ok(Self::new_backwards(
+                start_token.id,
+                start_token_offset,
+                offset_a - offset_b,
+            ))
+        }
     }
 
     // Remove all tokens (and any of their children!) within the token range.
