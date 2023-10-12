@@ -954,6 +954,28 @@ impl Document {
         let column = offset_difference + 1; // NOTE: columns are one indexed!
         (current_row, column)
     }
+
+    pub fn compute_offset_bounds_of_row_including_newline(&mut self, row: usize) -> Result<(usize, usize), String> {
+        let initial_offset = self.convert_rows_cols_to_offset((row, 1));
+        self.seek_push(initial_offset);
+        let result = match self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true, true) {
+            Ok(Some((range, _, _))) => Ok((range.start, range.end)),
+            Ok(None) => Err(format!("Unable to find offset at end of row {}", row)),
+            Err(err) => Err(err),
+        };
+        self.seek_pop();
+        result
+    }
+
+    pub fn compute_length_of_row_in_chars_excluding_newline(&mut self, row: usize) -> Result<usize, String> {
+        match self.compute_offset_bounds_of_row_including_newline(row) {
+            Ok((initial_offset, final_offset)) => {
+                let line_length_including_newline = final_offset - initial_offset;
+                Ok(line_length_including_newline - 1)
+            },
+            Err(err) => Err(err),
+        }
+    }
 }
 
 
