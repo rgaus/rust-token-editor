@@ -414,12 +414,7 @@ fn main() {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
-                let truncated_input = if input.chars().last() == Some('\n') {
-                    &input[..1]
-                } else {
-                    input.as_str()
-                };
-                match buffer.process_input(truncated_input) {
+                match buffer.process_input(&input.replace("\n", "")) {
                     Ok(false) => println!("Unable to perform action."),
                     Err(err) => panic!("{:?}", err),
                     _ => {},
