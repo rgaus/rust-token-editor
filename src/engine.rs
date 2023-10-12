@@ -1370,6 +1370,8 @@ impl Buffer {
         self.raw_parse_input(input, |inner_self| {
             // Once a command has completed processing, execute it!
             result = inner_self.execute_command();
+
+            inner_self.clear_command();
         });
         result
     }
@@ -1544,9 +1546,6 @@ impl Buffer {
         let offset = self.document.get_offset();
         println!("FINAL OFFSET: {offset}");
         self.position = self.document.convert_offset_to_rows_cols(offset);
-
-        // self.dump();
-        self.clear_command();
 
         Ok(true)
     }
