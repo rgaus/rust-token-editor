@@ -3250,7 +3250,7 @@ mod test_engine {
         }
     }
 
-    mod test_view {
+    mod test_buffer {
         use super::*;
 
         #[test]
@@ -3460,6 +3460,86 @@ mod test_engine {
                 buffer.raw_parse_input(input_text, |_| {});
                 assert_eq!(buffer.dump(), dumped_data, "Assertion failed: `{}`", input_text);
                 buffer.reset();
+            }
+        }
+
+        mod test_up_down_left_right {
+            use super::*;
+
+            #[test]
+            fn it_should_navigate_around() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("lljjhkdl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbrbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_delete_left() {
+                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("edh");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "fo.foo bar baz");
+            }
+
+            #[test]
+            fn it_should_delete_right() {
+                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oo.foo bar baz");
+            }
+
+            #[test]
+            fn it_should_delete_up() {
+                let mut document = Document::new_from_literal("foo\nbar\nbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("jdk");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "baz");
+            }
+
+            #[test]
+            fn it_should_delete_down() {
+                let mut document = Document::new_from_literal("foo\nbar\nbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("dj");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "baz");
+            }
+        }
+
+        mod test_start_end_of_line {
+            use super::*;
+
+            #[test]
+            fn it_should_delete_to_start_of_line() {
+                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("lld0");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "o.foo bar baz");
+            }
+
+            #[test]
+            fn it_should_delete_to_end_of_line() {
+                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("lld$");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "fo");
+            }
+
+            #[test]
+            fn it_should_delete_to_whitespace_sensitive_start_of_line() {
+                let mut document = Document::new_from_literal("    foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("d^");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar baz");
             }
         }
     }
