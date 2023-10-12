@@ -1391,30 +1391,70 @@ impl Buffer {
                 }
             },
             Some(Noun::NextLine) => {
-                // FIXME: this doesn't work
-                if self.is_backwards {
-                    // Go to the start of the line
-                    self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                let mut initial_offset = self.document.get_offset();
+                let (mut rows, mut cols) = self.document.convert_offset_to_rows_cols(initial_offset);
+                let initial_rows = rows;
+                let initial_cols = cols;
 
-                    // Go to the start of the previous line
-                    self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                if self.is_backwards {
+                    // FIXME: make sure rows isn't too small
+                    // if rows == 0 {
+                    //     Ok(None)
+                    // }
+                    rows -= command_count;
+                } else {
+                    // FIXME: make sure rows isn't too large
+                    rows += command_count;
                 }
 
-                let initial_offset = self.document.get_offset();
-                let mut reached_newline = false;
-                let mut read_until_index = 0;
-                self.document.read_forwards_until(|c, i| {
-                    if reached_newline {
-                        i == read_until_index
-                    } else if c == NEWLINE_CHAR {
-                        reached_newline = true;
-                        read_until_index = i + self.position.0;
-                        println!("REACHED NEWLINE! initial_offset={initial_offset} read_until_index={read_until_index}");
-                        false
+                // FIXME:
+                // If verb is defined, then move the initial and final selections to the start and
+                // end of their respective rows. `is_backwards` will flip this!
+                //
+                // Also use this cached data to get the j/k staying in the same column even when
+                // an intermediate line isn't long enough behavior working.
+                if self.verb.is_some() {
+                    if self.is_backwards {
+                        let number_of_chars_in_initial_row = self.document.compute_length_of_row_in_chars_excluding_newline(
+                            initial_rows,
+                        )?;
+                        initial_offset = self.document.convert_rows_cols_to_offset((initial_rows, number_of_chars_in_initial_row));
+                        cols = 1;
                     } else {
-                        false
+                        initial_offset = self.document.convert_rows_cols_to_offset((initial_rows, 1));
+                        let number_of_chars_in_next_row = self.document.compute_length_of_row_in_chars_excluding_newline(
+                            rows,
+                        )?;
+                        cols = number_of_chars_in_next_row;
                     }
-                }, false, false)
+                }
+                println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
+
+                let mut final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
+                println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
+                self.document.seek(final_offset);
+
+                if initial_offset == final_offset {
+                    Ok(None)
+                } else {
+                    let mut selection = SequentialTokenSelection::new_from_offsets(
+                        &mut self.document,
+                        initial_offset,
+                        final_offset,
+                    )?;
+                    if self.verb.is_some() {
+                        selection = selection
+                            .select_whitespace_before(&mut self.document)?
+                            .select_whitespace_after(&mut self.document)?;
+                    }
+                    println!("END: {selection:?}");
+
+                    Ok(Some((
+                        selection.range(&mut self.document),
+                        selection.text(&mut self.document),
+                        selection,
+                    )))
+                }
             },
             Some(Noun::StartOfLine) => self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
             Some(Noun::StartOfLineAfterIndentation) => {
