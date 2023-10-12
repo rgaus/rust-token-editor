@@ -1110,6 +1110,7 @@ impl Buffer {
         }
     }
     fn clear_command(&mut self) {
+        self.state = ViewState::Initial;
         self.command_count = String::from("");
         self.is_backwards = false;
 
@@ -1132,7 +1133,6 @@ impl Buffer {
         self.noun = None;
     }
     pub fn reset(&mut self) {
-        self.state = ViewState::Initial;
         self.mode = Mode::Normal;
         self.clear_command();
     }
