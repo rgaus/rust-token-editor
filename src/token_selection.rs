@@ -322,11 +322,52 @@ impl SequentialTokenSelection {
         let mut end_offset = tokens_collection.compute_offset(range.starting_token_id);
         end_offset += range.starting_token_offset;
         end_offset += range.char_count;
-        document.seek_push(end_offset);
+
+        // Make sure that we aren't at the end of the document - if so, this is as far as the
+        // selection will expand.
+        if tokens_collection.get_by_offset(end_offset+1).is_none() {
+            return Ok(self.clone());
+        }
+        document.seek_push(end_offset+1);
 
         let result = match document.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
-            Ok(Some((_, _, range))) => self.extend(document, range),
+            Ok(Some((range, _, selection))) => self.extend(document, selection),
             // If the range cannot be extended (maybe we're at the end of the file?) then
+            // just keep it as it is.
+            Ok(None) => Ok(self.clone()),
+            Err(e) => {
+                // println!("RANGE: {:?}", e);
+                Err(e)
+            },
+        };
+
+        document.seek_pop();
+        result
+    }
+
+    pub fn select_whitespace_before(
+        &self,
+        document: &mut Document,
+    ) -> Result<Self, String> {
+        let range = self.as_forwards_range(document)?;
+        let tokens_collection = document.tokens_mut();
+
+        // Start seeking from the start of the token backwards, looking for whitespace
+        let mut start_offset = tokens_collection.compute_offset(range.starting_token_id);
+        start_offset += range.starting_token_offset;
+
+        // Make sure that we aren't at the start of the document - if so, this is as far as the
+        // selection will expand.
+        if start_offset == 0 {
+            return Ok(self.clone());
+        }
+        document.seek_push(start_offset-1);
+
+        let result = match document.read_backwards_until(|c, _| !is_whitespace_char(c), false, false) {
+            Ok(Some((_, _, range))) => {
+                self.extend(document, range)
+            },
+            // If the range cannot be extended (maybe we're at the start of the file?) then
             // just keep it as it is.
             Ok(None) => Ok(self.clone()),
             Err(e) => Err(e),
