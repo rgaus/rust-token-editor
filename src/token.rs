@@ -502,11 +502,11 @@ impl TokensCollection {
         }
     }
 
-    // When called, removes a token from the token tree, also removing all of its children.
-    // When removed, all token links are updated so that this removed token is now omitted.
+    // When called, removes a token from the token tree. When removed, all token links are updated
+    // so that this removed token is now omitted.
     //
     // If one attempts to remove a non-leaf token, this function returns an `Err`
-    pub fn remove_deep(&mut self, token_id: uuid::Uuid) -> Result<bool, String> {
+    pub fn remove_leaf(&mut self, token_id: uuid::Uuid) -> Result<bool, String> {
         let old_token_data = {
             let Some(old_token) = self.get_by_id(token_id) else {
                 return Err(format!("Cannot find token {}", token_id));

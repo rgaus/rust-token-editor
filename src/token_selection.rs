@@ -167,7 +167,7 @@ impl SequentialTokenSelection {
         }
 
         for token_id in token_ids_to_remove {
-            tokens_collection.remove_deep(token_id)?;
+            tokens_collection.remove_leaf(token_id)?;
         }
 
         // Clear out the char count now that all tokens inside have been removed
