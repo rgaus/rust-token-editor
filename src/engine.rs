@@ -232,7 +232,7 @@ impl Document {
         }
 
         let mut result_length = result.len();
-        println!("RESULT LENGTH: {} include_matched_char={include_matched_char}", result_length);
+        // println!("RESULT LENGTH: {} include_matched_char={include_matched_char}", result_length);
 
         if !is_done {
             result_length += 1;
@@ -244,10 +244,10 @@ impl Document {
         };
 
         let final_offset = initial_offset + (result_length-1);
-        println!("FINAL OFFSET: {final_offset}");
+        // println!("FINAL OFFSET: {final_offset}");
 
         if !include_matched_char && result_length > 0 {
-            println!("HERE?");
+            // println!("HERE?");
             // self.seek(final_offset-1);
             self.seek(final_offset);
             Ok(Some((
@@ -811,7 +811,7 @@ impl Document {
                         combined_selection = Some(value.extend(self, selection)?);
                     } else {
                         // println!("BACKWARDS: {:?}", selection);
-                        // combined_selection = Some(selection.as_forwards_range(self)?);
+                        // combined_selection = Some(selection.as_forwards_selection(self)?);
                         combined_selection = Some(selection);
                         // println!("FORWARDS: {:?}", combined_selection);
                     }
@@ -1443,6 +1443,9 @@ impl Buffer {
                         final_offset,
                     )?;
                     if self.verb.is_some() {
+                        if !self.is_backwards {
+                            selection = selection.add_to_end(1);
+                        }
                         selection = selection
                             .select_whitespace_before(&mut self.document)?
                             .select_whitespace_after(&mut self.document)?;

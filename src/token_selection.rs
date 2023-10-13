@@ -81,7 +81,7 @@ impl SequentialTokenSelection {
         document: &mut Document,
         keep_first_token: bool,
     ) -> Result<Self, String> {
-        let forwards_range = self.as_forwards_range(document)?;
+        let forwards_range = self.as_forwards_selection(document)?;
 
         let mut chars_removed = 0;
         let mut is_first = true;
@@ -217,7 +217,7 @@ impl SequentialTokenSelection {
 
     // When called, converts the given SequentialTokenSelection into forwards form if it is a backwards
     // range. If the range is already forwards, then this is a no-op.
-    pub fn as_forwards_range(
+    pub fn as_forwards_selection(
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
@@ -229,7 +229,12 @@ impl SequentialTokenSelection {
 
         let mut start_offset = tokens_collection.compute_offset(self.starting_token_id);
         start_offset += self.starting_token_offset;
-        start_offset += 1; // Add one because when going backwards, the "side" of the cursor is different
+        // Add one because when going backwards, the "side" of the cursor is different...
+        start_offset += 1;
+        // ...however, ONLY if the cursor isn't at the end of the document
+        if tokens_collection.get_by_offset(start_offset).is_none() {
+            start_offset -= 1;
+        }
 
         let end_offset = if self.char_count > start_offset {
             // This range seems to go to before the start of the document?
@@ -315,7 +320,8 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
-        let range = self.as_forwards_range(document)?;
+        let range = self.as_forwards_selection(document)?;
+        println!("REMOVING SELECTION: {:?}", range);
         let tokens_collection = document.tokens_mut();
 
         // Start seeking from the end of the token forwards, looking for whitespace
@@ -325,13 +331,19 @@ impl SequentialTokenSelection {
 
         // Make sure that we aren't at the end of the document - if so, this is as far as the
         // selection will expand.
-        if tokens_collection.get_by_offset(end_offset+1).is_none() {
+        // if tokens_collection.get_by_offset(end_offset+1).is_none() {
+        //     return Ok(self.clone());
+        // }
+        if tokens_collection.get_by_offset(end_offset).is_none() {
             return Ok(self.clone());
         }
-        document.seek_push(end_offset+1);
+        document.seek_push(end_offset);
 
         let result = match document.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
-            Ok(Some((range, _, selection))) => self.extend(document, selection),
+            Ok(Some((range, _, selection))) => {
+                println!("NEW SELECTION: {:?}", selection);
+                self.extend(document, selection)
+            },
             // If the range cannot be extended (maybe we're at the end of the file?) then
             // just keep it as it is.
             Ok(None) => Ok(self.clone()),
@@ -349,7 +361,7 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
-        let range = self.as_forwards_range(document)?;
+        let range = self.as_forwards_selection(document)?;
         let tokens_collection = document.tokens_mut();
 
         // Start seeking from the start of the token backwards, looking for whitespace
@@ -406,7 +418,7 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
-        let range = self.as_forwards_range(document)?;
+        let range = self.as_forwards_selection(document)?;
         let tokens_collection = document.tokens_mut();
 
         // Start seeking from the end of the token forwards, looking for whitespace
