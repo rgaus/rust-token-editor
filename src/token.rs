@@ -573,6 +573,9 @@ impl TokensCollection {
                     });
                 }
 
+                // Remove the token once it's no longer depended on by anything else
+                self.remove(token_id);
+
                 // Clear all caches of data at or after this token
                 self.reset_caches_for_and_after(token_id);
 
