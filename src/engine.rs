@@ -189,6 +189,11 @@ impl Document {
         let mut initial_offset = *offset;
 
         let Some((token, token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
+            // If at the start of the document, the document may just be empty
+            // So fail gracefully in this case
+            if initial_offset == 0 {
+                return Ok(None)
+            }
             return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
@@ -294,6 +299,11 @@ impl Document {
         };
         let initial_offset = *offset - 1;
         let Some((token, mut token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
+            // If at the start of the document, the document may just be empty
+            // So fail gracefully in this case
+            if initial_offset == 0 {
+                return Ok(None)
+            }
             return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
