@@ -447,4 +447,13 @@ impl SequentialTokenSelection {
         document.seek_pop();
         result
     }
+
+    pub fn minimum_offset_extent(&self, document: &mut Document) -> usize {
+        let range = self.range(document);
+        std::cmp::min(range.start, range.end)
+    }
+    pub fn maximum_offset_extent(&self, document: &mut Document) -> usize {
+        let range = self.range(document);
+        std::cmp::max(range.start, range.end)
+    }
 }

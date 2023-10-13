@@ -1595,6 +1595,10 @@ impl Buffer {
             _ => {},
         }
 
+        // Update the newline cache to expire entries including and after the selection
+        let minimum_extent_of_selection = selection.minimum_offset_extent(&mut self.document);
+        self.document.clear_newline_cache_at(minimum_extent_of_selection);
+
         // Update the cursor to be in the right spot
         let offset = self.document.get_offset();
         println!("FINAL OFFSET: {offset}");
