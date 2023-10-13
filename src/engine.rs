@@ -3520,12 +3520,39 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_delete_3_up() {
+                let mut document = Document::new_from_literal("one\ntwo\nthree\nfour\nfive");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("jjjd3k");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "five");
+            }
+
+            #[test]
             fn it_should_delete_down() {
                 let mut document = Document::new_from_literal("foo\nbar\nbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dj");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "baz");
+            }
+
+            #[test]
+            fn it_should_delete_2_down() {
+                let mut document = Document::new_from_literal("foo\nbar\nbaz\nquux");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("d2j");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "quux");
+            }
+
+            #[test]
+            fn it_should_delete_all_lines() {
+                let mut document = Document::new_from_literal("foo\nbar");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("dj");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "");
             }
         }
 
