@@ -515,6 +515,16 @@ impl SequentialTokenSelection {
         offset + self.starting_token_offset
     }
     pub fn compute_final_offset(&self, document: &mut Document) -> usize {
-        self.compute_start_offset(document) + self.char_count
+        let start_offset = self.compute_start_offset(document);
+        if self.is_backwards {
+            if self.char_count > start_offset {
+                // This is not good, the selection goes to before the start of the document...
+                0
+            } else {
+                start_offset - self.char_count
+            }
+        } else {
+            start_offset + self.char_count
+        }
     }
 }

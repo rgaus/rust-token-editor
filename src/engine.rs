@@ -1080,6 +1080,12 @@ pub struct Buffer {
     // (1, 1) is at the top left
     pub position: (usize, usize),
 
+    // The column that when moving downwards the cursor would prefer to be in if possible
+    //
+    // Example: The cursor is at column 4, then moves down to the next row with 2 columns, then
+    // moved down to a row with 10 columns. The cursor should go from 4 => 2 => 4.
+    preferred_column: usize,
+
     // Command parsing state
     state: ViewState,
     command_count: String,
@@ -1108,6 +1114,7 @@ impl Buffer {
             document: document,
             mode: Mode::Normal,
             position: (1, 1),
+            preferred_column: 1,
             state: ViewState::Initial,
             command_count: String::from(""),
             is_backwards: false,
@@ -1404,6 +1411,8 @@ impl Buffer {
             return Err(format!("Unable to run execute_command when self.state != ViewState::Complete (value was {:?})", self.state));
         }
 
+        let mut skip_setting_preferred_column = false;
+
         let command_count = self.command_count.parse::<usize>().unwrap_or(1);
         let noun_match = match self.noun {
             Some(Noun::Character) => {
@@ -1472,6 +1481,11 @@ impl Buffer {
                 let initial_rows = rows;
                 let initial_cols = cols;
 
+                // NOTE: don't set the preferred column when moving to the next line because moving
+                // up and down is the action that should USE the preferred line value to
+                // dynamically change the column
+                skip_setting_preferred_column = true;
+
                 if self.is_backwards {
                     // FIXME: make sure rows isn't too small
                     // if rows == 0 {
@@ -1504,35 +1518,55 @@ impl Buffer {
                         cols = number_of_chars_in_next_row;
                     }
                 }
-                println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
 
-                let mut final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
-                println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
-                self.document.seek(final_offset);
-
-                if initial_offset == final_offset {
-                    Ok(None)
-                } else {
-                    let mut selection = SequentialTokenSelection::new_from_offsets(
-                        &mut self.document,
-                        initial_offset,
-                        final_offset,
-                    )?;
-                    if self.verb.is_some() {
-                        if !self.is_backwards {
-                            selection = selection.add_to_end(1);
+                match self.document.compute_length_of_row_in_chars_excluding_newline(rows) {
+                    Ok(row_length) => {
+                        // Before generating the final row/col position, make sure that the desired
+                        // position actually exists.
+                        if cols > row_length {
+                            cols = row_length;
+                        } else if self.preferred_column > cols {
+                            if self.preferred_column < row_length {
+                                cols = self.preferred_column;
+                            } else {
+                                // Go to the end of the line, because self.preferred_column is
+                                // further right than this column has characters
+                                cols = row_length;
+                            }
                         }
-                        selection = selection
-                            .select_whitespace_before(&mut self.document)?
-                            .select_whitespace_after(&mut self.document)?;
-                    }
-                    println!("END: {selection:?}");
 
-                    Ok(Some((
-                        selection.range(&mut self.document),
-                        selection.text(&mut self.document),
-                        selection,
-                    )))
+                        // Compute the final offset and generate the output selection!
+                        println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
+                        let mut final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
+                        println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
+                        self.document.seek(final_offset);
+
+                        if initial_offset == final_offset {
+                            Ok(None)
+                        } else {
+                            let mut selection = SequentialTokenSelection::new_from_offsets(
+                                &mut self.document,
+                                initial_offset,
+                                final_offset,
+                            )?;
+                            if self.verb.is_some() {
+                                if !self.is_backwards {
+                                    selection = selection.add_to_end(1);
+                                }
+                                selection = selection
+                                    .select_whitespace_before(&mut self.document)?
+                                    .select_whitespace_after(&mut self.document)?;
+                            }
+                            println!("END: {selection:?}");
+
+                            Ok(Some((
+                                selection.range(&mut self.document),
+                                selection.text(&mut self.document),
+                                selection,
+                            )))
+                        }
+                    },
+                    Err(e) => Err(e),
                 }
             },
             Some(Noun::StartOfLine) => self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
@@ -1703,6 +1737,17 @@ impl Buffer {
             // Lowercase,
 
             _ => {},
+        }
+
+        // After changing the character, adjust the preferred character if the user has moved
+        // further to the right.
+        //
+        // This ensures that moving straight down with (for example) `jjjjj` always is in the same
+        // column.
+        if !skip_setting_preferred_column {
+            let final_offset = self.document.get_offset();
+            let (_, end_cols) = self.document.convert_offset_to_rows_cols(final_offset);
+            self.preferred_column = end_cols;
         }
 
         // Update the newline cache to expire entries including and after the selection
