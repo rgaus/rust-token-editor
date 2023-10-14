@@ -1207,16 +1207,18 @@ impl Buffer {
         for character in input.chars() {
             match character {
                 // TODO:
-                // "+y - yank register
-                // h / j / k / l - moving around
+                // h / j / k / l - moving around DONE
                 // w / W / b / B / e / E - word+back+end DONE
-                // 0 / ^ / $ - start + end of line
+                // 0 / ^ / $ - start + end of line - FIXME test d$ and d0
                 // f / F / t / T / ; / , - to+find DONE
+                // dd / cc - FIXME: add tests
+                // D / C / Y - FIXME: add tests
                 // gg / G / 123G - go to line number
                 // % - matching brace
                 // x/X - delete char DONE
                 // r - replace char
                 //
+                // "+y - yank register
                 // p / P / "+p - paste
                 // ]p / [p - paste in current indentation level
                 // a / A / i / I / o / O / s / S / C / R - insert mode stuff
@@ -1250,6 +1252,16 @@ impl Buffer {
                 'U' if self.in_g_mode() => self.set_verb(Verb::Uppercase),
                 'u' if self.in_g_mode() => self.set_verb(Verb::Lowercase),
 
+                // Uppercase Verbs - ie, `D` / `C`
+                'D' if self.state == ViewState::Initial => {
+                    self.set_verb(Verb::Delete);
+                    self.set_noun(Noun::RestOfLine);
+                },
+                'C' if self.state == ViewState::Initial => {
+                    self.set_verb(Verb::Change);
+                    self.set_noun(Noun::RestOfLine);
+                },
+
                 // "inside" and "around" - ie, `cip`
                 'i' if self.state == ViewState::HasVerb => { self.state = ViewState::IsInside },
                 'a' if self.state == ViewState::HasVerb => { self.state = ViewState::IsAround },
@@ -1258,6 +1270,7 @@ impl Buffer {
                 'c' | 'd' | 'y' if self.state == ViewState::HasVerb => self.set_noun(Noun::CurrentLine),
                 'U' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Uppercase) => self.set_noun(Noun::CurrentLine),
                 'u' if self.state == ViewState::HasVerb && self.verb == Some(Verb::Lowercase) => self.set_noun(Noun::CurrentLine),
+
 
                 // Noun-like objects that are only valid after `i`nside or `a`round
                 //
@@ -1398,6 +1411,59 @@ impl Buffer {
                     self.document.read_to_pattern(TraversalPattern::Left, &self.verb, command_count)
                 } else {
                     self.document.read_to_pattern(TraversalPattern::Right, &self.verb, command_count)
+                }
+            },
+            Some(Noun::CurrentLine) | Some(Noun::RestOfLine) => {
+                if self.is_backwards {
+                    panic!("Noun::CurrentLine or Noun::RestOfLine cannot have self.is_backwards set!");
+                }
+
+                let mut initial_offset = self.document.get_offset();
+                let (mut rows, mut cols) = self.document.convert_offset_to_rows_cols(initial_offset);
+                let initial_rows = rows;
+                let initial_cols = cols;
+
+                // FIXME: make sure rows isn't too large and goes beyond the end of the document
+                rows += (command_count-1);
+
+                if self.noun == Some(Noun::CurrentLine) {
+                    // For repeated verbs (dd), start at the beginning of the line
+                    // For uppercase verbs (D), start at the current position
+                    initial_offset = self.document.convert_rows_cols_to_offset((initial_rows, 1));
+                }
+                let number_of_chars_in_next_row = self.document.compute_length_of_row_in_chars_excluding_newline(
+                    rows,
+                )?;
+                cols = number_of_chars_in_next_row;
+                println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
+
+                let mut final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
+                println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
+                self.document.seek(final_offset);
+
+                if initial_offset == final_offset {
+                    Ok(None)
+                } else {
+                    let mut selection = SequentialTokenSelection::new_from_offsets(
+                        &mut self.document,
+                        initial_offset,
+                        final_offset,
+                    )?;
+                    if self.verb.is_some() {
+                        selection = selection.add_to_end(1);
+                        if selection.starting_token_offset > 0 {
+                            selection.starting_token_offset -= 1;
+                        }
+                        // FIXME: conditionally DO NOT run the below if on the last line:
+                        selection.char_count += 1;
+                    }
+                    println!("END: {selection:?}");
+
+                    Ok(Some((
+                        selection.range(&mut self.document),
+                        selection.text(&mut self.document),
+                        selection,
+                    )))
                 }
             },
             Some(Noun::NextLine) => {
