@@ -1171,7 +1171,7 @@ impl Buffer {
     pub fn dump_string(&mut self) {
         let offset = self.document.convert_rows_cols_to_offset(self.position);
         let tokens_collection = self.document.tokens_mut();
-        println!("---\n{}\n--- {:?} {:?}", tokens_collection.debug_stringify_highlight(offset, offset+1), self.mode, self.position);
+        println!("---\n{}\n--- mode={:?} position={:?} offset={:?}", tokens_collection.debug_stringify_highlight(offset, offset+1), self.mode, self.position, offset);
     }
 
     fn set_verb(&mut self, verb: Verb) {
