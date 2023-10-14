@@ -1641,12 +1641,26 @@ impl Buffer {
 
         match self.verb {
             Some(Verb::Delete) => {
+                let starting_char_of_selection = if selection.is_backwards {
+                    selection.text(&mut self.document).chars().last()
+                } else {
+                    selection.text(&mut self.document).chars().next()
+                };
+                let starting_char_of_selection_is_whitespace = if let Some(c) = starting_char_of_selection {
+                    is_whitespace_char(c)
+                } else {
+                    false
+                };
+
                 let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
 
                 // After the delete, reset the offset to the start of the deletion operation
                 let tokens_collection = self.document.tokens_mut();
                 let mut new_offset = tokens_collection.compute_offset(deleted_selection.starting_token_id);
                 new_offset += deleted_selection.starting_token_offset;
+                if starting_char_of_selection_is_whitespace {
+                    new_offset += 1;
+                }
                 self.document.seek(new_offset);
             },
             // Yank,
