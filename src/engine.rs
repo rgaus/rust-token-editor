@@ -1537,11 +1537,41 @@ impl Buffer {
             },
             Some(Noun::StartOfLine) => self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
             Some(Noun::StartOfLineAfterIndentation) => {
+                let initial_offset = self.document.get_offset();
+                self.document.seek(initial_offset);
+
                 // Go to the start of the line
                 self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
 
                 // Then read forwards until the whitespace at the beginning stops
-                self.document.read_forwards_until(|c, _| !is_whitespace_char(c), false, true)
+                match self.document.read_forwards_until(|c, _| !is_whitespace_char(c), false, true) {
+                    Ok(Some((range, text, selection))) => {
+                        // Use this final offset combined with the initial offset calculated at the
+                        // very start to get the range
+                        let final_offset = selection.compute_final_offset(&mut self.document);
+
+                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                            &mut self.document,
+                            initial_offset,
+                            final_offset,
+                        )?;
+                        if selection.is_backwards {
+                            if let Some(result) = selection.move_backwards(&mut self.document, 1) {
+                                selection = result;
+                            } else {
+                                panic!("Noun::StartOfLineAfterIndentation selection could not be moved backwards!");
+                            }
+                        }
+
+                        Ok(Some((
+                            selection.range(&mut self.document),
+                            selection.text(&mut self.document),
+                            selection,
+                        )))
+                    },
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e),
+                }
             },
             Some(Noun::EndOfLine) => {
                 let result = self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
@@ -3664,6 +3694,15 @@ mod test_engine {
 
                 buffer.process_input("d^");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar baz");
+            }
+
+            #[test]
+            fn it_should_delete_to_whitespace_sensitive_start_of_line_starting_in_middle() {
+                let mut document = Document::new_from_literal("    foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("fbd^");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "    bar baz");
             }
         }
     }

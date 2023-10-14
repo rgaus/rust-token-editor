@@ -410,6 +410,55 @@ impl SequentialTokenSelection {
         copy
     }
 
+    // Translates the given selection forwards / "to the right" the given number of characters. The
+    // length of the selection remains the same.
+    //
+    // This returns `None` is the given selection move is impossible (ie, moving to after the
+    // end of the document)
+    pub fn move_forwards(&self, document: &mut Document, char_offset: usize) -> Option<Self> {
+        let mut start_offset = self.compute_start_offset(document);
+
+        let Some((token, token_offset)) = document.tokens_mut().get_by_offset(start_offset + char_offset) else {
+            // This new offset is not a valid position in the document.
+            return None;
+        };
+
+        let mut copy = self.clone();
+        copy.starting_token_id = token.id;
+        copy.starting_token_offset = token_offset;
+        Some(copy)
+    }
+
+    // Translates the given selection backwards / "to the left" the given number of characters. The
+    // length of the selection remains the same.
+    //
+    // This returns `None` is the given selection move is impossible (ie, moving to before the
+    // start of the document)
+    pub fn move_backwards(&self, document: &mut Document, char_offset: usize) -> Option<Self> {
+        let mut start_offset = self.compute_start_offset(document);
+        if char_offset > start_offset {
+            // One cannot move to before the start of the document.
+            return None;
+        }
+
+        if self.starting_token_offset > char_offset {
+            // The starting token doesn't need to change, there's enough room in the start offset
+            // to just subtract inline
+            let mut copy = self.clone();
+            copy.starting_token_offset -= char_offset;
+            Some(copy)
+        } else {
+            // The starting token needs to change
+            let Some((token, token_offset)) = document.tokens_mut().get_by_offset(start_offset) else {
+                return None
+            };
+            let mut copy = self.clone();
+            copy.starting_token_id = token.id;
+            copy.starting_token_offset = token_offset;
+            Some(copy)
+        }
+    }
+
     // When called, scans bcakwards in the token range, removing all whitespace characters at the
     // end of the SequentialTokenSelection, returning a new range with these changes.
     //
@@ -455,5 +504,17 @@ impl SequentialTokenSelection {
     pub fn maximum_offset_extent(&self, document: &mut Document) -> usize {
         let range = self.range(document);
         std::cmp::max(range.start, range.end)
+    }
+
+    pub fn length_in_chars(&self, document: &mut Document) -> usize {
+        self.maximum_offset_extent(document) - self.minimum_offset_extent(document)
+    }
+
+    pub fn compute_start_offset(&self, document: &mut Document) -> usize {
+        let offset = document.tokens_mut().compute_offset(self.starting_token_id);
+        offset + self.starting_token_offset
+    }
+    pub fn compute_final_offset(&self, document: &mut Document) -> usize {
+        self.compute_start_offset(document) + self.char_count
     }
 }
