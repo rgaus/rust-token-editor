@@ -14,6 +14,8 @@ pub enum TraversalPattern {
     UpperBack,
     LowerEnd,
     UpperEnd,
+    LowerBackEnd,
+    UpperBackEnd,
     To(char),
     UpperTo(char),
     Find(char),
@@ -743,6 +745,159 @@ impl Document {
                         other => other,
                     }
                 },
+                TraversalPattern::LowerBackEnd => {
+                    let mut is_first = true;
+                    let mut is_first_other_char = false;
+                    let mut is_second = false;
+
+                    let mut is_second_whitespace_char = false;
+                    let mut is_second_word_char = false;
+                    let mut is_second_other_char = false;
+
+                    let mut started_whitespace = false;
+                    let mut finished_whitespace = false;
+
+                    self.seek(self.get_offset() + 1);
+                    let result = self.read_backwards_until(|c, _| {
+                        if is_first {
+                            is_first = false;
+                            if is_whitespace_char(c) {
+                                started_whitespace = true;
+                            }
+                            is_first_other_char = is_other_char(c);
+                            is_second = true;
+                            return false;
+                        }
+
+                        if is_second {
+                            is_second = false;
+                            is_second_whitespace_char = is_whitespace_char(c);
+                            if is_second_whitespace_char {
+                                started_whitespace = true;
+                            } else {
+                                is_second_word_char = is_word_char(c);
+                                is_second_other_char = is_other_char(c);
+                                if !is_first_other_char && is_second_other_char {
+                                    return true;
+                                }
+                                if is_first_other_char && !is_second_other_char {
+                                    return true;
+                                }
+                            }
+                        }
+
+                        if is_whitespace_char(c) && !started_whitespace {
+                            started_whitespace = true;
+                            false
+
+                        // To get to the previous word, follow a run of whitespace
+                        } else if started_whitespace && !finished_whitespace {
+                            if is_whitespace_char(c) {
+                                false
+                            } else {
+                                true
+                            }
+
+                        // Stop matching once the type of character being matched changes
+                        } else if is_second_word_char && !is_word_char(c) {
+                            true
+                        } else if is_second_other_char && !is_other_char(c) {
+                            true
+                        } else if is_second_whitespace_char && !is_whitespace_char(c) {
+                            true
+
+                        } else {
+                            false
+                        }
+                    }, true, true);
+
+                    match result {
+                        Ok(Some((range, literal, mut selection))) => {
+                            // FIXME: the below logic is a hack and may not be right
+                            if let Some(mut result) = selection.move_backwards(self, 1) {
+                                result.char_count -= 1;
+                                selection = result;
+                            } else {
+                                panic!("TraversalPattern::LowerBackEnd selection could not be moved backwards!");
+                            }
+                            // if is_not_last_iteration || verb.is_none() {
+                            //     self.seek(self.get_offset() - 1);
+                            // }
+
+                            Ok(Some((range, literal, selection)))
+                        },
+                        other => other,
+                    }
+                },
+                TraversalPattern::UpperBackEnd => {
+                    let mut is_first = true;
+                    let mut is_first_other_char = false;
+                    let mut is_second = false;
+
+                    let mut is_second_whitespace_char = false;
+                    let mut is_second_word_char = false;
+                    let mut is_second_other_char = false;
+
+                    let mut started_whitespace = false;
+                    let mut finished_whitespace = false;
+
+                    self.seek(self.get_offset() + 1);
+                    let result = self.read_backwards_until(|c, _| {
+                        if is_first {
+                            is_first = false;
+                            if is_whitespace_char(c) {
+                                started_whitespace = true;
+                            }
+                            is_second = true;
+                            return false;
+                        }
+
+                        if is_second {
+                            is_second = false;
+                            is_second_whitespace_char = is_whitespace_char(c);
+                            if is_second_whitespace_char {
+                                started_whitespace = true;
+                            } else {
+                                is_second_word_char = is_word_char(c);
+                                is_second_other_char = is_other_char(c);
+                            }
+                        }
+
+                        if is_whitespace_char(c) && !started_whitespace {
+                            started_whitespace = true;
+                            false
+
+                        // To get to the previous word, follow a run of whitespace
+                        } else if started_whitespace && !finished_whitespace {
+                            if is_whitespace_char(c) {
+                                false
+                            } else {
+                                true
+                            }
+
+                        } else {
+                            false
+                        }
+                    }, true, true);
+
+                    match result {
+                        Ok(Some((range, literal, mut selection))) => {
+                            // FIXME: the below logic is a hack and may not be right
+                            if let Some(mut result) = selection.move_backwards(self, 1) {
+                                result.char_count -= 1;
+                                selection = result;
+                            } else {
+                                panic!("TraversalPattern::UpperBackEnd selection could not be moved backwards!");
+                            }
+                            // if is_not_last_iteration || verb.is_none() {
+                            //     self.seek(self.get_offset() - 1);
+                            // }
+
+                            Ok(Some((range, literal, selection)))
+                        },
+                        other => other,
+                    }
+                },
                 TraversalPattern::To(character) => {
                     let result = self.read_forwards_until(|c, _| c == character, false, false);
                     match result {
@@ -1139,6 +1294,8 @@ enum Noun {
     UpperBack,
     LowerEnd,
     UpperEnd,
+    LowerBackEnd,
+    UpperBackEnd,
     To(char),
     UpperTo(char),
     Find(char),
@@ -1336,7 +1493,7 @@ impl Buffer {
                 // TODO:
                 // h / j / k / l - moving around DONE
                 // w / W / b / B / e / E - word+back+end DONE
-                // ge / gE - go to end of previous word
+                // ge / gE - go to end of previous word FIXME: write tests for this
                 // 0 / ^ / $ - start + end of line DONE
                 // g_ - last non blank char on line
                 // f / F / t / T / ; / , - to+find DONE
@@ -1558,6 +1715,8 @@ impl Buffer {
                 'W' => self.set_noun(Noun::UpperWord),
                 'b' => self.set_noun(Noun::LowerBack),
                 'B' => self.set_noun(Noun::UpperBack),
+                'e' if self.in_g_mode() => self.set_noun(Noun::LowerBackEnd),
+                'E' if self.in_g_mode() => self.set_noun(Noun::UpperBackEnd),
                 'e' => self.set_noun(Noun::LowerEnd),
                 'E' => self.set_noun(Noun::UpperEnd),
 
@@ -2037,6 +2196,8 @@ impl Buffer {
             Some(Noun::UpperWord) => self.document.read_to_pattern(TraversalPattern::UpperWord, &self.verb, command_count),
             Some(Noun::LowerBack) => self.document.read_to_pattern(TraversalPattern::LowerBack, &self.verb, command_count),
             Some(Noun::UpperBack) => self.document.read_to_pattern(TraversalPattern::UpperBack, &self.verb, command_count),
+            Some(Noun::LowerBackEnd) => self.document.read_to_pattern(TraversalPattern::LowerBackEnd, &self.verb, command_count),
+            Some(Noun::UpperBackEnd) => self.document.read_to_pattern(TraversalPattern::UpperBackEnd, &self.verb, command_count),
             Some(Noun::LowerEnd) => self.document.read_to_pattern(TraversalPattern::LowerEnd, &self.verb, command_count),
             Some(Noun::UpperEnd) => self.document.read_to_pattern(TraversalPattern::UpperEnd, &self.verb, command_count),
             Some(Noun::To(c)) => self.document.read_to_pattern(TraversalPattern::To(c), &self.verb, command_count),
