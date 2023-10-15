@@ -1335,17 +1335,17 @@ impl Buffer {
             match character {
                 // TODO:
                 // h / j / k / l - moving around DONE FIXME: add "preferred column" tests
-                // ge / gE - go to end of previous word
                 // w / W / b / B / e / E - word+back+end DONE
+                // ge / gE - go to end of previous word
                 // 0 / ^ / $ - start + end of line DONE
                 // g_ - last non blank char on line
                 // f / F / t / T / ; / , - to+find DONE
                 // dd / cc - FIXME: add tests
                 // D / C / Y - FIXME: add tests
                 // gg / G / 123G - go to line number - FIXME: add tests
-                // 10| - go to col number
-                // 50% - go to percentage of file - computed with `({count} * number-of-lines + 99) / 100`
-                // 10go - go to `n`th byte in the file
+                // 10| - go to col number FIXME: add tests
+                // 50% - go to percentage of file - computed with `({count} * number-of-lines + 99) / 100` FIXME: add tests
+                // 10go - go to `n`th byte in the file FIXME: add tests
                 // % - matching brace
                 // x/X - delete char DONE
                 // r - replace char
