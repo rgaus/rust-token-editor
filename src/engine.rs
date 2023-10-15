@@ -987,14 +987,14 @@ impl Document {
         }
     }
 
-    // Compute the total number of lines in the document.
+    // Compute the total number of lines and characters in the document.
     // This function scans through all lines in the document, caching them as it goes, until it
     // gets to the end, and then it returns the total number of lines that it visited.
     //
     // NOTE: this can potentially be a very expensive calculation, because it can potentially loop
     // through all tokens in the document. However, repeated runs can be fast because newline
     // positions are cached.
-    pub fn compute_number_of_rows(&mut self) -> Result<usize, String> {
+    pub fn compute_max_number_of_rows_and_offset_of_last_row(&mut self) -> Result<(usize, usize), String> {
         self.seed_newline_cache_if_empty();
 
         let (final_cached_row, final_cached_row_offset) = self.newline_offset_cache
@@ -1027,7 +1027,76 @@ impl Document {
         }
         self.seek_pop();
 
-        Ok(current_row)
+        Ok((current_row, current_offset))
+    }
+
+    // NOTE: see docs for `compute_max_number_of_rows_and_chars`
+    pub fn compute_number_of_rows(&mut self) -> Result<usize, String> {
+        let result = self.compute_max_number_of_rows_and_offset_of_last_row()?;
+        Ok(result.0)
+    }
+
+    pub fn has_at_least_rows(&mut self, at_least_rows: usize) -> Result<bool, String> {
+        // Because counting all rows is really slow, if there are cached newlines that are after
+        // the row being queried, then assume that the document goes on beyond that point.
+        let (final_cached_row, _) = self.newline_offset_cache
+            .iter()
+            .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
+                if *cached_offset > previous_offset {
+                    // Prefer the value that is later on in the list
+                    (*cached_row, *cached_offset)
+                } else {
+                    (previous_row, previous_offset)
+                }
+            });
+
+        if final_cached_row > at_least_rows {
+            Ok(true)
+        } else {
+            let row_count = self.compute_number_of_rows()?;
+            Ok(row_count >= at_least_rows)
+        }
+    }
+
+    // NOTE: see docs for `compute_max_number_of_rows_and_chars`
+    pub fn compute_max_offset(&mut self) -> Result<usize, String> {
+        // Seek to the start of the last line
+        let result = self.compute_max_number_of_rows_and_offset_of_last_row()?;
+        let start_offset_of_last_row = result.1;
+        self.seek_push(start_offset_of_last_row);
+
+        // Seek to the end of the last line to get the final offset
+        let result = match self.read_forwards_until(|_, _| false, false, true) {
+            Ok(Some((_, _, selection))) => {
+                Ok(start_offset_of_last_row + selection.length_in_chars(self) - 1)
+            },
+            Ok(None) => Ok(start_offset_of_last_row),
+            Err(e) => Err(e),
+        };
+        self.seek_pop();
+        result
+    }
+
+    pub fn has_at_least_offset(&mut self, at_least_offset: usize) -> Result<bool, String> {
+        // Because counting all chars is really slow, if there are cached newlines that are after
+        // the offset being queried, then assume that the document goes on beyond that point.
+        let (_, final_cached_row_offset) = self.newline_offset_cache
+            .iter()
+            .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
+                if *cached_offset > previous_offset {
+                    // Prefer the value that is later on in the list
+                    (*cached_row, *cached_offset)
+                } else {
+                    (previous_row, previous_offset)
+                }
+            });
+
+        if final_cached_row_offset > at_least_offset {
+            Ok(true)
+        } else {
+            let max_offset = self.compute_max_offset()?;
+            Ok(max_offset >= at_least_offset)
+        }
     }
 }
 
@@ -1085,6 +1154,9 @@ enum Noun {
     GoToRow(usize),
     GoToFirstRow,
     GoToLastRow,
+    GoToColumn(usize),
+    GoToPercentage(usize),
+    GoToByte(usize),
 
     // Inside / around specific nouns:
     Paragraph,
@@ -1535,6 +1607,21 @@ impl Buffer {
                         Err(_) => self.set_noun(Noun::GoToLastRow),
                     }
                 },
+                // `123|` goes to column 123
+                '|' if !self.command_count.is_empty() => {
+                    let col_number = self.command_count.parse::<usize>().unwrap();
+                    self.set_noun(Noun::GoToColumn(col_number));
+                },
+                // `50%` goes to halfway through the document
+                '%' if !self.command_count.is_empty() => {
+                    let percentage = self.command_count.parse::<usize>().unwrap();
+                    self.set_noun(Noun::GoToPercentage(percentage));
+                },
+                // `50go` goes to the 50th byte of the file
+                'o' if !self.command_count.is_empty() && self.in_g_mode() => {
+                    let byte_offset = self.command_count.parse::<usize>().unwrap();
+                    self.set_noun(Noun::GoToByte(byte_offset));
+                },
 
                 // `g` is weird, it's used as a prefix for a lot of other commands
                 // So go into a different mode once it is pressed
@@ -1834,6 +1921,99 @@ impl Buffer {
                     Ok(None) => Ok(None),
                     Err(e) => Err(e),
                 }
+            },
+            Some(Noun::GoToColumn(raw_column_number)) => {
+                let initial_offset = self.document.get_offset();
+
+                let (initial_rows, _) = self.document.convert_offset_to_rows_cols(initial_offset);
+                match self.document.compute_length_of_row_in_chars_excluding_newline(initial_rows) {
+                    Ok(row_length) => {
+                        let column_number = if raw_column_number > row_length {
+                            // NOTE: if a column number is picked that is too large, the expected behavior is to
+                            // navigate to the final column in the line
+                            row_length
+                        } else {
+                            raw_column_number
+                        };
+
+                        let final_offset = self.document.convert_rows_cols_to_offset((initial_rows, column_number));
+                        self.document.seek(final_offset);
+
+                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                            &mut self.document,
+                            initial_offset,
+                            final_offset,
+                        )?;
+
+                        Ok(Some((
+                            selection.range(&mut self.document),
+                            selection.text(&mut self.document),
+                            selection,
+                        )))
+                    },
+                    Err(e) => Err(e),
+                }
+            },
+            Some(Noun::GoToPercentage(percentage)) => {
+                if percentage == 0 {
+                    panic!("Cannot execute Noun::GoToPercentage(0) - `0%` is an invalid syntax construction!");
+                }
+                if percentage > 100 {
+                    panic!("Cannot execute Noun::GoToPercentage({percentage}) where {percentage} is > 100!");
+                }
+                let initial_offset = self.document.get_offset();
+
+                let number_of_chars = self.document.compute_max_offset()?;
+                // NOTE: the below math formula is from `:h N%` in the vim help pages
+                let final_offset = (percentage * number_of_chars + 99) / 100;
+                println!("FINAL: {number_of_chars} {final_offset}");
+
+
+                self.document.seek(final_offset);
+
+                let mut selection = SequentialTokenSelection::new_from_offsets(
+                    &mut self.document,
+                    initial_offset,
+                    final_offset,
+                )?;
+
+                Ok(Some((
+                    selection.range(&mut self.document),
+                    selection.text(&mut self.document),
+                    selection,
+                )))
+            },
+            Some(Noun::GoToByte(byte_offset)) => {
+                let initial_offset = self.document.get_offset();
+
+                if byte_offset == 0 {
+                    panic!("Cannot execute Noun::GoToByte(0) - byte offsets are 1 indexed!");
+                }
+
+                // FIXME: convert from bytes to character offsets in the document
+                // At the moment some stuff is probably unintentially assuming that 1 byte = 1 char
+                let mut final_offset = byte_offset - 1;
+
+                // If the user tries to go to an offset after the end of the document, then
+                // truncate to the start of the document
+                let can_go_to_offset = self.document.has_at_least_offset(final_offset)?;
+                if !can_go_to_offset {
+                    final_offset = self.document.compute_max_offset()?;
+                }
+
+                self.document.seek(final_offset);
+
+                let mut selection = SequentialTokenSelection::new_from_offsets(
+                    &mut self.document,
+                    initial_offset,
+                    final_offset,
+                )?;
+
+                Ok(Some((
+                    selection.range(&mut self.document),
+                    selection.text(&mut self.document),
+                    selection,
+                )))
             },
 
             Some(Noun::LowerWord) => self.document.read_to_pattern(TraversalPattern::LowerWord, &self.verb, command_count),
