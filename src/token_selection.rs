@@ -156,7 +156,8 @@ impl SequentialTokenSelection {
                         pointer_id = next_id;
                     } else {
                         // Reached the end of the token stream
-                        return Err(format!("Unable to remove SequentialTokenSelection: ran out of tokens (start at {} offset {} and went {} of {} chars)", forwards_range.starting_token_id, forwards_range.starting_token_offset, chars_removed, forwards_range.char_count));
+                        break;
+                        // return Err(format!("Unable to remove SequentialTokenSelection: ran out of tokens (start at {} offset {} and went {} of {} chars)", forwards_range.starting_token_id, forwards_range.starting_token_offset, chars_removed, forwards_range.char_count));
                     }
                     is_first = false;
                 },

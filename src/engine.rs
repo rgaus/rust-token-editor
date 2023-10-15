@@ -1694,10 +1694,16 @@ impl Buffer {
                 // FIXME: make sure rows isn't too large and goes beyond the end of the document
                 rows += command_count-1;
 
-                if self.noun == Some(Noun::CurrentLine) {
-                    // For repeated verbs (dd), start at the beginning of the line
-                    // For uppercase verbs (D), start at the current position
-                    initial_offset = self.document.convert_rows_cols_to_offset((initial_rows, 1));
+                match self.noun {
+                    Some(Noun::CurrentLine) => {
+                        // For repeated verbs (dd), start at the beginning of the line
+                        initial_offset = self.document.convert_rows_cols_to_offset((initial_rows, 1));
+                    },
+                    Some(Noun::RestOfLine) => {
+                        // For uppercase verbs (D), start at the char after the current position
+                        initial_offset += 1;
+                    },
+                    _ => {},
                 }
                 let number_of_chars_in_next_row = self.document.compute_length_of_row_in_chars_excluding_newline(
                     rows,
@@ -1720,8 +1726,13 @@ impl Buffer {
                     if self.verb.is_some() {
                         selection = selection.add_to_end(1);
                         if selection.starting_token_offset > 0 {
-                            selection.starting_token_offset -= 1;
+                            if let Some(result) = selection.move_backwards(&mut self.document, 1) {
+                                selection = result;
+                            } else {
+                                panic!("{:?} selection could not be moved backwards!", self.noun);
+                            }
                         }
+
                         // FIXME: conditionally DO NOT run the below if on the last line:
                         selection.char_count += 1;
                     }
@@ -4163,6 +4174,77 @@ mod test_engine {
 
                 buffer.process_input("fbd^");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "    bar baz");
+            }
+        }
+
+        mod test_linewise {
+            use super::*;
+
+            #[test]
+            fn it_should_run_linewise_delete() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("dd");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "barbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_run_linewise_delete_in_middle() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("jdd");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_run_linewise_delete_multi_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("2dd");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "bazbaz");
+            }
+
+            #[test]
+            fn it_should_run_linewise_delete_all_lines() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("3dd");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "");
+            }
+        }
+
+        mod test_rest_of_line {
+            use super::*;
+
+            #[test]
+            fn it_should_run_delete_to_end_of_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("3lD");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_run_delete_to_end_of_line_and_next_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("3l2D");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_run_delete_to_end_of_line_on_last_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("jj3lD");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbaz");
             }
         }
     }
