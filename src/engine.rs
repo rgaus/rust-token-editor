@@ -16,6 +16,7 @@ pub enum TraversalPattern {
     UpperEnd,
     LowerBackEnd,
     UpperBackEnd,
+    MatchingDelimiter,
     To(char),
     UpperTo(char),
     Find(char),
@@ -116,6 +117,29 @@ impl Document {
                 String::from(chars),
                 SequentialTokenSelection::new(token_id, token_offset, final_offset),
             )));
+        }
+    }
+
+    // Read forward in the document and if the next characters match the string `pattern`, then
+    // return the match. Otherwise, returns `Ok(None)`.
+    pub fn read_if_matches(&mut self, pattern: &str) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenSelection, /* The token range that was matched */
+    )>, String> {
+        let initial_offset = self.get_offset();
+
+        match self.read(pattern.len()) {
+            Ok(Some((range, text, selection))) => {
+                if text == pattern {
+                    Ok(Some((range, text, selection)))
+                } else {
+                    self.seek(initial_offset);
+                    Ok(None)
+                }
+            },
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
         }
     }
 
@@ -328,7 +352,7 @@ impl Document {
                         continue;
                     }
                     result = format!("{}{}", character, result);
-                    println!("FOO {} {} - {}", character, initial_offset, result.len()-1);
+                    // println!("FOO {} {} - {}", character, initial_offset, result.len()-1);
                     if needle_func(character, initial_offset - (result.len() - 1)) {
                         println!("NEEDLE DONE!");
                         is_done = true;
@@ -898,6 +922,157 @@ impl Document {
                         other => other,
                     }
                 },
+                TraversalPattern::MatchingDelimiter => {
+                    let initial_offset = self.get_offset();
+
+                    // FIXME: add special mode for C #if / #ifdef / #elif / #else / #endif
+
+                    // Figure out the start and end strings that represent an "open" and a "close"
+                    //
+                    // This is important so that matching patterns can be reference counted to
+                    // determine which "open" goes with which "close"
+                    let result = 'block: {
+                        let start_parenthesis_match = self.read_if_matches("(")?;
+                        let end_parenthesis_match = self.read_if_matches(")")?;
+                        if start_parenthesis_match.is_some() || end_parenthesis_match.is_some() {
+                            break 'block Some((start_parenthesis_match.is_some(), "(", ")"));
+                        }
+
+                        let start_square_match = self.read_if_matches("[")?;
+                        let end_square_match = self.read_if_matches("]")?;
+                        if start_square_match.is_some() || end_square_match.is_some() {
+                            break 'block Some((start_square_match.is_some(), "[", "]"));
+                        }
+
+                        let start_curly_match = self.read_if_matches("{")?;
+                        let end_curly_match = self.read_if_matches("}")?;
+                        if start_curly_match.is_some() || end_curly_match.is_some() {
+                            break 'block Some((start_curly_match.is_some(), "{", "}"));
+                        }
+
+                        let c_block_comment_start = self.read_if_matches("/*")?;
+                        let c_block_comment_end = self.read_if_matches("*/")?;
+                        if c_block_comment_start.is_some() || c_block_comment_end.is_some() {
+                            break 'block Some((c_block_comment_start.is_some(), "/*", "*/"));
+                        }
+
+                        None
+                    };
+
+                    if let Some((search_forwards, start_delimeter, end_delimeter)) = result {
+                        let start_first_char = start_delimeter.chars().next().unwrap();
+                        let end_first_char = end_delimeter.chars().next().unwrap();
+
+                        if !search_forwards {
+                            self.seek(self.get_offset() - 1);
+                        }
+
+                        // Now, search for the other delimeter!
+                        // NOTE: start at 1 because the first delimeter was just parsed above
+                        let mut depth = 1;
+                        loop {
+                            let read_result = if search_forwards {
+                                self.read_forwards_until(|c, _| c == start_first_char || c == end_first_char, true, false)
+                            } else {
+                                self.read_backwards_until(|c, _| c == start_first_char || c == end_first_char, true, false)
+                            }?;
+                            println!("READ RESULT: {read_result:?}");
+
+                            // Was the end of the document was reached with no match?
+                            if read_result.is_none() {
+                                break;
+                            }
+                            if let Some((_, _, selection)) = read_result {
+                                // FIXME: this shouldn't be possible?
+                                if selection.length_in_chars(self) == 0 {
+                                    break;
+                                }
+                            }
+
+                            if search_forwards {
+                                self.seek_push(self.get_offset() - 1);
+                            } else {
+                                self.seek_push(self.get_offset() + 1);
+                            }
+                            let found_start_delimeter = self.read_if_matches(start_delimeter)?;
+                            self.seek_pop();
+
+                            println!("---- {:?}", found_start_delimeter);
+                            if found_start_delimeter.is_some() {
+                                if search_forwards {
+                                    println!("+1");
+                                    depth += 1;
+                                } else {
+                                    println!("-1");
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        // Found the matching delimeter!
+                                        break;
+                                    }
+                                }
+                                continue;
+                            }
+
+                            if search_forwards {
+                                self.seek_push(self.get_offset() - 1);
+                            } else {
+                                self.seek_push(self.get_offset() + 1);
+                            }
+                            let found_end_delimeter = self.read_if_matches(start_delimeter)?;
+                            self.seek_pop();
+                            if found_end_delimeter.is_some() {
+                                if search_forwards {
+                                    println!("-1");
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        // Found the matching delimeter!
+                                        break;
+                                    }
+                                } else {
+                                    println!("+1");
+                                    depth += 1
+                                }
+                                continue;
+                            }
+                        }
+
+                        let mut final_offset = self.get_offset();
+                        if final_offset > 0 {
+                            if is_not_last_iteration || verb.is_none() {
+                                final_offset -= 1;
+                                self.seek(final_offset);
+                            }
+                            if !search_forwards {
+                                final_offset += 1;
+                                if !is_not_last_iteration && verb.is_some() {
+                                    final_offset -= 2;
+                                }
+                                self.seek(final_offset);
+                            }
+                        }
+                        // println!("OFFSETS: {:?} {:?}", initial_offset, final_offset);
+
+                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                            self,
+                            initial_offset,
+                            final_offset,
+                        )?;
+                        // println!("SELECTION: {:?}", selection);
+
+                        if !search_forwards && final_offset == 0 {
+                            selection.char_count += 1;
+                            self.seek(0);
+                        }
+
+                        Ok(Some((
+                            selection.range(self),
+                            selection.text(self),
+                            selection,
+                        )))
+                    } else {
+                        Ok(None)
+                    }
+                },
                 TraversalPattern::To(character) => {
                     let result = self.read_forwards_until(|c, _| c == character, false, false);
                     match result {
@@ -1296,6 +1471,7 @@ enum Noun {
     UpperEnd,
     LowerBackEnd,
     UpperBackEnd,
+    MatchingDelimiter,
     To(char),
     UpperTo(char),
     Find(char),
@@ -1782,6 +1958,8 @@ impl Buffer {
                     self.set_noun(Noun::GoToByte(byte_offset));
                 },
 
+                '%' => self.set_noun(Noun::MatchingDelimiter),
+
                 // `g` is weird, it's used as a prefix for a lot of other commands
                 // So go into a different mode once it is pressed
                 'g' => {
@@ -2198,6 +2376,11 @@ impl Buffer {
             Some(Noun::UpperBack) => self.document.read_to_pattern(TraversalPattern::UpperBack, &self.verb, command_count),
             Some(Noun::LowerBackEnd) => self.document.read_to_pattern(TraversalPattern::LowerBackEnd, &self.verb, command_count),
             Some(Noun::UpperBackEnd) => self.document.read_to_pattern(TraversalPattern::UpperBackEnd, &self.verb, command_count),
+            Some(Noun::MatchingDelimiter) => self.document.read_to_pattern(
+                TraversalPattern::MatchingDelimiter,
+                &self.verb,
+                command_count,
+            ),
             Some(Noun::LowerEnd) => self.document.read_to_pattern(TraversalPattern::LowerEnd, &self.verb, command_count),
             Some(Noun::UpperEnd) => self.document.read_to_pattern(TraversalPattern::UpperEnd, &self.verb, command_count),
             Some(Noun::To(c)) => self.document.read_to_pattern(TraversalPattern::To(c), &self.verb, command_count),
