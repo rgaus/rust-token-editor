@@ -1076,14 +1076,19 @@ enum Noun {
     UpperFind(char),
     RepeatToFind,
     RepeatToFindBackwards,
-    Paragraph,
-    Sentence,
     CurrentLine,
     NextLine,
     RestOfLine,
     StartOfLine,
     StartOfLineAfterIndentation,
     EndOfLine,
+    GoToLine(usize),
+    GoToFirstLine,
+    GoToLastLine,
+
+    // Inside / around specific nouns:
+    Paragraph,
+    Sentence,
     BlockSquare,
     BlockParenthesis,
     BlockCurly,
@@ -1407,6 +1412,17 @@ impl Buffer {
                 '0' => self.set_noun(Noun::StartOfLine),
                 '^' => self.set_noun(Noun::StartOfLineAfterIndentation),
 
+                // 'gg' goes to the top
+                'g' if self.in_g_mode() => self.set_noun(Noun::GoToFirstLine),
+                'G' => {
+                    match self.command_count.parse::<usize>() {
+                        // 123G goes to a line
+                        Ok(line_number) => self.set_noun(Noun::GoToLine(line_number)),
+                        // G goes to the bottom
+                        Err(_) => self.set_noun(Noun::GoToLastLine),
+                    }
+                },
+
                 // `g` is weird, it's used as a prefix for a lot of other commands
                 // So go into a different mode once it is pressed
                 'g' => {
@@ -1476,7 +1492,7 @@ impl Buffer {
                 let initial_cols = cols;
 
                 // FIXME: make sure rows isn't too large and goes beyond the end of the document
-                rows += (command_count-1);
+                rows += command_count-1;
 
                 if self.noun == Some(Noun::CurrentLine) {
                     // For repeated verbs (dd), start at the beginning of the line
@@ -1615,14 +1631,14 @@ impl Buffer {
             Some(Noun::StartOfLine) => self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true),
             Some(Noun::StartOfLineAfterIndentation) => {
                 let initial_offset = self.document.get_offset();
-                self.document.seek(initial_offset);
+                self.document.seek(initial_offset); // FIXME: I think this is redundant?
 
                 // Go to the start of the line
                 self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
 
                 // Then read forwards until the whitespace at the beginning stops
                 match self.document.read_forwards_until(|c, _| !is_whitespace_char(c), false, true) {
-                    Ok(Some((range, text, selection))) => {
+                    Ok(Some((_, _, selection))) => {
                         // Use this final offset combined with the initial offset calculated at the
                         // very start to get the range
                         let final_offset = selection.compute_final_offset(&mut self.document);
@@ -1661,6 +1677,52 @@ impl Buffer {
                     other => other,
                 }
             },
+            Some(Noun::GoToLine(_)) | Some(Noun::GoToFirstLine) | Some(Noun::GoToLastLine) => {
+                let initial_offset = self.document.get_offset();
+
+                let line_number = match &self.noun {
+                    Some(Noun::GoToLine(line_number)) => {
+                        if *line_number == 0 {
+                            panic!("Cannot process Noun::GoToLine(0) - 0 is an invalid line number!");
+                        }
+                        Ok(*line_number)
+                    },
+                    Some(Noun::GoToFirstLine) => Ok(1),
+                    Some(Noun::GoToLastLine) => self.document.compute_number_of_rows(),
+                    other => {
+                        panic!("Unable to process noun {:?} as a line navigation event!", other);
+                    },
+                }?;
+
+                // NOTE: if a line number is picked that is too large, the expected behavior is to
+                // navigate to the final line in the document
+                let offset = self.document.convert_rows_cols_to_offset((line_number, 1));
+                self.document.seek_push(offset);
+
+                // Then read forwards until the whitespace at the beginning stops
+                match self.document.read_forwards_until(|c, _| !is_whitespace_char(c), false, true) {
+                    Ok(Some((_, _, selection))) => {
+                        // Use this final offset combined with the initial offset calculated at the
+                        // very start to get the range
+                        let final_offset = selection.compute_final_offset(&mut self.document);
+
+                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                            &mut self.document,
+                            initial_offset,
+                            final_offset,
+                        )?;
+
+                        Ok(Some((
+                            selection.range(&mut self.document),
+                            selection.text(&mut self.document),
+                            selection,
+                        )))
+                    },
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            },
+
             Some(Noun::LowerWord) => self.document.read_to_pattern(TraversalPattern::LowerWord, &self.verb, command_count),
             Some(Noun::UpperWord) => self.document.read_to_pattern(TraversalPattern::UpperWord, &self.verb, command_count),
             Some(Noun::LowerBack) => self.document.read_to_pattern(TraversalPattern::LowerBack, &self.verb, command_count),
