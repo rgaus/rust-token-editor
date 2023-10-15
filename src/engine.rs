@@ -1082,9 +1082,9 @@ enum Noun {
     StartOfLine,
     StartOfLineAfterIndentation,
     EndOfLine,
-    GoToLine(usize),
-    GoToFirstLine,
-    GoToLastLine,
+    GoToRow(usize),
+    GoToFirstRow,
+    GoToLastRow,
 
     // Inside / around specific nouns:
     Paragraph,
@@ -1526,13 +1526,13 @@ impl Buffer {
                 '^' => self.set_noun(Noun::StartOfLineAfterIndentation),
 
                 // 'gg' goes to the top
-                'g' if self.in_g_mode() => self.set_noun(Noun::GoToFirstLine),
+                'g' if self.in_g_mode() => self.set_noun(Noun::GoToFirstRow),
                 'G' => {
                     match self.command_count.parse::<usize>() {
                         // 123G goes to a line
-                        Ok(line_number) => self.set_noun(Noun::GoToLine(line_number)),
+                        Ok(line_number) => self.set_noun(Noun::GoToRow(line_number)),
                         // G goes to the bottom
-                        Err(_) => self.set_noun(Noun::GoToLastLine),
+                        Err(_) => self.set_noun(Noun::GoToLastRow),
                     }
                 },
 
@@ -1790,18 +1790,18 @@ impl Buffer {
                     other => other,
                 }
             },
-            Some(Noun::GoToLine(_)) | Some(Noun::GoToFirstLine) | Some(Noun::GoToLastLine) => {
+            Some(Noun::GoToRow(_)) | Some(Noun::GoToFirstRow) | Some(Noun::GoToLastRow) => {
                 let initial_offset = self.document.get_offset();
 
                 let line_number = match &self.noun {
-                    Some(Noun::GoToLine(line_number)) => {
+                    Some(Noun::GoToRow(line_number)) => {
                         if *line_number == 0 {
-                            panic!("Cannot process Noun::GoToLine(0) - 0 is an invalid line number!");
+                            panic!("Cannot process Noun::GoToRow(0) - 0 is an invalid line number!");
                         }
                         Ok(*line_number)
                     },
-                    Some(Noun::GoToFirstLine) => Ok(1),
-                    Some(Noun::GoToLastLine) => self.document.compute_number_of_rows(),
+                    Some(Noun::GoToFirstRow) => Ok(1),
+                    Some(Noun::GoToLastRow) => self.document.compute_number_of_rows(),
                     other => {
                         panic!("Unable to process noun {:?} as a line navigation event!", other);
                     },
