@@ -986,6 +986,49 @@ impl Document {
             Err(err) => Err(err),
         }
     }
+
+    // Compute the total number of lines in the document.
+    // This function scans through all lines in the document, caching them as it goes, until it
+    // gets to the end, and then it returns the total number of lines that it visited.
+    //
+    // NOTE: this can potentially be a very expensive calculation, because it can potentially loop
+    // through all tokens in the document. However, repeated runs can be fast because newline
+    // positions are cached.
+    pub fn compute_number_of_rows(&mut self) -> Result<usize, String> {
+        self.seed_newline_cache_if_empty();
+
+        let (final_cached_row, final_cached_row_offset) = self.newline_offset_cache
+            .iter()
+            .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
+                if *cached_offset > previous_offset {
+                    // Prefer the value that is later on in the list
+                    (*cached_row, *cached_offset)
+                } else {
+                    (previous_row, previous_offset)
+                }
+            });
+
+        let mut current_offset = final_cached_row_offset;
+        let mut current_row = final_cached_row;
+        self.seek_push(current_offset);
+        loop {
+            self.seek(current_offset);
+            let Ok(Some((_, result, _))) = self.read_forwards_until(|c, _| c == NEWLINE_CHAR, true, false) else {
+                // There must not be an end of line for the rest of the text tokens_collection
+                // So we are done
+                break;
+            };
+
+            let number_of_matched_chars_including_newline = result.len();
+            current_offset += number_of_matched_chars_including_newline;
+            current_row += 1;
+
+            self.newline_offset_cache.insert(current_row, current_offset);
+        }
+        self.seek_pop();
+
+        Ok(current_row)
+    }
 }
 
 
