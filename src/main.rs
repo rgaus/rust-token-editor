@@ -382,7 +382,7 @@ fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
 fn main() {
     // let mut document = Document::new_from_literal("foo.foo bar baz");
     // let mut document = Document::new_from_literal("foo.foo bar\nbaz\nfinal");
-    let mut document = Document::new_from_literal("foo   bar....baaaaar baz\n  baz\nfinal");
+    let mut document = Document::new_from_literal("foo   {bar....}baaaaar baz\n  baz\nfinalaaaaaaaa");
     // document.seek(3); // First space          ----> "TEST bar.baaaaar baz"
     // document.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
     // document.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"

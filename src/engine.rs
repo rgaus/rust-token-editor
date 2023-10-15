@@ -213,7 +213,7 @@ impl Document {
                     if is_first && index < token_offset {
                         continue;
                     }
-                    println!("CHAR: {} {}+{}", character, initial_offset, result.len());
+                    // println!("CHAR: {} {}+{}", character, initial_offset, result.len());
                     result = format!("{}{}", result, character);
                     if needle_func(character, initial_offset + result.len()) {
                         is_done = true;
@@ -545,7 +545,7 @@ impl Document {
                     let mut started_in_word: Option<bool> = None;
 
                     self.read_backwards_until(|c, _| {
-                        println!("CHAR: {c}");
+                        // println!("CHAR: {c}");
                         if is_first {
                             first_char_was_other = is_other_char(c);
                             first_char_was_whitespace = is_whitespace_char(c);
@@ -1262,16 +1262,23 @@ impl Buffer {
         for character in input.chars() {
             match character {
                 // TODO:
-                // h / j / k / l - moving around DONE
+                // h / j / k / l - moving around DONE FIXME: add "preferred column" tests
+                // ge / gE - go to end of previous word
                 // w / W / b / B / e / E - word+back+end DONE
-                // 0 / ^ / $ - start + end of line - FIXME test d$ and d0
+                // 0 / ^ / $ - start + end of line DONE
+                // g_ - last non blank char on line
                 // f / F / t / T / ; / , - to+find DONE
                 // dd / cc - FIXME: add tests
                 // D / C / Y - FIXME: add tests
-                // gg / G / 123G - go to line number
+                // gg / G / 123G - go to line number - FIXME: add tests
+                // 10| - go to col number
+                // 50% - go to percentage of file - computed with `({count} * number-of-lines + 99) / 100`
+                // 10go - go to `n`th byte in the file
                 // % - matching brace
                 // x/X - delete char DONE
                 // r - replace char
+                // ( / ) / { / } / [[ /  ]] - move back and forward sentences and paragraphs and sections, see below for
+                // info on what these mean
                 //
                 // "+y - yank register
                 // p / P / "+p - paste
@@ -1280,9 +1287,115 @@ impl Buffer {
                 // <C-C> / ESC - back to normal mode
                 // v / V / <C-V> - visual mode
                 // . - repeat last
-                // ma / dma / 'a - marks
+                // ma / dma / 'a / `a / g'a / g`a - marks
                 // <C-U> / <C-D> - half page up / half page down
                 // <C-B> / <C-F> - page up / down
+                //
+                // 2d3w should delete 6 words
+                //
+                // dvj / dVj / d<ctrl+v>j - make the action linewise / characterwise / blockwise
+                //
+                // ACTIONS:
+                // |c|	c	change
+                // |d|	d	delete
+                // |y|	y	yank into register (does not change the text)
+                // |~|	~	swap case (only if 'tildeop' is set)
+                // |g~|	g~	swap case
+                // |gu|	gu	make lowercase
+                // |gU|	gU	make uppercase
+                // |!|	!	filter through an external program
+                // |=|	=	filter through 'equalprg' or C-indenting if empty
+                // |gq|	gq	text formatting
+                // |gw|	gw	text formatting with no cursor movement
+                // |g?|	g?	ROT13 encoding
+                // |>|	>	shift right
+                // |<|	<	shift left
+                // |zf|	zf	define a fold
+                // |g@|	g@	call function set with the 'operatorfunc' option
+                //
+                // g0 / g^ / g$ - go to the first line of the wrapped line
+                // gm / gM - related to wrapped lines, look it up with :h gm
+                // gj / gk - related to wrapped lines, look it up with :h gj
+                // - / + / _ - seems very similar to j/k? Look it up with :g +
+                //
+                // PERCENT MATCHING:
+                //
+                // %			Find the next item in this line after or under the
+                //       cursor and jump to its match. |inclusive| motion.
+                //       Items can be:
+                //       ([{}])		parenthesis or (curly/square) brackets
+                //           (this can be changed with the
+                //           'matchpairs' option)
+                //       /* */		start or end of C-style comment
+                //       #if, #ifdef, #else, #elif, #endif
+                //           C preprocessor conditionals (when the
+                //           cursor is on the # or no ([{
+                //           is following)
+                //       For other items the matchit plugin can be used, see
+                //       |matchit-install|.  This plugin also helps to skip
+                //       matches in comments.
+                //
+                //       When 'cpoptions' contains "M" |cpo-M| backslashes
+                //       before parens and braces are ignored.  Without "M" the
+                //       number of backslashes matters: an even number doesn't
+                //       match with an odd number.  Thus in "( \) )" and "\( (
+                //       \)" the first and last parenthesis match.
+                //
+                //       When the '%' character is not present in 'cpoptions'
+                //       |cpo-%|, parens and braces inside double quotes are
+                //       ignored, unless the number of parens/braces in a line
+                //       is uneven and this line and the previous one does not
+                //       end in a backslash.  '(', '{', '[', ']', '}' and ')'
+                //       are also ignored (parens and braces inside single
+                //       quotes).  Note that this works fine for C, but not for
+                //       Perl, where single quotes are used for strings.
+                //
+                //       Nothing special is done for matches in comments.  You
+                //       can either use the matchit plugin |matchit-install| or
+                //       put quotes around matches.
+                //
+                //       No count is allowed, {count}% jumps to a line {count}
+                //       percentage down the file |N%|.  Using '%' on
+                //       #if/#else/#endif makes the movement linewise.
+                //
+                // SENTENCES / PARAGRAPHS / SECTIONS:
+                //
+                //               *sentence*
+                // A sentence is defined as ending at a '.', '!' or '?' followed by either the
+                // end of a line, or by a space or tab.  Any number of closing ')', ']', '"'
+                // and ''' characters may appear after the '.', '!' or '?' before the spaces,
+                // tabs or end of line.  A paragraph and section boundary is also a sentence
+                // boundary.
+                // If the 'J' flag is present in 'cpoptions', at least two spaces have to
+                // follow the punctuation mark; <Tab>s are not recognized as white space.
+                // The definition of a sentence cannot be changed.
+                //
+                //               *paragraph*
+                // A paragraph begins after each empty line, and also at each of a set of
+                // paragraph macros, specified by the pairs of characters in the 'paragraphs'
+                // option.  The default is "IPLPPPQPP TPHPLIPpLpItpplpipbp", which corresponds to
+                // the macros ".IP", ".LP", etc.  (These are nroff macros, so the dot must be in
+                // the first column).  A section boundary is also a paragraph boundary.
+                // Note that a blank line (only containing white space) is NOT a paragraph
+                // boundary.
+                // Also note that this does not include a '{' or '}' in the first column.  When
+                // the '{' flag is in 'cpoptions' then '{' in the first column is used as a
+                // paragraph boundary |posix|.
+                //
+                //               *section*
+                // A section begins after a form-feed (<C-L>) in the first column and at each of
+                // a set of section macros, specified by the pairs of characters in the
+                // 'sections' option.  The default is "SHNHH HUnhsh", which defines a section to
+                // start at the nroff macros ".SH", ".NH", ".H", ".HU", ".nh" and ".sh".
+                //
+                // The "]]" and "[[" commands stop at the '{' in the first column.  This is
+                // useful to find the start of a function in a C program.  To search for a '}' in
+                // the first column, the end of a C function, use "][" (forward) or "[]"
+                // (backward).  Note that the first character of the command determines the
+                // search direction.
+                //
+                // If your '{' or '}' are not in the first column, and you would like to use "[["
+                // and "]]" anyway, try these mappings: >
                 //
                 // Known issues:
                 // - b doesnt work on leading whitespace
