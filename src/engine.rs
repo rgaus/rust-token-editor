@@ -2118,29 +2118,32 @@ impl Buffer {
             return Ok(false);
         };
 
-        match self.verb {
+        let verb_result = match self.verb {
             Some(Verb::Delete) => {
-                let starting_char_of_selection = if selection.is_backwards {
-                    selection.text(&mut self.document).chars().last()
-                } else {
-                    selection.text(&mut self.document).chars().next()
-                };
-                let starting_char_of_selection_is_whitespace = if let Some(c) = starting_char_of_selection {
-                    is_whitespace_char(c)
-                } else {
-                    false
-                };
-
                 let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
 
                 // After the delete, reset the offset to the start of the deletion operation
                 let tokens_collection = self.document.tokens_mut();
-                let mut new_offset = tokens_collection.compute_offset(deleted_selection.starting_token_id);
-                new_offset += deleted_selection.starting_token_offset;
-                if starting_char_of_selection_is_whitespace {
-                    new_offset += 1;
-                }
-                self.document.seek(new_offset);
+                let new_offset = deleted_selection.compute_start_offset(&mut self.document);
+
+                // If the character this offset is supposed to be on is greater than the number of
+                // characters in that row, then move the selection to the end of the row.
+                //
+                // An example case where this is hit is with `D`.
+                let (rows, cols) = self.document.convert_offset_to_rows_cols(new_offset);
+                let modified_new_offset = match self.document.compute_length_of_row_in_chars_excluding_newline(rows) {
+                    Ok(row_length) => {
+                        if cols > row_length {
+                            Ok(self.document.convert_rows_cols_to_offset((rows, row_length)))
+                        } else {
+                            Ok(new_offset)
+                        }
+                    },
+                    Err(e) => Err(e),
+                }?;
+
+                self.document.seek(modified_new_offset);
+                Ok(())
             },
             // Yank,
             // Change,
@@ -2151,8 +2154,12 @@ impl Buffer {
             // Uppercase,
             // Lowercase,
 
-            _ => {},
-        }
+            _ => Ok(()),
+        };
+
+        if let Err(e) = verb_result {
+            return Err(e);
+        };
 
         // After changing the character, adjust the preferred character if the user has moved
         // further to the right.
