@@ -1334,7 +1334,7 @@ impl Buffer {
         for character in input.chars() {
             match character {
                 // TODO:
-                // h / j / k / l - moving around DONE FIXME: add "preferred column" tests
+                // h / j / k / l - moving around DONE
                 // w / W / b / B / e / E - word+back+end DONE
                 // ge / gE - go to end of previous word
                 // 0 / ^ / $ - start + end of line DONE
@@ -4049,6 +4049,17 @@ mod test_engine {
 
                 buffer.process_input("lljjhkdl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbrbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_preserve_the_active_column_when_moving_through_a_shorter_row() {
+                let mut document = Document::new_from_literal("oneone\ntwo\nthreethree");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("$");
+                buffer.process_input("jj");
+                buffer.process_input("x");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oneone\ntwo\nthreehree");
             }
 
             #[test]
