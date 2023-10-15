@@ -1340,12 +1340,12 @@ impl Buffer {
                 // 0 / ^ / $ - start + end of line DONE
                 // g_ - last non blank char on line
                 // f / F / t / T / ; / , - to+find DONE
-                // dd / cc - FIXME: add tests
-                // D / C / Y - FIXME: add tests
-                // gg / G / 123G - go to line number - FIXME: add tests
-                // 10| - go to col number FIXME: add tests
-                // 50% - go to percentage of file - computed with `({count} * number-of-lines + 99) / 100` FIXME: add tests
-                // 10go - go to `n`th byte in the file FIXME: add tests
+                // dd / cc DONE
+                // D / C / Y DONE
+                // gg / G / 122G DONE
+                // 10| - go to col number DONE
+                // 50% - go to percentage of file DONE
+                // 10go - go to `n`th byte in the file DONE
                 // % - matching brace
                 // x/X - delete char DONE
                 // r - replace char
@@ -4252,6 +4252,195 @@ mod test_engine {
 
                 buffer.process_input("jj3lD");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbaz");
+            }
+        }
+
+        mod test_go_to_line {
+            use super::*;
+
+            #[test]
+            fn it_should_go_to_line_1() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                // Go to not the first character of the line
+                buffer.process_input("lll");
+                // Go to line 1, delete a char
+                buffer.process_input("1Gdl");
+                // Make sure the first character of line 1 is deleted
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_line_2() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("2Gdl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\narbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_line_2_with_starting_whitespace() {
+                let mut document = Document::new_from_literal("foofoo\n  barbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("2Gdl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\n  arbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_line_999() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("999Gdl");
+                // Going to line after the end of the document should go to the last line
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_first_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                // Go to not the first character of the line
+                buffer.process_input("lll");
+                // Go to first line, delete a char
+                buffer.process_input("ggdl");
+                // Make sure the first character of the first line is deleted
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_last_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("GGdl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nazbaz");
+            }
+        }
+
+        mod test_go_to_column {
+            use super::*;
+
+            #[test]
+            fn it_should_go_to_column_3() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("3|dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "fofoo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_column_999() {
+                let mut document = Document::new_from_literal("foofao\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("999|dl");
+                // Since 999 is beyond the length of the row, delete the last char in the row
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofa\nbarbar\nbazbaz");
+            }
+        }
+
+        mod test_go_to_percentage {
+            use super::*;
+
+            #[test]
+            fn it_should_go_to_50_percent() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("50%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_100_percent() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("100%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbazba");
+            }
+
+            #[test]
+            fn it_should_go_to_1_percent() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("1%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "fofoo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_be_unable_to_go_to_0_percent() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                // Go to NOT the first line and not the first char
+                buffer.process_input("jjll");
+
+                // Try to go to 0% and delete a char
+                // NOTE that `0%` will be interpreted as `0` `%`, so it will go to the start
+                // of the line
+                buffer.process_input("0%dl");
+
+                // Make sure that going to 0% did not go to the start of the document
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nazbaz");
+            }
+        }
+
+        mod test_go_to_byte_offset {
+            use super::*;
+
+            #[test]
+            fn it_should_go_to_byte_offset_4() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("4godl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foooo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_byte_offset_999() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("999godl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbazba");
+            }
+
+            #[test]
+            #[ignore]
+            fn it_should_go_to_byte_offset_0() {
+                // FIXME: this test doesn't pass yet
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                // Go to NOT the first line and not the first char
+                buffer.process_input("jjll");
+
+                buffer.process_input("0godl");
+                // Make sure that the first character was removed
+                // NOTE: 0 and 1 should do the same thing
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_go_to_byte_offset_1() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                // Go to NOT the first line and not the first char
+                buffer.process_input("jjll");
+
+                buffer.process_input("1godl");
+                // Make sure that the first character was removed
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
             }
         }
     }
