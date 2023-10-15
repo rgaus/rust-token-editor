@@ -1885,7 +1885,13 @@ impl Buffer {
                         if *line_number == 0 {
                             panic!("Cannot process Noun::GoToRow(0) - 0 is an invalid line number!");
                         }
-                        Ok(*line_number)
+                        let can_go_to_line = self.document.has_at_least_rows(*line_number)?;
+                        if can_go_to_line {
+                            Ok(*line_number)
+                        } else {
+                            // If the row is too large, then go to the final row
+                            self.document.compute_number_of_rows()
+                        }
                     },
                     Some(Noun::GoToFirstRow) => Ok(1),
                     Some(Noun::GoToLastRow) => self.document.compute_number_of_rows(),
