@@ -925,7 +925,22 @@ impl Document {
                 TraversalPattern::MatchingDelimiter => {
                     let initial_offset = self.get_offset();
 
-                    // FIXME: add special mode for C #if / #ifdef / #elif / #else / #endif
+                    #[derive(Debug)]
+                    struct DelimeterSet {
+                        search_forwards: bool,
+
+                        // Open delimeters are the series of chars that define the start
+                        open_delimeter_list: Vec<&'static str>,
+
+                        // Close delimeters are the series of chars that define the end
+                        close_delimeter_list: Vec<&'static str>,
+
+                        // End delimeters are a series of chars that one should stop on prematurely
+                        // when searching FORWARDS through the document. Importantly, these
+                        // sequences don't cause `depth` to be changed. This is primarily here
+                        // for use with #if / #else / #endif constructs.
+                        end_delimeter_list: Vec<&'static str>,
+                    }
 
                     // Figure out the start and end strings that represent an "open" and a "close"
                     //
@@ -935,33 +950,96 @@ impl Document {
                         let start_parenthesis_match = self.read_if_matches("(")?;
                         let end_parenthesis_match = self.read_if_matches(")")?;
                         if start_parenthesis_match.is_some() || end_parenthesis_match.is_some() {
-                            break 'block Some((start_parenthesis_match.is_some(), "(", ")"));
+                            break 'block Some(DelimeterSet{
+                                search_forwards: start_parenthesis_match.is_some(),
+                                open_delimeter_list: vec!["("],
+                                close_delimeter_list: vec![")"],
+                                end_delimeter_list: vec![],
+                            });
                         }
 
                         let start_square_match = self.read_if_matches("[")?;
                         let end_square_match = self.read_if_matches("]")?;
                         if start_square_match.is_some() || end_square_match.is_some() {
-                            break 'block Some((start_square_match.is_some(), "[", "]"));
+                            break 'block Some(DelimeterSet{
+                                search_forwards: start_square_match.is_some(),
+                                open_delimeter_list: vec!["["],
+                                close_delimeter_list: vec!["]"],
+                                end_delimeter_list: vec![],
+                            });
                         }
 
                         let start_curly_match = self.read_if_matches("{")?;
                         let end_curly_match = self.read_if_matches("}")?;
                         if start_curly_match.is_some() || end_curly_match.is_some() {
-                            break 'block Some((start_curly_match.is_some(), "{", "}"));
+                            break 'block Some(DelimeterSet{
+                                search_forwards: start_curly_match.is_some(),
+                                open_delimeter_list: vec!["{"],
+                                close_delimeter_list: vec!["}"],
+                                end_delimeter_list: vec![],
+                            });
                         }
 
                         let c_block_comment_start = self.read_if_matches("/*")?;
                         let c_block_comment_end = self.read_if_matches("*/")?;
                         if c_block_comment_start.is_some() || c_block_comment_end.is_some() {
-                            break 'block Some((c_block_comment_start.is_some(), "/*", "*/"));
+                            break 'block Some(DelimeterSet{
+                                search_forwards: c_block_comment_start.is_some(),
+                                open_delimeter_list: vec!["/*"],
+                                close_delimeter_list: vec!["*/"],
+                                end_delimeter_list: vec![],
+                            });
+                        }
+
+                        let preprocesser_if = self.read_if_matches("#if")?;
+                        let preprocesser_ifndef = self.read_if_matches("#ifndef")?;
+                        let preprocesser_ifdef = self.read_if_matches("#ifdef")?;
+                        let preprocesser_elif = self.read_if_matches("#elif")?;
+                        let preprocesser_else = self.read_if_matches("#else")?;
+                        if (
+                            preprocesser_if.is_some() ||
+                            preprocesser_ifndef.is_some() ||
+                            preprocesser_ifdef.is_some() ||
+                            preprocesser_elif.is_some() ||
+                            preprocesser_else.is_some()
+                        ) {
+                            break 'block Some(DelimeterSet{
+                                search_forwards: true,
+                                open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
+                                close_delimeter_list: vec!["#endif"],
+                                end_delimeter_list: vec!["#elif", "#else"],
+                            });
+                        }
+
+                        let preprocesser_endif = self.read_if_matches("#endif")?;
+                        if preprocesser_endif.is_some() {
+                            break 'block Some(DelimeterSet{
+                                search_forwards: false,
+                                open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
+                                close_delimeter_list: vec!["#endif"],
+                                end_delimeter_list: vec!["#elif", "#else"],
+                            });
                         }
 
                         None
                     };
+                    println!("MATCH DELIMITER: {:?}", result);
 
-                    if let Some((search_forwards, start_delimeter, end_delimeter)) = result {
-                        let start_first_char = start_delimeter.chars().next().unwrap();
-                        let end_first_char = end_delimeter.chars().next().unwrap();
+                    if let Some(DelimeterSet{
+                        search_forwards,
+                        open_delimeter_list,
+                        close_delimeter_list,
+                        end_delimeter_list,
+                    }) = result {
+                        let start_first_char_options: Vec<char> = open_delimeter_list.iter().map(
+                            |start_delimeter| start_delimeter.chars().next().unwrap()
+                        ).collect();
+                        let close_first_char_options: Vec<char> = close_delimeter_list.iter().map(
+                            |close_delimeter| close_delimeter.chars().next().unwrap()
+                        ).collect();
+                        let end_first_char_options: Vec<char> = end_delimeter_list.iter().map(
+                            |end_delimeter| end_delimeter.chars().next().unwrap()
+                        ).collect();
 
                         if !search_forwards {
                             self.seek(self.get_offset() - 1);
@@ -969,12 +1047,21 @@ impl Document {
 
                         // Now, search for the other delimeter!
                         // NOTE: start at 1 because the first delimeter was just parsed above
+                        // let mut depth = if search_forwards { 1 } else { 0 };
                         let mut depth = 1;
                         loop {
                             let read_result = if search_forwards {
-                                self.read_forwards_until(|c, _| c == start_first_char || c == end_first_char, true, false)
+                                self.read_forwards_until(
+                                    |c, _| start_first_char_options.contains(&c) || close_first_char_options.contains(&c) || end_first_char_options.contains(&c),
+                                    true,
+                                    false,
+                                )
                             } else {
-                                self.read_backwards_until(|c, _| c == start_first_char || c == end_first_char, true, false)
+                                self.read_backwards_until(
+                                    |c, _| start_first_char_options.contains(&c) || close_first_char_options.contains(&c) || end_first_char_options.contains(&c),
+                                    true,
+                                    false,
+                                )
                             }?;
                             println!("READ RESULT: {read_result:?}");
 
@@ -989,22 +1076,29 @@ impl Document {
                                 }
                             }
 
+                            // FIRST: look for open delimeters and increase the depth by one if it
+                            // is found
                             if search_forwards {
                                 self.seek_push(self.get_offset() - 1);
                             } else {
-                                self.seek_push(self.get_offset() + 1);
+                                self.seek_push(self.get_offset());
                             }
-                            let found_start_delimeter = self.read_if_matches(start_delimeter)?;
+                            let found_start_delimeter = open_delimeter_list.iter().find(|start_delimeter| {
+                                match self.read_if_matches(start_delimeter) {
+                                    Ok(Some(_)) => true,
+                                    _ => false,
+                                }
+                            });
                             self.seek_pop();
 
-                            println!("---- {:?}", found_start_delimeter);
+                            println!("s---- {:?} {:?}", open_delimeter_list, found_start_delimeter);
                             if found_start_delimeter.is_some() {
                                 if search_forwards {
-                                    println!("+1");
                                     depth += 1;
+                                    println!("+1 -> {depth}");
                                 } else {
-                                    println!("-1");
                                     depth -= 1;
+                                    println!("-1 -> {depth}");
                                     if depth == 0 {
                                         // Found the matching delimeter!
                                         break;
@@ -1013,24 +1107,56 @@ impl Document {
                                 continue;
                             }
 
+                            // SECOND: look for end delimeters, and if 
                             if search_forwards {
                                 self.seek_push(self.get_offset() - 1);
                             } else {
-                                self.seek_push(self.get_offset() + 1);
+                                self.seek_push(self.get_offset());
                             }
-                            let found_end_delimeter = self.read_if_matches(start_delimeter)?;
+                            let found_end_delimeter = end_delimeter_list.iter().find(|end_delimeter| {
+                                match self.read_if_matches(end_delimeter) {
+                                    Ok(Some(_)) => true,
+                                    _ => false,
+                                }
+                            });
                             self.seek_pop();
+                            println!("e---- {:?} {:?}", end_delimeter_list, found_end_delimeter);
                             if found_end_delimeter.is_some() {
                                 if search_forwards {
-                                    println!("-1");
+                                    if depth == 1 {
+                                        // Found the matching delimeter!
+                                        break;
+                                    }
+                                }
+                                continue;
+                            }
+
+                            // THIRD: look for close delimeters and decrease the depth by one if
+                            // it is found
+                            if search_forwards {
+                                self.seek_push(self.get_offset() - 1);
+                            } else {
+                                self.seek_push(self.get_offset());
+                            }
+                            let found_close_delimeter = close_delimeter_list.iter().find(|close_delimeter| {
+                                match self.read_if_matches(close_delimeter) {
+                                    Ok(Some(_)) => true,
+                                    _ => false,
+                                }
+                            });
+                            self.seek_pop();
+                            println!("c---- {:?} {:?}", close_delimeter_list, found_close_delimeter);
+                            if found_close_delimeter.is_some() {
+                                if search_forwards {
                                     depth -= 1;
+                                    println!("-1 -> {depth}");
                                     if depth == 0 {
                                         // Found the matching delimeter!
                                         break;
                                     }
                                 } else {
-                                    println!("+1");
-                                    depth += 1
+                                    depth += 1;
+                                    println!("+1 -> {depth}");
                                 }
                                 continue;
                             }
@@ -1679,7 +1805,7 @@ impl Buffer {
                 // 10| - go to col number DONE
                 // 50% - go to percentage of file DONE
                 // 10go - go to `n`th byte in the file DONE
-                // % - matching brace
+                // % - matching brace DONE FIXME: write tests for this
                 // x/X - delete char DONE
                 // r - replace char
                 // ( / ) / { / } / [[ /  ]] - move back and forward sentences and paragraphs and sections, see below for
