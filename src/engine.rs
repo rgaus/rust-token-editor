@@ -1078,87 +1078,93 @@ impl Document {
 
                             // FIRST: look for open delimeters and increase the depth by one if it
                             // is found
-                            if search_forwards {
-                                self.seek_push(self.get_offset() - 1);
-                            } else {
-                                self.seek_push(self.get_offset());
-                            }
-                            let found_start_delimeter = open_delimeter_list.iter().find(|start_delimeter| {
-                                match self.read_if_matches(start_delimeter) {
-                                    Ok(Some(_)) => true,
-                                    _ => false,
-                                }
-                            });
-                            self.seek_pop();
-
-                            println!("s---- {:?} {:?}", open_delimeter_list, found_start_delimeter);
-                            if found_start_delimeter.is_some() {
+                            {
                                 if search_forwards {
-                                    depth += 1;
-                                    println!("+1 -> {depth}");
+                                    self.seek_push(self.get_offset() - 1);
                                 } else {
-                                    depth -= 1;
-                                    println!("-1 -> {depth}");
-                                    if depth == 0 {
-                                        // Found the matching delimeter!
-                                        break;
-                                    }
+                                    self.seek_push(self.get_offset());
                                 }
-                                continue;
+                                let found_start_delimeter = open_delimeter_list.iter().find(|start_delimeter| {
+                                    match self.read_if_matches(start_delimeter) {
+                                        Ok(Some(_)) => true,
+                                        _ => false,
+                                    }
+                                });
+                                self.seek_pop();
+
+                                println!("s---- {:?} {:?}", open_delimeter_list, found_start_delimeter);
+                                if found_start_delimeter.is_some() {
+                                    if search_forwards {
+                                        depth += 1;
+                                        println!("+1 -> {depth}");
+                                    } else {
+                                        depth -= 1;
+                                        println!("-1 -> {depth}");
+                                        if depth == 0 {
+                                            // Found the matching delimeter!
+                                            break;
+                                        }
+                                    }
+                                    continue;
+                                }
                             }
 
                             // SECOND: look for end delimeters, and if 
-                            if search_forwards {
-                                self.seek_push(self.get_offset() - 1);
-                            } else {
-                                self.seek_push(self.get_offset());
-                            }
-                            let found_end_delimeter = end_delimeter_list.iter().find(|end_delimeter| {
-                                match self.read_if_matches(end_delimeter) {
-                                    Ok(Some(_)) => true,
-                                    _ => false,
-                                }
-                            });
-                            self.seek_pop();
-                            println!("e---- {:?} {:?}", end_delimeter_list, found_end_delimeter);
-                            if found_end_delimeter.is_some() {
+                            {
                                 if search_forwards {
-                                    if depth == 1 {
-                                        // Found the matching delimeter!
-                                        break;
-                                    }
+                                    self.seek_push(self.get_offset() - 1);
+                                } else {
+                                    self.seek_push(self.get_offset());
                                 }
-                                continue;
+                                let found_end_delimeter = end_delimeter_list.iter().find(|end_delimeter| {
+                                    match self.read_if_matches(end_delimeter) {
+                                        Ok(Some(_)) => true,
+                                        _ => false,
+                                    }
+                                });
+                                self.seek_pop();
+                                println!("e---- {:?} {:?}", end_delimeter_list, found_end_delimeter);
+                                if found_end_delimeter.is_some() {
+                                    if search_forwards {
+                                        if depth == 1 {
+                                            // Found the matching delimeter!
+                                            break;
+                                        }
+                                    }
+                                    continue;
+                                }
                             }
 
                             // THIRD: look for close delimeters and decrease the depth by one if
                             // it is found
-                            if search_forwards {
-                                self.seek_push(self.get_offset() - 1);
-                            } else {
-                                self.seek_push(self.get_offset());
-                            }
-                            let found_close_delimeter = close_delimeter_list.iter().find(|close_delimeter| {
-                                match self.read_if_matches(close_delimeter) {
-                                    Ok(Some(_)) => true,
-                                    _ => false,
-                                }
-                            });
-                            self.seek_pop();
-                            println!("c---- {:?} {:?}", close_delimeter_list, found_close_delimeter);
-                            if found_close_delimeter.is_some() {
+                            {
                                 if search_forwards {
-                                    depth -= 1;
-                                    println!("-1 -> {depth}");
-                                    if depth == 0 {
-                                        // Found the matching delimeter!
-                                        break;
-                                    }
+                                    self.seek_push(self.get_offset() - 1);
                                 } else {
-                                    depth += 1;
-                                    println!("+1 -> {depth}");
+                                    self.seek_push(self.get_offset());
                                 }
-                                continue;
+                                let found_close_delimeter = close_delimeter_list.iter().find(|close_delimeter| {
+                                    match self.read_if_matches(close_delimeter) {
+                                        Ok(Some(_)) => true,
+                                        _ => false,
+                                    }
+                                });
+                                self.seek_pop();
+                                println!("c---- {:?} {:?}", close_delimeter_list, found_close_delimeter);
+                                if found_close_delimeter.is_some() {
+                                    if search_forwards {
+                                        depth -= 1;
+                                        println!("-1 -> {depth}");
+                                        if depth == 0 {
+                                            // Found the matching delimeter!
+                                            break;
+                                        }
+                                    } else {
+                                        depth += 1;
+                                        println!("+1 -> {depth}");
+                                    }
+                                    continue;
+                                }
                             }
                         }
 
