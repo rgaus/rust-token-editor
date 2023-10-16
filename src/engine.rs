@@ -1047,8 +1047,8 @@ impl Document {
 
                         // Now, search for the other delimeter!
                         // NOTE: start at 1 because the first delimeter was just parsed above
-                        // let mut depth = if search_forwards { 1 } else { 0 };
-                        let mut depth = 1;
+                        let mut depth = if search_forwards && open_delimeter_list.contains(&"#if") { 1 } else { 0 };
+                        // let mut depth = 1;
                         loop {
                             let read_result = if search_forwards {
                                 self.read_forwards_until(
