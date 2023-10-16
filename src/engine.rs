@@ -931,15 +931,18 @@ impl Document {
 
                         // Open delimeters are the series of chars that define the start
                         open_delimeter_list: Vec<&'static str>,
+                        open_delimeter_odd_number_backslashes_escape: bool,
 
                         // Close delimeters are the series of chars that define the end
                         close_delimeter_list: Vec<&'static str>,
+                        close_delimeter_odd_number_backslashes_escape: bool,
 
                         // End delimeters are a series of chars that one should stop on prematurely
                         // when searching FORWARDS through the document. Importantly, these
                         // sequences don't cause `depth` to be changed. This is primarily here
                         // for use with #if / #else / #endif constructs.
                         end_delimeter_list: Vec<&'static str>,
+                        end_delimeter_odd_number_backslashes_escape: bool,
                     }
 
                     // Figure out the start and end strings that represent an "open" and a "close"
@@ -953,8 +956,11 @@ impl Document {
                             break 'block Some(DelimeterSet{
                                 search_forwards: start_parenthesis_match.is_some(),
                                 open_delimeter_list: vec!["("],
+                                open_delimeter_odd_number_backslashes_escape: true,
                                 close_delimeter_list: vec![")"],
+                                close_delimeter_odd_number_backslashes_escape: true,
                                 end_delimeter_list: vec![],
+                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -964,8 +970,11 @@ impl Document {
                             break 'block Some(DelimeterSet{
                                 search_forwards: start_square_match.is_some(),
                                 open_delimeter_list: vec!["["],
+                                open_delimeter_odd_number_backslashes_escape: true,
                                 close_delimeter_list: vec!["]"],
+                                close_delimeter_odd_number_backslashes_escape: true,
                                 end_delimeter_list: vec![],
+                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -975,8 +984,11 @@ impl Document {
                             break 'block Some(DelimeterSet{
                                 search_forwards: start_curly_match.is_some(),
                                 open_delimeter_list: vec!["{"],
+                                open_delimeter_odd_number_backslashes_escape: true,
                                 close_delimeter_list: vec!["}"],
+                                close_delimeter_odd_number_backslashes_escape: true,
                                 end_delimeter_list: vec![],
+                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -986,8 +998,11 @@ impl Document {
                             break 'block Some(DelimeterSet{
                                 search_forwards: c_block_comment_start.is_some(),
                                 open_delimeter_list: vec!["/*"],
+                                open_delimeter_odd_number_backslashes_escape: false,
                                 close_delimeter_list: vec!["*/"],
+                                close_delimeter_odd_number_backslashes_escape: false,
                                 end_delimeter_list: vec![],
+                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -1006,8 +1021,11 @@ impl Document {
                             break 'block Some(DelimeterSet{
                                 search_forwards: true,
                                 open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
+                                open_delimeter_odd_number_backslashes_escape: false,
                                 close_delimeter_list: vec!["#endif"],
+                                close_delimeter_odd_number_backslashes_escape: false,
                                 end_delimeter_list: vec!["#elif", "#else"],
+                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -1016,8 +1034,11 @@ impl Document {
                             break 'block Some(DelimeterSet{
                                 search_forwards: false,
                                 open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
+                                open_delimeter_odd_number_backslashes_escape: false,
                                 close_delimeter_list: vec!["#endif"],
+                                close_delimeter_odd_number_backslashes_escape: false,
                                 end_delimeter_list: vec!["#elif", "#else"],
+                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -1030,6 +1051,7 @@ impl Document {
                         open_delimeter_list,
                         close_delimeter_list,
                         end_delimeter_list,
+                        ..
                     }) = result {
                         let start_first_char_options: Vec<char> = open_delimeter_list.iter().map(
                             |start_delimeter| start_delimeter.chars().next().unwrap()
