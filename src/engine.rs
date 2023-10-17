@@ -4941,5 +4941,159 @@ mod test_engine {
                 assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
             }
         }
+        mod test_percent_match_delimeter {
+            use super::*;
+
+            #[test]
+            fn it_should_go_to_other_parenthesis() {
+                let mut document = Document::new_from_literal("(foo bar) baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "(foo bar baz");
+            }
+
+            #[test]
+            fn it_should_go_to_other_nested_parenthesis() {
+                let mut document = Document::new_from_literal("(foo (bar) baz)");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "(foo (bar) baz");
+            }
+
+            #[test]
+            fn it_should_go_to_other_curly_brace() {
+                let mut document = Document::new_from_literal("{foo bar} baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "{foo bar baz");
+            }
+
+            #[test]
+            fn it_should_go_to_other_nested_curly_brace() {
+                let mut document = Document::new_from_literal("{foo {bar} baz}");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "{foo {bar} baz");
+            }
+
+            #[test]
+            fn it_should_go_to_other_square_bracket() {
+                let mut document = Document::new_from_literal("[foo bar] baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "[foo bar baz");
+            }
+
+            #[test]
+            fn it_should_go_to_other_nested_square_bracket() {
+                let mut document = Document::new_from_literal("[foo [bar] baz]");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "[foo [bar] baz");
+            }
+
+            #[test]
+            fn it_should_navigate_with_many_types_of_brackets() {
+                let mut document = Document::new_from_literal("[foo (b[ar] {baz])}");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "[foo (b[ar] {baz)}");
+            }
+
+            #[test]
+            fn it_should_not_navigate_with_unmatched_brackets() {
+                let mut document = Document::new_from_literal("[foo (bar) baz}");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo (bar) baz}");
+            }
+
+            #[test]
+            fn it_should_go_to_other_c_multiline_comment() {
+                let mut document = Document::new_from_literal("/*foo bar*/ baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                // FIXME: this test isn't quite right, the expected output is `/*foo bar* baz`
+                assert_eq!(buffer.document.tokens_mut().stringify(), "/*foo bar/ baz");
+            }
+
+            #[test]
+            fn it_should_go_through_all_parts_of_c_preprocessor_if() {
+                let raw_document = "#if foo\n  one\n#elif bar\n  two\n#else\n  three\n#endif";
+
+                // Part one: #if -> #elif
+                {
+                    let mut document = Document::new_from_literal(raw_document);
+                    let mut buffer = document.create_buffer();
+
+                    buffer.process_input("%dl");
+                    assert_eq!(
+                        buffer.document.tokens_mut().stringify(),
+                        "#if foo\n  one\nelif bar\n  two\n#else\n  three\n#endif"
+                    );
+                }
+
+                // Part two: #if -> #elif -> #else
+                {
+                    let mut document = Document::new_from_literal(raw_document);
+                    let mut buffer = document.create_buffer();
+                    buffer.process_input("%");
+                    buffer.process_input("%dl");
+                    assert_eq!(
+                        buffer.document.tokens_mut().stringify(),
+                        "#if foo\n  one\n#elif bar\n  two\nelse\n  three\n#endif"
+                    );
+                }
+
+                // Part three: #if -> #elif -> #else -> #endif
+                {
+                    let mut document = Document::new_from_literal(raw_document);
+                    let mut buffer = document.create_buffer();
+                    buffer.process_input("%");
+                    buffer.process_input("%");
+                    buffer.process_input("%dl");
+                    assert_eq!(
+                        buffer.document.tokens_mut().stringify(),
+                        "#if foo\n  one\n#elif bar\n  two\n#else\n  three\nendif"
+                    );
+                }
+
+                // Part four: #if -> #elif -> #else -> #endif -> #if
+                {
+                    let mut document = Document::new_from_literal(raw_document);
+                    let mut buffer = document.create_buffer();
+                    buffer.process_input("%");
+                    buffer.process_input("%");
+                    buffer.process_input("%");
+                    buffer.process_input("%dl");
+                    assert_eq!(
+                        buffer.document.tokens_mut().stringify(),
+                        "if foo\n  one\n#elif bar\n  two\n#else\n  three\n#endif"
+                    );
+                }
+            }
+
+            #[test]
+            fn it_should_respect_nested_c_preprocessor_ifs() {
+                let mut document = Document::new_from_literal("#if foo\n  one\n#else\n  #if bar\n  two\n  #endif\n#endif");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%"); // #if -> #else
+                buffer.process_input("%dl"); // #else -> second #endif
+                assert_eq!(
+                    buffer.document.tokens_mut().stringify(),
+                    "#if foo\n  one\n#else\n  #if bar\n  two\n  #endif\nendif"
+                );
+            }
+        }
     }
 }
