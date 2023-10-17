@@ -143,6 +143,29 @@ impl Document {
         }
     }
 
+    fn read_forwards_and_backwards_to_find_backslashes(&mut self) -> usize {
+        let initial_offset = self.get_offset();
+        let mut backslash_count = 0;
+
+        // First, try to read backwards looking for backslashes
+        if initial_offset > 0 {
+            self.seek(initial_offset - 1);
+            while let Ok(Some(_)) = self.read_if_matches("\\") {
+                backslash_count += 1;
+                self.seek(self.get_offset() - 2);
+            }
+        }
+
+        // Then, try to read fowards
+        self.seek(initial_offset);
+        while let Ok(Some(_)) = self.read_if_matches("\\") {
+            backslash_count += 1;
+        }
+
+        println!("BACKSLASH COUNT: {} offset={}", backslash_count, self.get_offset());
+        backslash_count
+    }
+
     // pub fn read_backwards(&mut self, number_of_chars: usize) -> Result<Option<(
     //     std::ops::Range<usize>, #<{(| The matched token offset range |)}>#
     //     String, #<{(| The matched literal data in all tokens, concatenated |)}>#
@@ -928,22 +951,22 @@ impl Document {
                     #[derive(Debug)]
                     struct DelimeterSet {
                         search_forwards: bool,
+                        backslash_escaping_supported: bool,
 
                         // Open delimeters are the series of chars that define the start
                         open_delimeter_list: Vec<&'static str>,
-                        open_delimeter_odd_number_backslashes_escape: bool,
 
                         // Close delimeters are the series of chars that define the end
                         close_delimeter_list: Vec<&'static str>,
-                        close_delimeter_odd_number_backslashes_escape: bool,
 
                         // End delimeters are a series of chars that one should stop on prematurely
                         // when searching FORWARDS through the document. Importantly, these
                         // sequences don't cause `depth` to be changed. This is primarily here
                         // for use with #if / #else / #endif constructs.
                         end_delimeter_list: Vec<&'static str>,
-                        end_delimeter_odd_number_backslashes_escape: bool,
                     }
+
+                    let original_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
 
                     // Figure out the start and end strings that represent an "open" and a "close"
                     //
@@ -955,12 +978,10 @@ impl Document {
                         if start_parenthesis_match.is_some() || end_parenthesis_match.is_some() {
                             break 'block Some(DelimeterSet{
                                 search_forwards: start_parenthesis_match.is_some(),
+                                backslash_escaping_supported: true,
                                 open_delimeter_list: vec!["("],
-                                open_delimeter_odd_number_backslashes_escape: true,
                                 close_delimeter_list: vec![")"],
-                                close_delimeter_odd_number_backslashes_escape: true,
                                 end_delimeter_list: vec![],
-                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -969,12 +990,10 @@ impl Document {
                         if start_square_match.is_some() || end_square_match.is_some() {
                             break 'block Some(DelimeterSet{
                                 search_forwards: start_square_match.is_some(),
+                                backslash_escaping_supported: true,
                                 open_delimeter_list: vec!["["],
-                                open_delimeter_odd_number_backslashes_escape: true,
                                 close_delimeter_list: vec!["]"],
-                                close_delimeter_odd_number_backslashes_escape: true,
                                 end_delimeter_list: vec![],
-                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -983,12 +1002,10 @@ impl Document {
                         if start_curly_match.is_some() || end_curly_match.is_some() {
                             break 'block Some(DelimeterSet{
                                 search_forwards: start_curly_match.is_some(),
+                                backslash_escaping_supported: true,
                                 open_delimeter_list: vec!["{"],
-                                open_delimeter_odd_number_backslashes_escape: true,
                                 close_delimeter_list: vec!["}"],
-                                close_delimeter_odd_number_backslashes_escape: true,
                                 end_delimeter_list: vec![],
-                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -997,12 +1014,10 @@ impl Document {
                         if c_block_comment_start.is_some() || c_block_comment_end.is_some() {
                             break 'block Some(DelimeterSet{
                                 search_forwards: c_block_comment_start.is_some(),
+                                backslash_escaping_supported: false,
                                 open_delimeter_list: vec!["/*"],
-                                open_delimeter_odd_number_backslashes_escape: false,
                                 close_delimeter_list: vec!["*/"],
-                                close_delimeter_odd_number_backslashes_escape: false,
                                 end_delimeter_list: vec![],
-                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -1020,12 +1035,10 @@ impl Document {
                         ) {
                             break 'block Some(DelimeterSet{
                                 search_forwards: true,
+                                backslash_escaping_supported: false,
                                 open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
-                                open_delimeter_odd_number_backslashes_escape: false,
                                 close_delimeter_list: vec!["#endif"],
-                                close_delimeter_odd_number_backslashes_escape: false,
                                 end_delimeter_list: vec!["#elif", "#else"],
-                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
@@ -1033,33 +1046,55 @@ impl Document {
                         if preprocesser_endif.is_some() {
                             break 'block Some(DelimeterSet{
                                 search_forwards: false,
+                                backslash_escaping_supported: false,
                                 open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
-                                open_delimeter_odd_number_backslashes_escape: false,
                                 close_delimeter_list: vec!["#endif"],
-                                close_delimeter_odd_number_backslashes_escape: false,
                                 end_delimeter_list: vec!["#elif", "#else"],
-                                end_delimeter_odd_number_backslashes_escape: false,
                             });
                         }
 
                         None
                     };
-                    println!("MATCH DELIMITER: {:?}", result);
+                    println!("MATCH DELIMITER: {:?} {}", result, original_is_backslash_escaped);
 
                     if let Some(DelimeterSet{
                         search_forwards,
+                        backslash_escaping_supported,
                         open_delimeter_list,
                         close_delimeter_list,
                         end_delimeter_list,
-                        ..
                     }) = result {
-                        let start_first_char_options: Vec<char> = open_delimeter_list.iter().map(
+                        // Add a backslash in front if the first token is escaped via an odd number
+                        // of backslashes
+                        let add_backslash_prefix = |n: &&str| {
+                            if backslash_escaping_supported && original_is_backslash_escaped {
+                                format!("\\{n}")
+                            } else {
+                                String::from(*n)
+                            }
+                        };
+                        let open_delimeter_list_string: Vec<String> = open_delimeter_list
+                            .iter()
+                            .map(add_backslash_prefix)
+                            .collect();
+                        let close_delimeter_list_string: Vec<String> = close_delimeter_list
+                            .iter()
+                            .map(add_backslash_prefix)
+                            .collect();
+                        let end_delimeter_list_string: Vec<String> = end_delimeter_list
+                            .iter()
+                            .map(add_backslash_prefix)
+                            .collect();
+
+                        // Extract the first character of each type of delimeter for use in the
+                        // search
+                        let start_first_char_options: Vec<char> = open_delimeter_list_string.iter().map(
                             |start_delimeter| start_delimeter.chars().next().unwrap()
                         ).collect();
-                        let close_first_char_options: Vec<char> = close_delimeter_list.iter().map(
+                        let close_first_char_options: Vec<char> = close_delimeter_list_string.iter().map(
                             |close_delimeter| close_delimeter.chars().next().unwrap()
                         ).collect();
-                        let end_first_char_options: Vec<char> = end_delimeter_list.iter().map(
+                        let end_first_char_options: Vec<char> = end_delimeter_list_string.iter().map(
                             |end_delimeter| end_delimeter.chars().next().unwrap()
                         ).collect();
 
@@ -1069,8 +1104,8 @@ impl Document {
 
                         // Now, search for the other delimeter!
                         // NOTE: start at 1 because the first delimeter was just parsed above
-                        let mut depth = if search_forwards && open_delimeter_list.contains(&"#if") { 1 } else { 0 };
-                        // let mut depth = 1;
+                        // let mut depth = if search_forwards && open_delimeter_list.contains(&"#if") { 1 } else { 0 };
+                        let mut depth = if search_forwards { 1 } else { 0 };
                         loop {
                             let read_result = if search_forwards {
                                 self.read_forwards_until(
@@ -1106,7 +1141,7 @@ impl Document {
                                 } else {
                                     self.seek_push(self.get_offset());
                                 }
-                                let found_start_delimeter = open_delimeter_list.iter().find(|start_delimeter| {
+                                let found_start_delimeter = open_delimeter_list_string.iter().find(|start_delimeter| {
                                     match self.read_if_matches(start_delimeter) {
                                         Ok(Some(_)) => true,
                                         _ => false,
@@ -1114,15 +1149,15 @@ impl Document {
                                 });
                                 self.seek_pop();
 
-                                println!("s---- {:?} {:?}", open_delimeter_list, found_start_delimeter);
                                 if found_start_delimeter.is_some() {
+                                    println!("o---- {:?} {:?}", open_delimeter_list_string, found_start_delimeter);
                                     if search_forwards {
                                         depth += 1;
-                                        println!("+1 -> {depth}");
+                                        println!("+1 -> depth={depth}");
                                     } else {
                                         depth -= 1;
-                                        println!("-1 -> {depth}");
-                                        if depth == 0 {
+                                        println!("-1 -> depth={depth}");
+                                        if !original_is_backslash_escaped && depth == 0 {
                                             // Found the matching delimeter!
                                             break;
                                         }
@@ -1138,15 +1173,15 @@ impl Document {
                                 } else {
                                     self.seek_push(self.get_offset());
                                 }
-                                let found_end_delimeter = end_delimeter_list.iter().find(|end_delimeter| {
+                                let found_end_delimeter = end_delimeter_list_string.iter().find(|end_delimeter| {
                                     match self.read_if_matches(end_delimeter) {
                                         Ok(Some(_)) => true,
                                         _ => false,
                                     }
                                 });
                                 self.seek_pop();
-                                println!("e---- {:?} {:?}", end_delimeter_list, found_end_delimeter);
                                 if found_end_delimeter.is_some() {
+                                    println!("e---- {:?} {:?}", end_delimeter_list_string, found_end_delimeter);
                                     if search_forwards {
                                         if depth == 1 {
                                             // Found the matching delimeter!
@@ -1165,25 +1200,25 @@ impl Document {
                                 } else {
                                     self.seek_push(self.get_offset());
                                 }
-                                let found_close_delimeter = close_delimeter_list.iter().find(|close_delimeter| {
+                                let found_close_delimeter = close_delimeter_list_string.iter().find(|close_delimeter| {
                                     match self.read_if_matches(close_delimeter) {
                                         Ok(Some(_)) => true,
                                         _ => false,
                                     }
                                 });
                                 self.seek_pop();
-                                println!("c---- {:?} {:?}", close_delimeter_list, found_close_delimeter);
                                 if found_close_delimeter.is_some() {
+                                    println!("c---- {:?} {:?}", close_delimeter_list_string, found_close_delimeter);
                                     if search_forwards {
                                         depth -= 1;
-                                        println!("-1 -> {depth}");
-                                        if depth == 0 {
+                                        println!("-1 -> depth={depth}");
+                                        if !original_is_backslash_escaped && depth == 0 {
                                             // Found the matching delimeter!
                                             break;
                                         }
                                     } else {
                                         depth += 1;
-                                        println!("+1 -> {depth}");
+                                        println!("+1 -> depth={depth}");
                                     }
                                     continue;
                                 }
@@ -1194,16 +1229,21 @@ impl Document {
                         if final_offset > 0 {
                             if is_not_last_iteration || verb.is_none() {
                                 final_offset -= 1;
-                                self.seek(final_offset);
                             }
                             if !search_forwards {
                                 final_offset += 1;
                                 if !is_not_last_iteration && verb.is_some() {
                                     final_offset -= 2;
                                 }
-                                self.seek(final_offset);
                             }
                         }
+
+                        // If backslash escaping is supported, then the initial backslash was
+                        // matched. The match should ACTUALLY be the first character.
+                        if backslash_escaping_supported && original_is_backslash_escaped {
+                            final_offset += 1;
+                        }
+                        self.seek(final_offset);
                         // println!("OFFSETS: {:?} {:?}", initial_offset, final_offset);
 
                         let mut selection = SequentialTokenSelection::new_from_offsets(
