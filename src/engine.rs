@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Index;
 
 use crate::token::*;
 use crate::token_match_template::*;
@@ -1639,6 +1640,69 @@ impl Document {
 
 
 
+// BufferOptions are used to track options that can be set or cleared which will effect how the
+// editor works.
+#[derive(Debug, Clone)]
+struct BufferOptions {
+    options: HashMap<String, String>,
+}
+impl BufferOptions {
+    fn new_empty() -> Self {
+        Self { options: HashMap::new() }
+    }
+    fn new_with_defaults() -> Self {
+        let mut options = Self::new_empty();
+        options.insert("matchpairs", "(:),{:},[:],<:>");
+        options.insert("cpoptions", "aABceFs");
+        options
+    }
+
+    pub fn insert(&mut self, key: &str, value: &str) {
+        self.options.insert(String::from(key), String::from(value));
+    }
+    pub fn append(&mut self, key: &str, value: &str) {
+        self.options.insert(String::from(key), format!("{}{}", self.get(key), value));
+    }
+    pub fn remove(&mut self, key: &str) {
+        self.options.remove(key);
+    }
+
+    fn coerse_to_bool(raw_string: &str) -> bool {
+        raw_string.to_ascii_lowercase().starts_with("t")
+    }
+
+    // Used by the % / MatchDelimeters command to figure out which delimeters should match.
+    pub fn supported_match_delimeters(&self) -> Vec<(&str, &str, Option<&str>)> {
+        self.get("matchpairs").split(",").flat_map(|open_close_end| {
+            match open_close_end.split(":").collect::<Vec<&str>>()[..] {
+                [open, close] => vec![(open, close, None)],
+                [open, close, end] => vec![(open, close, Some(end))],
+                [..] => vec![],
+            }
+        }).collect()
+    }
+
+    // Used by the % / MatchDelimeters command to figure out if prefixed backslash escapes before
+    // `supported_match_delimeters` should only ever match with other escaped delimeters
+    pub fn should_match_escaped_delimeters_distinctly(&self) -> bool {
+        self.get("cpoptions").contains("M")
+    }
+
+    pub fn get(&self, key: &str) -> &str {
+        match self.options.get(key) {
+            Some(value) => value,
+            None => "",
+        }
+    }
+}
+impl Index<&str> for BufferOptions {
+    type Output = str;
+
+    fn index(&self, key: &str) -> &str {
+        self.get(key)
+    }
+}
+
 
 
 #[derive(PartialEq)]
@@ -1736,6 +1800,8 @@ pub struct Buffer {
     document: Box<Document>,
     mode: Mode,
 
+    options: BufferOptions,
+
     // Position in the document in (rows, columns) format
     // (1, 1) is at the top left
     pub position: (usize, usize),
@@ -1773,6 +1839,7 @@ impl Buffer {
         Self {
             document: document,
             mode: Mode::Normal,
+            options: BufferOptions::new_with_defaults(),
             position: (1, 1),
             preferred_column: 1,
             state: ViewState::Initial,
