@@ -1633,7 +1633,8 @@ impl BufferOptions {
     fn new_with_defaults() -> Self {
         let mut options = Self::new_empty();
         options.insert("matchpairs", "(:),{:},[:],<:>");
-        options.insert("cpoptions", "aABceFs");
+        // options.insert("cpoptions", "aABceFs");
+        options.insert("cpoptions", "M");
         options
     }
 
