@@ -1134,13 +1134,17 @@ impl Document {
                             }
 
                             // FIRST: look for open delimeters and increase the depth by one if it
-                            // is found
+                            // is found.
                             {
                                 if search_forwards {
                                     self.seek_push(self.get_offset() - 1);
                                 } else {
                                     self.seek_push(self.get_offset());
                                 }
+                                let start_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
+                                let start_backslashes_match = if backslash_escaping_supported {
+                                    start_is_backslash_escaped == original_is_backslash_escaped
+                                } else { true };
                                 let found_start_delimeter = open_delimeter_list_string.iter().find(|start_delimeter| {
                                     match self.read_if_matches(start_delimeter) {
                                         Ok(Some(_)) => true,
@@ -1149,7 +1153,7 @@ impl Document {
                                 });
                                 self.seek_pop();
 
-                                if found_start_delimeter.is_some() {
+                                if found_start_delimeter.is_some() && start_backslashes_match {
                                     println!("o---- {:?} {:?}", open_delimeter_list_string, found_start_delimeter);
                                     if search_forwards {
                                         depth += 1;
@@ -1166,13 +1170,18 @@ impl Document {
                                 }
                             }
 
-                            // SECOND: look for end delimeters, and if 
+                            // SECOND: look for end delimeters, and if one is found at the top
+                            // level, then end the match there.
                             {
                                 if search_forwards {
                                     self.seek_push(self.get_offset() - 1);
                                 } else {
                                     self.seek_push(self.get_offset());
                                 }
+                                let end_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
+                                let end_backslashes_match = if backslash_escaping_supported {
+                                    end_is_backslash_escaped == original_is_backslash_escaped
+                                } else { true };
                                 let found_end_delimeter = end_delimeter_list_string.iter().find(|end_delimeter| {
                                     match self.read_if_matches(end_delimeter) {
                                         Ok(Some(_)) => true,
@@ -1180,7 +1189,7 @@ impl Document {
                                     }
                                 });
                                 self.seek_pop();
-                                if found_end_delimeter.is_some() {
+                                if found_end_delimeter.is_some() && end_backslashes_match {
                                     println!("e---- {:?} {:?}", end_delimeter_list_string, found_end_delimeter);
                                     if search_forwards {
                                         if depth == 1 {
@@ -1193,13 +1202,17 @@ impl Document {
                             }
 
                             // THIRD: look for close delimeters and decrease the depth by one if
-                            // it is found
+                            // it is found.
                             {
                                 if search_forwards {
                                     self.seek_push(self.get_offset() - 1);
                                 } else {
                                     self.seek_push(self.get_offset());
                                 }
+                                let close_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
+                                let close_backslashes_match = if backslash_escaping_supported {
+                                    close_is_backslash_escaped == original_is_backslash_escaped
+                                } else { true };
                                 let found_close_delimeter = close_delimeter_list_string.iter().find(|close_delimeter| {
                                     match self.read_if_matches(close_delimeter) {
                                         Ok(Some(_)) => true,
@@ -1207,7 +1220,7 @@ impl Document {
                                     }
                                 });
                                 self.seek_pop();
-                                if found_close_delimeter.is_some() {
+                                if found_close_delimeter.is_some() && close_backslashes_match {
                                     println!("c---- {:?} {:?}", close_delimeter_list_string, found_close_delimeter);
                                     if search_forwards {
                                         depth -= 1;
@@ -5003,6 +5016,15 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_go_to_escaped_parenthesis() {
+                let mut document = Document::new_from_literal("\\(foo (bar\\) baz)");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "\\(foo (bar\\ baz)");
+            }
+
+            #[test]
             fn it_should_go_to_other_curly_brace() {
                 let mut document = Document::new_from_literal("{foo bar} baz");
                 let mut buffer = document.create_buffer();
@@ -5021,6 +5043,15 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_go_to_escaped_curly_brace() {
+                let mut document = Document::new_from_literal("\\{foo {bar\\} baz}");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "\\{foo {bar\\ baz}");
+            }
+
+            #[test]
             fn it_should_go_to_other_square_bracket() {
                 let mut document = Document::new_from_literal("[foo bar] baz");
                 let mut buffer = document.create_buffer();
@@ -5036,6 +5067,15 @@ mod test_engine {
 
                 buffer.process_input("%dl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "[foo [bar] baz");
+            }
+
+            #[test]
+            fn it_should_go_to_escaped_square_bracket() {
+                let mut document = Document::new_from_literal("\\[foo [bar\\] baz]");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "\\[foo [bar\\ baz]");
             }
 
             #[test]
