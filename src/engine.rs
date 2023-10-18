@@ -467,6 +467,7 @@ impl Document {
         &mut self,
         pattern: TraversalPattern,
         verb: &Option<Verb>,
+        options: &BufferOptions,
         repeat_count: usize,
     ) -> Result<Option<(
         std::ops::Range<usize>, /* The matched token offset range */
@@ -950,21 +951,21 @@ impl Document {
                     let initial_offset = self.get_offset();
 
                     #[derive(Debug)]
-                    struct DelimeterSet {
+                    struct DelimeterSet<'a> {
                         search_forwards: bool,
                         backslash_escaping_supported: bool,
 
                         // Open delimeters are the series of chars that define the start
-                        open_delimeter_list: Vec<&'static str>,
+                        open_delimeter_list: Vec<&'a str>,
 
                         // Close delimeters are the series of chars that define the end
-                        close_delimeter_list: Vec<&'static str>,
+                        close_delimeter_list: Vec<&'a str>,
 
                         // End delimeters are a series of chars that one should stop on prematurely
                         // when searching FORWARDS through the document. Importantly, these
                         // sequences don't cause `depth` to be changed. This is primarily here
                         // for use with #if / #else / #endif constructs.
-                        end_delimeter_list: Vec<&'static str>,
+                        end_delimeter_list: Vec<&'a str>,
                     }
 
                     let original_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
@@ -974,40 +975,19 @@ impl Document {
                     // This is important so that matching patterns can be reference counted to
                     // determine which "open" goes with which "close"
                     let result = 'block: {
-                        let start_parenthesis_match = self.read_if_matches("(")?;
-                        let end_parenthesis_match = self.read_if_matches(")")?;
-                        if start_parenthesis_match.is_some() || end_parenthesis_match.is_some() {
-                            break 'block Some(DelimeterSet{
-                                search_forwards: start_parenthesis_match.is_some(),
-                                backslash_escaping_supported: true,
-                                open_delimeter_list: vec!["("],
-                                close_delimeter_list: vec![")"],
-                                end_delimeter_list: vec![],
-                            });
-                        }
-
-                        let start_square_match = self.read_if_matches("[")?;
-                        let end_square_match = self.read_if_matches("]")?;
-                        if start_square_match.is_some() || end_square_match.is_some() {
-                            break 'block Some(DelimeterSet{
-                                search_forwards: start_square_match.is_some(),
-                                backslash_escaping_supported: true,
-                                open_delimeter_list: vec!["["],
-                                close_delimeter_list: vec!["]"],
-                                end_delimeter_list: vec![],
-                            });
-                        }
-
-                        let start_curly_match = self.read_if_matches("{")?;
-                        let end_curly_match = self.read_if_matches("}")?;
-                        if start_curly_match.is_some() || end_curly_match.is_some() {
-                            break 'block Some(DelimeterSet{
-                                search_forwards: start_curly_match.is_some(),
-                                backslash_escaping_supported: true,
-                                open_delimeter_list: vec!["{"],
-                                close_delimeter_list: vec!["}"],
-                                end_delimeter_list: vec![],
-                            });
+                        let backslash_escaping_supported = options.should_match_escaped_delimeters_distinctly();
+                        for (open, close, maybe_end) in options.supported_match_delimeters() {
+                            let open_symbol_match = self.read_if_matches(open)?;
+                            let close_symbol_match = self.read_if_matches(close)?;
+                            if open_symbol_match.is_some() || close_symbol_match.is_some() {
+                                break 'block Some(DelimeterSet{
+                                    search_forwards: open_symbol_match.is_some(),
+                                    backslash_escaping_supported,
+                                    open_delimeter_list: vec![open],
+                                    close_delimeter_list: vec![close],
+                                    end_delimeter_list: if let Some(end) = maybe_end { vec![end] } else { vec![] },
+                                });
+                            }
                         }
 
                         let c_block_comment_start = self.read_if_matches("/*")?;
@@ -2287,9 +2267,9 @@ impl Buffer {
         let noun_match = match self.noun {
             Some(Noun::Character) => {
                 if self.is_backwards {
-                    self.document.read_to_pattern(TraversalPattern::Left, &self.verb, command_count)
+                    self.document.read_to_pattern(TraversalPattern::Left, &self.verb, &self.options, command_count)
                 } else {
-                    self.document.read_to_pattern(TraversalPattern::Right, &self.verb, command_count)
+                    self.document.read_to_pattern(TraversalPattern::Right, &self.verb, &self.options, command_count)
                 }
             },
             Some(Noun::CurrentLine) | Some(Noun::RestOfLine) => {
@@ -2644,23 +2624,84 @@ impl Buffer {
                 )))
             },
 
-            Some(Noun::LowerWord) => self.document.read_to_pattern(TraversalPattern::LowerWord, &self.verb, command_count),
-            Some(Noun::UpperWord) => self.document.read_to_pattern(TraversalPattern::UpperWord, &self.verb, command_count),
-            Some(Noun::LowerBack) => self.document.read_to_pattern(TraversalPattern::LowerBack, &self.verb, command_count),
-            Some(Noun::UpperBack) => self.document.read_to_pattern(TraversalPattern::UpperBack, &self.verb, command_count),
-            Some(Noun::LowerBackEnd) => self.document.read_to_pattern(TraversalPattern::LowerBackEnd, &self.verb, command_count),
-            Some(Noun::UpperBackEnd) => self.document.read_to_pattern(TraversalPattern::UpperBackEnd, &self.verb, command_count),
+            Some(Noun::LowerWord) => self.document.read_to_pattern(
+                TraversalPattern::LowerWord,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::UpperWord) => self.document.read_to_pattern(
+                TraversalPattern::UpperWord,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::LowerBack) => self.document.read_to_pattern(
+                TraversalPattern::LowerBack,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::UpperBack) => self.document.read_to_pattern(
+                TraversalPattern::UpperBack,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::LowerBackEnd) => self.document.read_to_pattern(
+                TraversalPattern::LowerBackEnd,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::UpperBackEnd) => self.document.read_to_pattern(
+                TraversalPattern::UpperBackEnd,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
             Some(Noun::MatchingDelimiter) => self.document.read_to_pattern(
                 TraversalPattern::MatchingDelimiter,
                 &self.verb,
+                &self.options,
                 command_count,
             ),
-            Some(Noun::LowerEnd) => self.document.read_to_pattern(TraversalPattern::LowerEnd, &self.verb, command_count),
-            Some(Noun::UpperEnd) => self.document.read_to_pattern(TraversalPattern::UpperEnd, &self.verb, command_count),
-            Some(Noun::To(c)) => self.document.read_to_pattern(TraversalPattern::To(c), &self.verb, command_count),
-            Some(Noun::UpperTo(c)) => self.document.read_to_pattern(TraversalPattern::UpperTo(c), &self.verb, command_count),
-            Some(Noun::Find(c)) => self.document.read_to_pattern(TraversalPattern::Find(c), &self.verb, command_count),
-            Some(Noun::UpperFind(c)) => self.document.read_to_pattern(TraversalPattern::UpperFind(c), &self.verb, command_count),
+            Some(Noun::LowerEnd) => self.document.read_to_pattern(
+                TraversalPattern::LowerEnd,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::UpperEnd) => self.document.read_to_pattern(
+                TraversalPattern::UpperEnd,
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::To(c)) => self.document.read_to_pattern(
+                TraversalPattern::To(c),
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::UpperTo(c)) => self.document.read_to_pattern(
+                TraversalPattern::UpperTo(c),
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::Find(c)) => self.document.read_to_pattern(
+                TraversalPattern::Find(c),
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
+            Some(Noun::UpperFind(c)) => self.document.read_to_pattern(
+                TraversalPattern::UpperFind(c),
+                &self.verb,
+                &self.options,
+                command_count,
+            ),
             Some(Noun::RepeatToFind) if self.last_to_or_find.is_some() => {
                 let noun_traversal = match self.last_to_or_find {
                     Some(Noun::To(c)) => Ok(TraversalPattern::To(c)),
@@ -2670,7 +2711,7 @@ impl Buffer {
                     _ => Err(format!("Cannot compute traversal for noun {:?}", self.last_to_or_find)),
                 }?;
 
-                self.document.read_to_pattern(noun_traversal, &self.verb, command_count)
+                self.document.read_to_pattern(noun_traversal, &self.verb, &self.options, command_count)
             },
             Some(Noun::RepeatToFindBackwards) if self.last_to_or_find.is_some() => {
                 let inverted_noun_traversal = match self.last_to_or_find {
@@ -2684,6 +2725,7 @@ impl Buffer {
                 self.document.read_to_pattern(
                     inverted_noun_traversal,
                     &self.verb,
+                    &self.options,
                     command_count,
                 )
             },
@@ -3093,6 +3135,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 0..3);
@@ -3117,6 +3160,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 0..3);
@@ -3150,6 +3194,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..11);
@@ -3175,6 +3220,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 12..15);
@@ -3208,6 +3254,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         2,
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..15);
@@ -3233,6 +3280,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         // NOTE: there isn't enough characters for three words! Only two.
                         // But, it matches to the end anyway.
                         3,
@@ -3268,6 +3316,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         3, // NOTE: this spills over to the next line!
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..19);
@@ -3293,6 +3342,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 12..15);
@@ -3321,6 +3371,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 0..8);
@@ -3351,6 +3402,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 0..8);
@@ -3382,6 +3434,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..20);
@@ -3413,6 +3466,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 12..17);
@@ -3446,6 +3500,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         2,
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..24);
@@ -3479,6 +3534,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         // NOTE: there isn't enough characters for three words! Only two.
                         // But, it matches to the end anyway.
                         3,
@@ -3514,6 +3570,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         3, // NOTE: this spills over to the next line!
                     ).unwrap().unwrap();
                     // assert_eq!(range, 8..28);
@@ -3549,6 +3606,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -3576,6 +3634,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..4);
@@ -3602,6 +3661,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 13..4);
@@ -3628,6 +3688,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 14..12);
@@ -3654,6 +3715,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 3..0);
@@ -3678,6 +3740,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 4..0);
@@ -3702,6 +3765,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 5..4);
@@ -3725,6 +3789,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 6..4);
@@ -3749,6 +3814,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 7..4);
@@ -3773,6 +3839,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 8..7);
@@ -3796,6 +3863,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 9..8);
@@ -3819,6 +3887,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 10..8);
@@ -3843,6 +3912,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerBack,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 15..8);
@@ -3874,6 +3944,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -3901,6 +3972,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 8..0);
@@ -3927,6 +3999,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 13..4);
@@ -3953,6 +4026,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperBack,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 14..12);
@@ -3982,6 +4056,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerEnd,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -4008,6 +4083,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerEnd,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 4..7);
@@ -4033,6 +4109,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::LowerEnd,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 12..15);
@@ -4058,6 +4135,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 3..7);
@@ -4081,6 +4159,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 4..7);
@@ -4104,6 +4183,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 5..7);
@@ -4127,6 +4207,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 6..8);
@@ -4150,6 +4231,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 7..15);
@@ -4173,6 +4255,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 8..15);
@@ -4196,6 +4279,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 9..15);
@@ -4219,6 +4303,7 @@ mod test_engine {
                         let (range, matched_chars, selection) = document.read_to_pattern(
                             TraversalPattern::LowerEnd,
                             &Some(Verb::Change),
+                            &BufferOptions::new_with_defaults(),
                             1,
                         ).unwrap().unwrap();
                         assert_eq!(range, 15..19);
@@ -4248,6 +4333,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperEnd,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -4274,6 +4360,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperEnd,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 4..11);
@@ -4299,6 +4386,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperEnd,
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     assert_eq!(range, 12..15);
@@ -4327,6 +4415,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::To('b'),
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -4353,6 +4442,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperTo('o'),
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -4379,6 +4469,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::Find('b'),
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -4405,6 +4496,7 @@ mod test_engine {
                     let (range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperFind('o'),
                         &Some(Verb::Change),
+                        &BufferOptions::new_with_defaults(),
                         1,
                     ).unwrap().unwrap();
                     // println!("RESULT: {:?} '{}' {:?}", range, matched_chars, selection);
@@ -5087,6 +5179,10 @@ mod test_engine {
                 let mut document = Document::new_from_literal("\\(foo (bar\\) baz)");
                 let mut buffer = document.create_buffer();
 
+                // NOTE: Make sure that "backslash escape support" is enabled
+                // See :h % for more info about this
+                buffer.options.append("cpoptions", "M");
+
                 buffer.process_input("%dl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "\\(foo (bar\\ baz)");
             }
@@ -5114,6 +5210,10 @@ mod test_engine {
                 let mut document = Document::new_from_literal("\\{foo {bar\\} baz}");
                 let mut buffer = document.create_buffer();
 
+                // NOTE: Make sure that "backslash escape support" is enabled
+                // See :h % for more info about this
+                buffer.options.append("cpoptions", "M");
+
                 buffer.process_input("%dl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "\\{foo {bar\\ baz}");
             }
@@ -5140,6 +5240,10 @@ mod test_engine {
             fn it_should_go_to_escaped_square_bracket() {
                 let mut document = Document::new_from_literal("\\[foo [bar\\] baz]");
                 let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "backslash escape support" is enabled
+                // See :h % for more info about this
+                buffer.options.append("cpoptions", "M");
 
                 buffer.process_input("%dl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "\\[foo [bar\\ baz]");
