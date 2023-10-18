@@ -1161,7 +1161,7 @@ impl Document {
                                     } else {
                                         depth -= 1;
                                         println!("-1 -> depth={depth}");
-                                        if !original_is_backslash_escaped && depth == 0 {
+                                        if depth == 0 {
                                             // Found the matching delimeter!
                                             break;
                                         }
@@ -1225,7 +1225,7 @@ impl Document {
                                     if search_forwards {
                                         depth -= 1;
                                         println!("-1 -> depth={depth}");
-                                        if !original_is_backslash_escaped && depth == 0 {
+                                        if depth == 0 {
                                             // Found the matching delimeter!
                                             break;
                                         }
