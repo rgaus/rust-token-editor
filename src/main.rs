@@ -18,6 +18,9 @@ use token_selection::*;
 mod text_utils;
 use text_utils::*;
 
+mod buffer_options;
+use buffer_options::*;
+
 
 fn dump_inner(tokens: &Vec<Box<Token>>, child_ids: Vec<uuid::Uuid>, indent: String) {
     for child_id in child_ids {
