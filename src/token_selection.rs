@@ -71,6 +71,14 @@ impl SequentialTokenSelection {
         }
     }
 
+    // Creates a new SequentialTokenSelection by taking two absolute offsets in the token stream
+    pub fn new_zero_length_at_offset(
+        document: &mut Document,
+        offset: usize,
+    ) -> Result<Self, String> {
+        Self::new_from_offsets(document, offset, offset)
+    }
+
     // Remove all tokens (and any of their children!) within the token range.
     //
     // If `keep_first_token` is true, then the first token is kept in the token list but left

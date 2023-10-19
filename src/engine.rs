@@ -2015,6 +2015,31 @@ impl Buffer {
                 // - b doesnt work on leading whitespace
                 // - f will find the same character that one is on currently as a match
 
+                // FIXME: Temporary Escape!!
+                // This should be replaced with a real escape once things are further along
+                'q' => {
+                    self.reset();
+                },
+
+                // When in insert mode, add characters at the cursor position.
+                c if self.mode == Mode::Insert => {
+                    let offset = self.document.convert_rows_cols_to_offset(self.position);
+
+                    if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
+                        &mut self.document,
+                        offset,
+                    ) {
+                        // FIXME: add in token template map below so text is parsed as it is
+                        // inserted!
+                        selection.prepend_text(&mut self.document, String::from(c), &HashMap::new());
+                        self.document.clear_newline_cache_at(offset);
+
+                        let final_offset = self.document.get_offset() + 1;
+                        self.document.seek(final_offset);
+                        self.position = self.document.convert_offset_to_rows_cols(final_offset);
+                    }
+                },
+
                 // When the noun "t"/"T"/"f"/"F" is used, the enxt character refers to the
                 // character that should be navigated to.
                 c if self.state == ViewState::PressedT => self.set_noun(Noun::To(c)),
@@ -2176,6 +2201,20 @@ impl Buffer {
                     self.set_verb(Verb::Delete);
                     self.set_noun(Noun::Character);
                     self.is_backwards = true;
+                },
+
+                // Insert Mode
+                'i' => {
+                    self.mode = Mode::Insert;
+                },
+                'a' => {
+                    self.mode = Mode::Insert;
+
+                    // Move one character to the right when going into append mode
+                    let mut offset = self.document.convert_rows_cols_to_offset(self.position);
+                    offset += 1;
+                    self.document.seek(offset);
+                    self.position = self.document.convert_offset_to_rows_cols(offset);
                 },
 
                 // If an unknown character was specified for this part in a command, reset back to
