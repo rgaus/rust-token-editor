@@ -1735,10 +1735,10 @@ pub struct Buffer {
     // Command parsing state
     state: ViewState,
     command_count: String,
+    command_count_pre_verb: String,
     is_backwards: bool,
     verb: Option<Verb>,
     noun: Option<Noun>,
-    should_clear_command_count: bool,
     last_verb: Option<Verb>,
     last_noun: Option<Noun>,
     last_to_or_find: Option<Noun>,
@@ -1767,7 +1767,7 @@ impl Buffer {
             is_backwards: false,
             verb: None,
             noun: None,
-            should_clear_command_count: false,
+            command_count_pre_verb: String::from(""),
             last_verb: None,
             last_noun: None,
             last_to_or_find: None,
@@ -1776,6 +1776,7 @@ impl Buffer {
     fn clear_command(&mut self) {
         self.state = ViewState::Initial;
         self.command_count = String::from("");
+        self.command_count_pre_verb = String::from("");
         self.is_backwards = false;
 
         // Store the last character that was navigated to via t/T/f/F
@@ -1810,12 +1811,11 @@ impl Buffer {
         println!("command_count={:?}", self.command_count);
         println!("verb={:?}", self.verb);
         println!("noun={:?}", self.noun);
-        println!("should_clear_command_count={:?}", self.should_clear_command_count);
         println!("-------------");
 
         ViewDumpedData {
             mode: self.mode.clone(),
-            command_count: self.command_count.parse::<usize>().unwrap_or(1),
+            command_count: self.compute_command_count().unwrap_or(1),
             // is_backwards: self.is_backwards,
             verb: self.verb.clone(),
             noun: self.noun.clone(),
@@ -1831,7 +1831,9 @@ impl Buffer {
     fn set_verb(&mut self, verb: Verb) {
         self.state = ViewState::HasVerb;
         self.verb = Some(verb);
-        self.should_clear_command_count = true;
+
+        self.command_count_pre_verb = self.command_count.clone();
+        self.command_count = String::from("");
         println!("  SET VERB: {:?}", self.verb);
     }
 
@@ -1852,6 +1854,19 @@ impl Buffer {
             true
         } else {
             false
+        }
+    }
+
+    // Parses the raw command count value entered and converts it into a numeric value.
+    //
+    // NOTE: If a count value is entered before the verb and a different count value is entered
+    // after the verb, multiply these counts to get the final count.
+    fn compute_command_count(&self) -> Result<usize, std::num::ParseIntError> {
+        match (self.command_count.parse::<usize>(), self.command_count_pre_verb.parse::<usize>()) {
+            (Ok(count), Ok(pre_count)) => Ok(count * pre_count),
+            (Ok(count), Err(_)) => Ok(count),
+            (Err(_), Ok(pre_count)) => Ok(pre_count),
+            (Err(e), Err(_)) => Err(e),
         }
     }
 
@@ -1890,7 +1905,7 @@ impl Buffer {
                 // <C-U> / <C-D> - half page up / half page down
                 // <C-B> / <C-F> - page up / down
                 //
-                // 2d3w should delete 6 words
+                // 2d3w should delete 6 words DONE
                 //
                 // dvj / dVj / d<ctrl+v>j - make the action linewise / characterwise / blockwise
                 //
@@ -2108,18 +2123,10 @@ impl Buffer {
 
                 // A number: adjust the number of times the command should be run
                 '1'..='9' => {
-                    if self.should_clear_command_count {
-                        self.command_count = String::from("");
-                    }
                     self.command_count = format!("{}{}", self.command_count, character);
-                    self.should_clear_command_count = false;
                 },
                 '0' if !self.command_count.is_empty() => {
-                    if self.should_clear_command_count {
-                        self.command_count = String::from("");
-                    }
                     self.command_count = format!("{}0", self.command_count);
-                    self.should_clear_command_count = false;
                 },
 
                 '$' => self.set_noun(Noun::EndOfLine),
@@ -2129,7 +2136,7 @@ impl Buffer {
                 // 'gg' goes to the top
                 'g' if self.in_g_mode() => self.set_noun(Noun::GoToFirstRow),
                 'G' => {
-                    match self.command_count.parse::<usize>() {
+                    match self.compute_command_count() {
                         // 123G goes to a line
                         Ok(line_number) => self.set_noun(Noun::GoToRow(line_number)),
                         // G goes to the bottom
@@ -2137,18 +2144,18 @@ impl Buffer {
                     }
                 },
                 // `123|` goes to column 123
-                '|' if !self.command_count.is_empty() => {
-                    let col_number = self.command_count.parse::<usize>().unwrap();
+                '|' => {
+                    let col_number = self.compute_command_count().unwrap_or(1);
                     self.set_noun(Noun::GoToColumn(col_number));
                 },
                 // `50%` goes to halfway through the document
                 '%' if !self.command_count.is_empty() => {
-                    let percentage = self.command_count.parse::<usize>().unwrap();
+                    let percentage = self.compute_command_count().unwrap_or(1);
                     self.set_noun(Noun::GoToPercentage(percentage));
                 },
                 // `50go` goes to the 50th byte of the file
-                'o' if !self.command_count.is_empty() && self.in_g_mode() => {
-                    let byte_offset = self.command_count.parse::<usize>().unwrap();
+                'o' if self.in_g_mode() => {
+                    let byte_offset = self.compute_command_count().unwrap_or(1);
                     self.set_noun(Noun::GoToByte(byte_offset));
                 },
 
@@ -2203,7 +2210,7 @@ impl Buffer {
 
         let mut skip_setting_preferred_column = false;
 
-        let command_count = self.command_count.parse::<usize>().unwrap_or(1);
+        let command_count = self.compute_command_count().unwrap_or(1);
         let noun_match = match self.noun {
             Some(Noun::Character) => {
                 if self.is_backwards {
@@ -4740,6 +4747,12 @@ mod test_engine {
                 ("c2w", ViewDumpedData {
                     mode: Mode::Normal,
                     command_count: 2,
+                    verb: Some(Verb::Change),
+                    noun: Some(Noun::LowerWord),
+                }),
+                ("2c3w", ViewDumpedData {
+                    mode: Mode::Normal,
+                    command_count: 6,
                     verb: Some(Verb::Change),
                     noun: Some(Noun::LowerWord),
                 }),
