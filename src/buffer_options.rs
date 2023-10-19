@@ -5,6 +5,13 @@ fn coerse_to_bool(raw_string: &str) -> bool {
     raw_string.to_ascii_lowercase().starts_with("t")
 }
 
+fn unabbreviate(option_name: &str) -> &str {
+    match option_name {
+        "cop" => "cpoptions",
+        other => other,
+    }
+}
+
 
 // BufferOptions are used to track options that can be set or cleared which will effect how the
 // editor works.
@@ -25,13 +32,13 @@ impl BufferOptions {
     }
 
     pub fn insert(&mut self, key: &str, value: &str) {
-        self.options.insert(String::from(key), String::from(value));
+        self.options.insert(String::from(unabbreviate(key)), String::from(value));
     }
     pub fn append(&mut self, key: &str, value: &str) {
-        self.options.insert(String::from(key), format!("{}{}", self.get(key), value));
+        self.options.insert(String::from(unabbreviate(key)), format!("{}{}", self.get(key), value));
     }
     pub fn clear(&mut self, key: &str) {
-        self.options.remove(key);
+        self.options.remove(unabbreviate(key));
     }
 
     // Used by the % / MatchDelimeters command to figure out which delimeters should match.
