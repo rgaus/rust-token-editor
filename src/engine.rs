@@ -1732,6 +1732,7 @@ pub struct Buffer {
     document: Box<Document>,
     mode: Mode,
     insert_is_appending: bool,
+    insert_is_appending_force_move_at_line_start: bool,
     insert_is_appending_moved: bool,
     insert_original_position: Option<(usize, usize)>,
 
@@ -1775,6 +1776,7 @@ impl Buffer {
             document: document,
             mode: Mode::Normal,
             insert_is_appending: false,
+            insert_is_appending_force_move_at_line_start: false,
             insert_is_appending_moved: false,
             insert_original_position: None,
             options: BufferOptions::new_with_defaults(),
@@ -1818,6 +1820,7 @@ impl Buffer {
     pub fn reset(&mut self) {
         self.mode = Mode::Normal;
         self.insert_is_appending = false;
+        self.insert_is_appending_force_move_at_line_start = false;
         self.clear_command();
     }
 
@@ -2230,6 +2233,7 @@ impl Buffer {
                 'a' => {
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
+                    self.insert_is_appending_force_move_at_line_start = true;
                     self.state = ViewState::Complete;
                 },
                 'A' => {
@@ -2908,7 +2912,9 @@ impl Buffer {
             if let Ok(count) = self.document.compute_length_of_row_in_chars_excluding_newline(row) {
                 // Offset the cursor one to the right if appending
                 if self.insert_is_appending && !self.insert_is_appending_moved {
-                    if cols > 1 {
+                    // Normally, if the cursor is at the start of the line in append mode, it
+                    // should NOT move. For a few commands though, it does move.
+                    if cols > 1 || self.insert_is_appending_force_move_at_line_start {
                         offset += 1;
                         self.document.seek(offset);
                     }
