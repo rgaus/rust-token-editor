@@ -2230,15 +2230,12 @@ impl Buffer {
                 'a' => {
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
-                    self.insert_original_position = Some(self.position);
                     self.state = ViewState::Complete;
                 },
                 'A' => {
-                    // TODO: this needs to be the EndOfLine, but plus one char
                     self.set_noun(Noun::EndOfLine);
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
-                    self.insert_original_position = Some(self.position);
                     self.state = ViewState::Complete;
                 },
                 'i' => {
@@ -2248,6 +2245,7 @@ impl Buffer {
                 'I' => {
                     self.set_noun(Noun::StartOfLineAfterIndentation);
                     self.mode = Mode::Insert;
+                    self.insert_is_appending = true;
                     self.state = ViewState::Complete;
                 },
                 'o' => {
@@ -2269,9 +2267,6 @@ impl Buffer {
 
                         self.mode = Mode::Insert;
                         self.insert_is_appending = true;
-                        self.insert_original_position = Some(
-                            self.document.convert_offset_to_rows_cols(self.document.get_offset())
-                        );
                         self.state = ViewState::Complete;
                     }
                 },
@@ -2290,9 +2285,6 @@ impl Buffer {
 
                         self.mode = Mode::Insert;
                         self.insert_is_appending = true;
-                        self.insert_original_position = Some(
-                            self.document.convert_offset_to_rows_cols(self.document.get_offset())
-                        );
                         self.state = ViewState::Complete;
                     }
                 },
@@ -2844,6 +2836,14 @@ impl Buffer {
             return Ok(false);
         };
 
+        // If in insert mode, once the cursor is in the right spot, then set the initial insert
+        // position
+        if self.mode == Mode::Insert && self.insert_original_position.is_none() {
+            self.insert_original_position = Some(
+                self.document.convert_offset_to_rows_cols(self.document.get_offset())
+            );
+        }
+
         let verb_result = match self.verb {
             Some(Verb::Delete) => {
                 let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
@@ -2906,6 +2906,7 @@ impl Buffer {
         let mut offset = self.document.get_offset();
         if let Some((row, cols)) = self.insert_original_position {
             if let Ok(count) = self.document.compute_length_of_row_in_chars_excluding_newline(row) {
+                // Offset the cursor one to the right if appending
                 if self.insert_is_appending && !self.insert_is_appending_moved {
                     if cols > 1 {
                         offset += 1;
