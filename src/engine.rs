@@ -2292,6 +2292,19 @@ impl Buffer {
                         self.state = ViewState::Complete;
                     }
                 },
+                's' => {
+                    self.noun = Some(Noun::Character);
+                    self.verb = Some(Verb::Delete);
+
+                    self.mode = Mode::Insert;
+                    self.insert_is_appending = true;
+                    self.state = ViewState::Complete;
+                },
+                'S' => {
+                    self.set_noun(Noun::CurrentLine);
+                    self.set_verb(Verb::Change);
+                    self.state = ViewState::Complete;
+                },
 
                 // If an unknown character was specified for this part in a command, reset back to
                 // the start
@@ -2840,14 +2853,6 @@ impl Buffer {
             return Ok(false);
         };
 
-        // If in insert mode, once the cursor is in the right spot, then set the initial insert
-        // position
-        if self.mode == Mode::Insert && self.insert_original_position.is_none() {
-            self.insert_original_position = Some(
-                self.document.convert_offset_to_rows_cols(self.document.get_offset())
-            );
-        }
-
         let verb_result = match self.verb {
             Some(Verb::Delete) => {
                 let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
@@ -2890,6 +2895,14 @@ impl Buffer {
         if let Err(e) = verb_result {
             return Err(e);
         };
+
+        // If in insert mode, once the cursor is in the right spot, then set the initial insert
+        // position
+        if (self.mode == Mode::Insert || self.mode == Mode::Replace) && self.insert_original_position.is_none() {
+            self.insert_original_position = Some(
+                self.document.convert_offset_to_rows_cols(self.document.get_offset())
+            );
+        }
 
         // After changing the character, adjust the preferred character if the user has moved
         // further to the right.
