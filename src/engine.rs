@@ -1731,6 +1731,9 @@ enum ViewState {
 pub struct Buffer {
     document: Box<Document>,
     mode: Mode,
+    insert_is_appending: bool,
+    insert_is_appending_moved: bool,
+    insert_original_position: Option<(usize, usize)>,
 
     options: BufferOptions,
 
@@ -1771,6 +1774,9 @@ impl Buffer {
         Self {
             document: document,
             mode: Mode::Normal,
+            insert_is_appending: false,
+            insert_is_appending_moved: false,
+            insert_original_position: None,
             options: BufferOptions::new_with_defaults(),
             position: (1, 1),
             preferred_column: 1,
@@ -1811,6 +1817,7 @@ impl Buffer {
     }
     pub fn reset(&mut self) {
         self.mode = Mode::Normal;
+        self.insert_is_appending = false;
         self.clear_command();
     }
 
@@ -2031,6 +2038,7 @@ impl Buffer {
                 // This should be replaced with a real escape once things are further along
                 'q' => {
                     self.reset();
+                    self.state = ViewState::Complete;
                 },
 
                 // When in insert mode, add characters at the cursor position.
@@ -2049,6 +2057,8 @@ impl Buffer {
                         let final_offset = self.document.get_offset() + 1;
                         self.document.seek(final_offset);
                         self.position = self.document.convert_offset_to_rows_cols(final_offset);
+
+                        self.state = ViewState::Complete;
                     }
                 },
 
@@ -2216,17 +2226,75 @@ impl Buffer {
                 },
 
                 // Insert Mode
-                'i' => {
-                    self.mode = Mode::Insert;
-                },
+                // a / A / i / I / o / O / s / S / C / R - insert mode stuff
                 'a' => {
                     self.mode = Mode::Insert;
-
-                    // Move one character to the right when going into append mode
-                    let mut offset = self.document.convert_rows_cols_to_offset(self.position);
-                    offset += 1;
+                    self.insert_is_appending = true;
+                    self.insert_original_position = Some(self.position);
+                    self.state = ViewState::Complete;
+                },
+                'A' => {
+                    // TODO: this needs to be the EndOfLine, but plus one char
+                    self.set_noun(Noun::EndOfLine);
+                    self.mode = Mode::Insert;
+                    self.insert_is_appending = true;
+                    self.insert_original_position = Some(self.position);
+                    self.state = ViewState::Complete;
+                },
+                'i' => {
+                    self.mode = Mode::Insert;
+                    self.state = ViewState::Complete;
+                },
+                'I' => {
+                    self.set_noun(Noun::StartOfLineAfterIndentation);
+                    self.mode = Mode::Insert;
+                    self.state = ViewState::Complete;
+                },
+                'o' => {
+                    let offset = self.document.convert_rows_cols_to_offset((self.position.0, 1));
                     self.document.seek(offset);
-                    self.position = self.document.convert_offset_to_rows_cols(offset);
+                    self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                    let offset = self.document.get_offset();
+
+                    if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
+                        &mut self.document,
+                        offset,
+                    ) {
+                        // FIXME: add in token template map below so text is parsed as it is
+                        // inserted!
+                        selection.prepend_text(&mut self.document, format!("{}", NEWLINE_CHAR), &HashMap::new());
+                        self.document.clear_newline_cache_at(offset);
+
+                        self.document.seek(offset + 1);
+
+                        self.mode = Mode::Insert;
+                        self.insert_is_appending = true;
+                        self.insert_original_position = Some(
+                            self.document.convert_offset_to_rows_cols(self.document.get_offset())
+                        );
+                        self.state = ViewState::Complete;
+                    }
+                },
+                'O' => {
+                    let offset = self.document.convert_rows_cols_to_offset((self.position.0, 1));
+                    self.document.seek(offset);
+
+                    if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
+                        &mut self.document,
+                        offset,
+                    ) {
+                        // FIXME: add in token template map below so text is parsed as it is
+                        // inserted!
+                        selection.prepend_text(&mut self.document, format!("{}", NEWLINE_CHAR), &HashMap::new());
+                        self.document.clear_newline_cache_at(offset);
+
+                        self.mode = Mode::Insert;
+                        self.insert_is_appending = true;
+                        self.insert_original_position = Some(
+                            self.document.convert_offset_to_rows_cols(self.document.get_offset())
+                        );
+                        self.state = ViewState::Complete;
+                    }
                 },
 
                 // If an unknown character was specified for this part in a command, reset back to
@@ -2768,7 +2836,7 @@ impl Buffer {
             // QuoteBacktick,
             // Inside(Box<Noun>),
             // Around(Box<Noun>),
-            _ => self.document.read(1),
+            _ => self.document.read(0),
         };
 
         let Some((_, _, selection)) = noun_match.unwrap() else {
@@ -2835,7 +2903,23 @@ impl Buffer {
         self.document.clear_newline_cache_at(minimum_extent_of_selection);
 
         // Update the cursor to be in the right spot
-        let offset = self.document.get_offset();
+        let mut offset = self.document.get_offset();
+        if let Some((row, cols)) = self.insert_original_position {
+            if let Ok(count) = self.document.compute_length_of_row_in_chars_excluding_newline(row) {
+                if self.insert_is_appending && !self.insert_is_appending_moved {
+                    if cols > 1 {
+                        offset += 1;
+                        self.document.seek(offset);
+                    }
+                    self.insert_is_appending_moved = true;
+                } else if !self.insert_is_appending && self.insert_is_appending_moved {
+                    offset -= 1;
+                    self.document.seek(offset);
+                    self.insert_is_appending_moved = false;
+                    self.insert_original_position = None;
+                }
+            }
+        }
         println!("FINAL OFFSET: {offset}");
         self.position = self.document.convert_offset_to_rows_cols(offset);
 

@@ -733,15 +733,23 @@ impl TokensCollection {
             };
             if let Some(literal_text) = &pointer.literal {
                 for character in literal_text.chars() {
-                    let character_as_string = format!("{}", character);
-                    let colored_character = if index >= offset_start && index < offset_end {
+                    let character_as_string = if character == '\n' {
+                        String::from(" ")
+                    } else {
+                        format!("{}", character)
+                    };
+                    let mut colored_character = if index >= offset_start && index < offset_end {
                         character_as_string.red().on_white()
                     } else {
                         character_as_string.normal()
                     };
                     result = format!("{}{}", result, colored_character);
+                    if character == '\n' {
+                        result = format!("{}\n", result);
+                    }
                     index += 1;
                 }
+                // FIXME: make sure append at the end of the document can be rendered
             };
             if let Some(next_pointer_id) = pointer.next_id {
                 pointer_id = next_pointer_id;
