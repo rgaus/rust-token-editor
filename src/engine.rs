@@ -491,6 +491,12 @@ impl Document {
                         if c == '\n' {
                             hit_newline = true;
                             true
+                    //     } else if i > 0 {
+                    //         offset > i-1
+                    //     } else {
+                    //         false
+                    //     }
+                    // }, false, false)
                         } else {
                             offset > i
                         }
@@ -502,6 +508,12 @@ impl Document {
                         if c == '\n' {
                             hit_newline = true;
                             true
+                    //     } else if i > 0 {
+                    //         offset < i-1
+                    //     } else {
+                    //         false
+                    //     }
+                    // }, false, false)
                         } else {
                             offset < i
                         }
