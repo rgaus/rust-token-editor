@@ -2244,6 +2244,10 @@ impl Buffer {
                 },
                 'i' => {
                     self.mode = Mode::Insert;
+                    self.insert_is_appending = true;
+                    // NOTE: set `insert_is_appending_moved` to not do the initial movement, only
+                    // move back when exiting out
+                    self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
                 },
                 'I' => {
