@@ -2051,6 +2051,70 @@ impl Buffer {
                     self.state = ViewState::Complete;
                 },
 
+                // FIXME: Temporary backspace!!
+                // This should be replaced with a real backspace once things are further along
+                'B' if self.mode == Mode::Insert => 'backspaceblock: {
+                    let offset = self.document.get_offset();
+                    if offset == 0 {
+                        break 'backspaceblock;
+                    }
+
+                    let final_offset = offset - 1;
+                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                        &mut self.document,
+                        final_offset,
+                        offset,
+                    ) else {
+                        break 'backspaceblock;
+                    };
+
+                    selection.remove_deep(&mut self.document, false).unwrap();
+
+                    self.document.seek(final_offset);
+                    self.position = self.document.convert_offset_to_rows_cols(final_offset);
+                },
+
+                // FIXME: Temporary backspace!!
+                // This should be replaced with a real backspace once things are further along
+                'B' if self.mode == Mode::Replace => 'backspaceblock: {
+                    let offset = self.document.get_offset();
+                    if offset == 0 {
+                        break 'backspaceblock;
+                    }
+
+                    let final_offset = offset - 1;
+                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                        &mut self.document,
+                        final_offset,
+                        offset,
+                    ) else {
+                        break 'backspaceblock;
+                    };
+
+                    // If the chars weren't there when the replace was started, then get rid of
+                    // them as if they were never inserted in the first place
+                    if self.replaced_chars_insert_after_count > 0 {
+                        selection.remove_deep(&mut self.document, false).unwrap();
+                        self.replaced_chars_insert_after_count -= 1;
+
+                    } else if let Some(popped_char_as_string) = self.replaced_chars.pop() {
+                        // Otherwise, the chars must have been overwritten, so replace them
+                        let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
+                        deleted_selection.prepend_text(
+                            &mut self.document,
+                            popped_char_as_string,
+                            // FIXME: add in token template map below so text is parsed as it is
+                            // inserted!
+                            &HashMap::new(),
+                        );
+                    }
+                    // If neither of the above cases ran, then we must be before the replace
+                    // was started. In this case, just move the cursor left.
+
+                    self.document.seek(final_offset);
+                    self.position = self.document.convert_offset_to_rows_cols(final_offset);
+                },
+
                 // When in insert mode, add characters at the cursor position.
                 c if self.mode == Mode::Insert => {
                     let offset = self.document.convert_rows_cols_to_offset(self.position);
