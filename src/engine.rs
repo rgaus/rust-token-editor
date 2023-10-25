@@ -2937,10 +2937,13 @@ impl Buffer {
                     }
                     self.insert_is_appending_moved = true;
                 } else if !self.insert_is_appending && self.insert_is_appending_moved {
-                    offset -= 1;
-                    self.document.seek(offset);
-                    self.insert_is_appending_moved = false;
-                    self.insert_original_position = None;
+                    // Only move backwards if the cursor doesn't END at the first column
+                    if self.position.1 > 1 {
+                        offset -= 1;
+                        self.document.seek(offset);
+                        self.insert_is_appending_moved = false;
+                        self.insert_original_position = None;
+                    }
                 }
             }
         }
