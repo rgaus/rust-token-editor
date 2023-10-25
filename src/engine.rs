@@ -1643,6 +1643,7 @@ impl Document {
 enum Mode {
     Normal,
     Insert,
+    Replace,
     Visual,
 }
 
@@ -1735,6 +1736,8 @@ pub struct Buffer {
     insert_is_appending_force_move_at_line_start: bool,
     insert_is_appending_moved: bool,
     insert_original_position: Option<(usize, usize)>,
+    replaced_chars: Vec<String>,
+    replaced_chars_insert_after_count: usize,
 
     options: BufferOptions,
 
@@ -1779,6 +1782,8 @@ impl Buffer {
             insert_is_appending_force_move_at_line_start: false,
             insert_is_appending_moved: false,
             insert_original_position: None,
+            replaced_chars: vec![],
+            replaced_chars_insert_after_count: 0,
             options: BufferOptions::new_with_defaults(),
             position: (1, 1),
             preferred_column: 1,
@@ -1821,6 +1826,8 @@ impl Buffer {
         self.mode = Mode::Normal;
         self.insert_is_appending = false;
         self.insert_is_appending_force_move_at_line_start = false;
+        self.replaced_chars.clear();
+        self.replaced_chars_insert_after_count = 0;
         self.clear_command();
     }
 
@@ -2065,6 +2072,47 @@ impl Buffer {
                     }
                 },
 
+                // When in replace mode, overwrite characters in the document
+                c if self.mode == Mode::Replace => 'replaceblock: {
+                    let offset = self.document.convert_rows_cols_to_offset(self.position);
+
+                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                        &mut self.document,
+                        offset,
+                        offset + 1,
+                    ) else {
+                        break 'replaceblock;
+                    };
+
+                    let Some((row, _)) = self.insert_original_position else {
+                        break 'replaceblock;
+                    };
+
+                    let row_length = self.document.compute_length_of_row_in_chars_excluding_newline(
+                        row
+                    ).unwrap();
+                    let final_column_to_delete_char = row_length+1;
+                    let should_delete_char = self.position.1 < final_column_to_delete_char;
+                    let deleted_selection = if should_delete_char {
+                        self.replaced_chars.push(selection.text(&mut self.document));
+                        selection.remove_deep(&mut self.document, false).unwrap()
+                    } else {
+                        self.replaced_chars_insert_after_count += 1;
+                        selection
+                    };
+
+                    // FIXME: add in token template map below so text is parsed as it is
+                    // inserted!
+                    deleted_selection.prepend_text(&mut self.document, String::from(c), &HashMap::new());
+                    self.document.clear_newline_cache_at(offset);
+
+                    let final_offset = self.document.get_offset() + 1;
+                    self.document.seek(final_offset);
+                    self.position = self.document.convert_offset_to_rows_cols(final_offset);
+
+                    self.state = ViewState::Complete;
+                },
+
                 // When the noun "t"/"T"/"f"/"F" is used, the enxt character refers to the
                 // character that should be navigated to.
                 c if self.state == ViewState::PressedT => self.set_noun(Noun::To(c)),
@@ -2307,6 +2355,11 @@ impl Buffer {
                 'S' => {
                     self.set_noun(Noun::CurrentLine);
                     self.set_verb(Verb::Change);
+                    self.state = ViewState::Complete;
+                },
+                'R' => {
+                    self.mode = Mode::Replace;
+                    self.insert_is_appending = true;
                     self.state = ViewState::Complete;
                 },
 
