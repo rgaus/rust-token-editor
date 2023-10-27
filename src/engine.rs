@@ -474,7 +474,7 @@ impl Document {
         String, /* The matched literal data in all tokens, concatenated */
         SequentialTokenSelection, /* The token range that was matched */
     )>, String> {
-        let mut initial_offset = self.get_offset();
+        let initial_offset = self.get_offset();
         let mut final_offset = initial_offset;
 
         let mut combined_result = String::from("");
@@ -483,41 +483,48 @@ impl Document {
         for index in 0..repeat_count {
             let is_not_last_iteration = index < repeat_count-1;
             println!("INDEX: {index}");
-            let mut hit_newline = false;
+            let mut hit_line_bounds_left_or_right = false;
             let result = match pattern {
                 TraversalPattern::Left => {
                     let offset = self.get_offset();
+                    let (initial_row, initial_column) = self.convert_offset_to_rows_cols(offset);
+                    let mut count = 0;
+
                     self.read_backwards_until(|c, i| {
-                        if c == '\n' {
-                            hit_newline = true;
+                        count += 1;
+                        let new_column = initial_column - count;
+                        if new_column == 0 {
+                            if verb.is_none() {
+                                hit_line_bounds_left_or_right = true;
+                            }
                             true
-                    //     } else if i > 0 {
-                    //         offset > i-1
-                    //     } else {
-                    //         false
-                    //     }
-                    // }, false, false)
                         } else {
                             offset > i
                         }
-                    }, true, false)
+                    }, true, true)
                 },
                 TraversalPattern::Right => {
                     let offset = self.get_offset();
+                    let (initial_row, mut initial_column) = self.convert_offset_to_rows_cols(offset);
+                    let initial_row_length = self.compute_length_of_row_in_chars_excluding_newline(
+                        initial_row
+                    ).unwrap();
+                    initial_column -= 1;
+
+                    let mut count = 0;
+
                     self.read_forwards_until(|c, i| {
-                        if c == '\n' {
-                            hit_newline = true;
+                        count += 1;
+                        let new_column = initial_column + count;
+                        if new_column >= initial_row_length {
+                            if verb.is_none() {
+                                hit_line_bounds_left_or_right = true;
+                            }
                             true
-                    //     } else if i > 0 {
-                    //         offset < i-1
-                    //     } else {
-                    //         false
-                    //     }
-                    // }, false, false)
                         } else {
                             offset < i
                         }
-                    }, true, false)
+                    }, true, true)
                 },
                 TraversalPattern::LowerWord => {
                     // The current seek position is either a word char or not. Keep going
@@ -1335,7 +1342,8 @@ impl Document {
                 },
             };
 
-            if hit_newline {
+            if hit_line_bounds_left_or_right {
+                self.seek(initial_offset);
                 break;
             }
 
@@ -5215,6 +5223,42 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_navigate_right_and_stay_on_same_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the end of the line
+                buffer.process_input("5l");
+
+                // Try to go right a few more times
+                buffer.process_input("lll");
+
+                // Delete a character
+                buffer.process_input("dl");
+
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofo\nbarbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_navigate_left_and_stay_on_same_line() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let mut buffer = document.create_buffer();
+                // Go to the end of the second line
+                buffer.process_input("j$");
+
+                // Move back to the start
+                buffer.process_input("5h");
+
+                // Try to go left a few more times
+                buffer.process_input("hhh");
+
+                // Delete a character
+                buffer.process_input("dl");
+
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\narbar\nbazbaz");
+            }
+
+            #[test]
             fn it_should_preserve_the_active_column_when_moving_through_a_shorter_row() {
                 let mut document = Document::new_from_literal("oneone\ntwo\nthreethree");
                 let mut buffer = document.create_buffer();
@@ -5235,12 +5279,30 @@ mod test_engine {
             }
 
             #[test]
+            fn it_be_unable_to_delete_left_at_start() {
+                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("dh");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar baz");
+            }
+
+            #[test]
             fn it_should_delete_right() {
                 let mut document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "oo.foo bar baz");
+            }
+
+            #[test]
+            fn it_should_delete_right_at_end() {
+                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("$dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar ba");
             }
 
             #[test]
