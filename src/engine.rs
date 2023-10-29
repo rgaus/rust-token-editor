@@ -1931,10 +1931,11 @@ impl Buffer {
                 // ( / ) / { / } / [[ /  ]] - move back and forward sentences and paragraphs and sections, see below for
                 // info on what these mean
                 //
+                // a / A / i / I / o / O / s / S / R - insert mode stuff DONE
+                // cc / C - change DONE FIXME: write tests
                 // "+y - yank register
                 // p / P / "+p - paste
                 // ]p / [p - paste in current indentation level
-                // a / A / i / I / o / O / s / S / C / R - insert mode stuff
                 // <C-C> / ESC - back to normal mode
                 // v / V / <C-V> - visual mode
                 // . - repeat last
@@ -2084,7 +2085,7 @@ impl Buffer {
 
                 // FIXME: Temporary backspace!!
                 // This should be replaced with a real backspace once things are further along
-                'B' if self.mode == Mode::Replace => 'backspaceblock: {
+                'B' | BACKSPACE_CHAR if self.mode == Mode::Replace => 'backspaceblock: {
                     let offset = self.document.get_offset();
                     if offset == 0 {
                         break 'backspaceblock;
@@ -2422,6 +2423,9 @@ impl Buffer {
 
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
+                    // NOTE: set `insert_is_appending_moved` to not do the initial movement, only
+                    // move back when exiting out
+                    self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
                 },
                 'S' => {
@@ -2432,6 +2436,9 @@ impl Buffer {
                 'R' => {
                     self.mode = Mode::Replace;
                     self.insert_is_appending = true;
+                    // NOTE: set `insert_is_appending_moved` to not do the initial movement, only
+                    // move back when exiting out
+                    self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
                 },
 
@@ -5650,6 +5657,7 @@ mod test_engine {
                 assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
             }
         }
+
         mod test_percent_match_delimeter {
             use super::*;
 
@@ -5841,6 +5849,673 @@ mod test_engine {
                     buffer.document.tokens_mut().stringify(),
                     "#if foo\n  one\n#else\n  #if bar\n  two\n  #endif\nendif"
                 );
+            }
+        }
+
+        mod test_insert_append {
+            use super::*;
+
+            #[test]
+            fn it_should_insert_at_start() {
+                let mut document = Document::new_from_literal("foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the document
+                buffer.process_input("0");
+
+                // Go into insert mode
+                buffer.process_input("i");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREfoo bar baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 4));
+            }
+
+            #[test]
+            fn it_should_insert_in_middle() {
+                let mut document = Document::new_from_literal("foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the space after "foo"
+                buffer.process_input("f ");
+
+                // Go into insert mode
+                buffer.process_input("i");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "fooHERE bar baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 8));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 7));
+            }
+
+            #[test]
+            fn it_should_insert_at_end() {
+                let mut document = Document::new_from_literal("foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the end of the document
+                buffer.process_input("$");
+
+                // Go into insert mode
+                buffer.process_input("i");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar baHEREz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 15));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input - it SHOULD NOT have moved!
+                assert_eq!(buffer.position, (1, 14));
+            }
+
+            #[test]
+            fn it_should_insert_in_middle_of_multiline_document() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of line 2
+                buffer.process_input("2G0");
+
+                // Go into insert mode
+                buffer.process_input("i");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHEREbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 4));
+            }
+
+            #[test]
+            fn it_should_append_at_start() {
+                let mut document = Document::new_from_literal("foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the document
+                buffer.process_input("0");
+
+                // Go into append mode
+                buffer.process_input("a");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "fHEREoo bar baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 6));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor moved back one to be at the end of the input
+                assert_eq!(buffer.position, (1, 5));
+            }
+
+            #[test]
+            fn it_should_append_at_end() {
+                let mut document = Document::new_from_literal("foo bar baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the end of the document
+                buffer.process_input("$");
+
+                // Go into append mode
+                buffer.process_input("a");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar bazHERE");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 16));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor moved back one to be at the end of the input
+                assert_eq!(buffer.position, (1, 15));
+            }
+        }
+
+        mod test_uppercase_insert {
+            use super::*;
+
+            #[test]
+            fn it_should_uppercase_insert_at_start_of_document() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the middle of the first line
+                buffer.process_input("0f ");
+
+                // Start inserting at the start of the line
+                buffer.process_input("I");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREfoo foo\nbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 4));
+            }
+
+            #[test]
+            fn it_should_uppercase_insert_in_middle_of_document() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Start inserting at the start of the line
+                buffer.process_input("I");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHEREbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 4));
+            }
+        }
+
+        mod test_uppercase_append {
+            use super::*;
+
+            #[test]
+            fn it_should_uppercase_append_in_middle_of_document() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Start inserting at the end of the line
+                buffer.process_input("A");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar barHERE\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 12));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 11));
+            }
+
+            #[test]
+            fn it_should_uppercase_append_at_end_of_document() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the last line
+                buffer.process_input("3G0f ");
+
+                // Start inserting at the end of the line
+                buffer.process_input("A");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nbaz bazHERE");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (3, 12));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (3, 11));
+            }
+        }
+
+        mod test_lowercase_o_uppercase_o {
+            use super::*;
+
+            #[test]
+            fn it_should_open_line_above_and_insert_at_start() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the first line
+                buffer.process_input("0");
+
+                // Open line above
+                buffer.process_input("O");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure that an empty line showed up at the start of the document
+                assert_eq!(buffer.document.tokens_mut().stringify(), "\nfoo foo\nbar bar\nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HERE\nfoo foo\nbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 4));
+            }
+
+            #[test]
+            fn it_should_open_line_above_and_insert_in_middle() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the second line
+                buffer.process_input("2G0");
+
+                // Open line above
+                buffer.process_input("O");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure that an empty line showed up at the start of the document
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n\nbar bar\nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE\nbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 4));
+            }
+
+            #[test]
+            fn it_should_open_line_below_and_insert_at_end() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the last line
+                buffer.process_input("G0");
+
+                // Open line below
+                buffer.process_input("o");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure that an empty line showed up at the end of the document
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nbaz baz\n");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nbaz baz\nHERE");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (4, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (4, 4));
+            }
+
+            #[test]
+            fn it_should_open_line_below_and_insert_in_middle() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the second line
+                buffer.process_input("2G0");
+
+                // Open line below
+                buffer.process_input("o");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure that an empty line showed up
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\n\nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nHERE\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (3, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (3, 4));
+            }
+        }
+
+        mod test_lowercase_s {
+            use super::*;
+
+            #[test]
+            fn it_should_run_lowercase_s_at_start() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the first line
+                buffer.process_input("0");
+
+                // Run lowercase s
+                buffer.process_input("s");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure the char the cursor was on was deleted
+                assert_eq!(buffer.document.tokens_mut().stringify(), "oo foo\nbar bar\nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREoo foo\nbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 4));
+            }
+
+            #[test]
+            fn it_should_run_lowercase_s_in_middle() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the space in the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Run lowercase s
+                buffer.process_input("s");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure the char the cursor was on was deleted
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbarbar\nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbarHEREbar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 8));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 7));
+            }
+        }
+
+        mod test_uppercase_s {
+            use super::*;
+
+            #[test]
+            fn it_should_run_uppercase_s() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the space in the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Run uppercase s
+                buffer.process_input("S");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure the line is now empty
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n\nbaz baz");
+
+                // And that the cursor is at the start of the line
+                assert_eq!(buffer.position, (2, 1));
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 4));
+            }
+
+            #[test]
+            fn it_should_run_2_uppercase_s() {
+                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // Go to the space in the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Run uppercase s prefixed with 2
+                buffer.process_input("2S");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure the line and following line are now empty
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n");
+
+                // And that the cursor is at the start of the line
+                assert_eq!(buffer.position, (2, 1));
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 4));
+            }
+        }
+
+        mod test_replace {
+            use super::*;
+
+            #[test]
+            fn it_should_be_a_noop_to_enter_and_leave_replace() {
+                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the line
+                buffer.process_input("0");
+
+                // Run "R"
+                buffer.process_input("R");
+                assert_eq!(buffer.mode, Mode::Replace);
+
+                // Make sure the cursor is still at the start
+                assert_eq!(buffer.position, (1, 1));
+
+                // Exit replace mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the text didn't change
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar baz quux orange");
+
+                // Make sure the cursor is still at the start
+                assert_eq!(buffer.position, (1, 1));
+            }
+
+            #[test]
+            fn it_should_replace_chars_at_start() {
+                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the line
+                buffer.process_input("0");
+
+                // Run "R"
+                buffer.process_input("R");
+                assert_eq!(buffer.mode, Mode::Replace);
+
+                // Make sure new text shows up overtop of existing text
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREbar baz quux orange");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 5));
+
+                // Exit replace mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 4));
+            }
+
+            #[test]
+            fn it_should_replace_chars_in_middle() {
+                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of quux
+                buffer.process_input("3w");
+                println!("{:?}", buffer.position);
+
+                // Run "R"
+                buffer.process_input("R");
+                assert_eq!(buffer.mode, Mode::Replace);
+
+                // Make sure new text shows up overtop of existing text
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar baz HERE orange");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 17));
+
+                // Exit replace mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 16));
+            }
+
+            #[test]
+            fn it_should_unreplace_chars_by_pressing_backspace() {
+                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let mut buffer = document.create_buffer();
+
+                // Go to the start of the line
+                buffer.process_input("0");
+
+                // Run "R"
+                buffer.process_input("R");
+                assert_eq!(buffer.mode, Mode::Replace);
+
+                // Make sure new text shows up overtop of existing text
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREbar baz quux orange");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (1, 5));
+
+                // Press backspace
+                buffer.process_input(BACKSPACE);
+
+                // Make sure that the character that was there was "undeleted"
+                assert_eq!(buffer.document.tokens_mut().stringify(), "HER bar baz quux orange");
+                assert_eq!(buffer.position, (1, 4));
+
+                // Press backspace twice more
+                buffer.process_input(BACKSPACE);
+                buffer.process_input(BACKSPACE);
+
+                // Make sure that additional characters were "undeleted"
+                assert_eq!(buffer.document.tokens_mut().stringify(), "Hoo bar baz quux orange");
+                assert_eq!(buffer.position, (1, 2));
+
+                // Exit replace mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (1, 1));
             }
         }
     }
