@@ -1652,7 +1652,11 @@ impl Document {
         self.seek_push(start_offset);
         let result = self.read_forwards_until(|c, _| !is_whitespace_char(c), false, true);
         self.seek_pop();
-        result
+        match result {
+            // Nothing should be selected if there is no indentation
+            Ok(Some((range, _, _))) if range.is_empty() => Ok(None),
+            other => other,
+        }
     }
 }
 
@@ -2436,12 +2440,27 @@ impl Buffer {
                         &mut self.document,
                         offset,
                     ) {
+                        let mut text = format!("{}", NEWLINE_CHAR);
+                        let mut text_char_count = 1;
+
+                        // Autoindent newlines if there is leading whitespace and the option is
+                        // turned on
+                        if self.options.autoindent_when_creating_new_lines() {
+                            if let Ok(Some((_, indentation_text, _))) = self.document.get_raw_indentation_for_row(
+                                self.position.0
+                            ) {
+                                text = format!("{}{}", text, indentation_text);
+                                text_char_count = text.len() - 1;
+                                self.insert_just_autoindented = true;
+                            }
+                        }
+
                         // FIXME: add in token template map below so text is parsed as it is
                         // inserted!
-                        selection.prepend_text(&mut self.document, format!("{}", NEWLINE_CHAR), &HashMap::new());
+                        selection.prepend_text(&mut self.document, text, &HashMap::new());
                         self.document.clear_newline_cache_at(offset);
 
-                        self.document.seek(offset + 1);
+                        self.document.seek(offset + text_char_count);
 
                         self.mode = Mode::Insert;
                         self.insert_is_appending = true;
@@ -2456,10 +2475,29 @@ impl Buffer {
                         &mut self.document,
                         offset,
                     ) {
+                        let mut text = format!("{}", NEWLINE_CHAR);
+                        let mut adjust_offset: usize = 0;
+
+                        // Autoindent newlines if there is leading whitespace and the option is
+                        // turned on
+                        if self.options.autoindent_when_creating_new_lines() {
+                            if let Ok(Some((_, indentation_text, _))) = self.document.get_raw_indentation_for_row(
+                                self.position.0
+                            ) {
+                                text = format!("{}{}", indentation_text, text);
+                                adjust_offset = indentation_text.len()-1;
+                                self.insert_just_autoindented = true;
+                            }
+                        }
+
                         // FIXME: add in token template map below so text is parsed as it is
                         // inserted!
-                        selection.prepend_text(&mut self.document, format!("{}", NEWLINE_CHAR), &HashMap::new());
+                        selection.prepend_text(&mut self.document, text, &HashMap::new());
                         self.document.clear_newline_cache_at(offset);
+
+                        if adjust_offset > 0 {
+                            self.document.seek(self.document.get_offset() + adjust_offset);
+                        }
 
                         self.mode = Mode::Insert;
                         self.insert_is_appending = true;
@@ -6324,6 +6362,30 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_open_line_above_and_insert_in_middle_with_leading_space_and_autoindent() {
+                let mut document = Document::new_from_literal("foo foo\n    bar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "autoindent" is enabled
+                // See :h autoindent for more info about this
+                buffer.options.set("autoindent");
+
+                // Go to the start of the second line
+                buffer.process_input("2G0");
+
+                // Open line above
+                buffer.process_input("O");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure that an empty line showed up WITH LEADING SPACE
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    \n    bar bar\nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    HERE\n    bar bar\nbaz baz");
+            }
+
+            #[test]
             fn it_should_open_line_below_and_insert_at_end() {
                 let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
@@ -6381,6 +6443,30 @@ mod test_engine {
 
                 // Make sure the cursor is at the end of the input
                 assert_eq!(buffer.position, (3, 4));
+            }
+
+            #[test]
+            fn it_should_open_line_below_and_insert_in_middle_with_leading_space_and_autoindent() {
+                let mut document = Document::new_from_literal("foo foo\n    bar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "autoindent" is enabled
+                // See :h autoindent for more info about this
+                buffer.options.set("autoindent");
+
+                // Go to the start of the second line
+                buffer.process_input("2G0");
+
+                // Open line below
+                buffer.process_input("o");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure that an empty line showed up WITH LEADING SPACE
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    bar bar\n    \nbaz baz");
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    bar bar\n    HERE\nbaz baz");
             }
         }
 
