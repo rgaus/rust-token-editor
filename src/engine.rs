@@ -1954,6 +1954,9 @@ impl Buffer {
                 // info on what these mean
                 //
                 // a / A / i / I / o / O / s / S / R - insert mode stuff DONE
+                // Number prefixing a / A / i / I / o / O / s / S / R
+                // gi - special insert mode thing
+                // gI - insert at start of line always DONE FIXME: write tests
                 // cc / C - change DONE FIXME: write tests
                 // "+y - yank register
                 // p / P / "+p - paste
@@ -2414,6 +2417,15 @@ impl Buffer {
                     self.set_noun(Noun::EndOfLine);
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
+                    self.state = ViewState::Complete;
+                },
+                'I' if self.in_g_mode() => {
+                    self.set_noun(Noun::StartOfLine);
+                    self.mode = Mode::Insert;
+                    self.insert_is_appending = true;
+                    // NOTE: set `insert_is_appending_moved` to not do the initial movement, only
+                    // move back when exiting out
+                    self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
                 },
                 'i' => {
