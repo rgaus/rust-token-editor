@@ -2595,7 +2595,9 @@ impl Buffer {
                     Ok(row_length) => {
                         // Before generating the final row/col position, make sure that the desired
                         // position actually exists.
-                        if cols > row_length {
+                        if row_length == 0 {
+                            cols = 1;
+                        } else if cols > row_length {
                             cols = row_length;
                         } else if self.preferred_column > cols {
                             if self.preferred_column < row_length {
@@ -5263,6 +5265,29 @@ mod test_engine {
                 buffer.process_input("dl");
 
                 assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\narbar\nbazbaz");
+            }
+
+            #[test]
+            fn it_should_navigate_down_through_empty_lines() {
+                let mut document = Document::new_from_literal("foofoo\nbarbar\n\nbazbaz");
+                let mut buffer = document.create_buffer();
+                // Go to the end of the second line
+                buffer.process_input("j$");
+
+                // Go down a line
+                buffer.process_input("j");
+
+                // Make sure that the cursor was put at the start of that line
+                assert_eq!(buffer.position, (3, 1));
+
+                // Go down again
+                buffer.process_input("j");
+
+                // Delete a character
+                buffer.process_input("dl");
+
+                // The last char should be deleted because that was the previously active column
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\n\nbazba");
             }
 
             #[test]
