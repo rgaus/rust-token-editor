@@ -2054,14 +2054,14 @@ impl Buffer {
 
                 // FIXME: Temporary Escape!!
                 // This should be replaced with a real escape once things are further along
-                'q' => {
+                'q' | ESCAPE_CHAR => {
                     self.reset();
                     self.state = ViewState::Complete;
                 },
 
                 // FIXME: Temporary backspace!!
                 // This should be replaced with a real backspace once things are further along
-                'B' if self.mode == Mode::Insert => 'backspaceblock: {
+                'B' | BACKSPACE_CHAR if self.mode == Mode::Insert => 'backspaceblock: {
                     let offset = self.document.get_offset();
                     if offset == 0 {
                         break 'backspaceblock;
