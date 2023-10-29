@@ -1639,6 +1639,21 @@ impl Document {
             Ok(max_offset >= at_least_offset)
         }
     }
+
+    // Returns a selection containing the indentation at the start of a given row in the document
+    // Note that this returns the literal spacea and tabs, and NOT a count of how many indentation
+    // levels were used!
+    pub fn get_raw_indentation_for_row(&mut self, row: usize) -> Result<Option<(
+        std::ops::Range<usize>, /* The matched token offset range */
+        String, /* The matched literal data in all tokens, concatenated */
+        SequentialTokenSelection, /* The token range that was matched */
+    )>, String> {
+        let start_offset = self.convert_rows_cols_to_offset((row, 1));
+        self.seek_push(start_offset);
+        let result = self.read_forwards_until(|c, _| !is_whitespace_char(c), false, true);
+        self.seek_pop();
+        result
+    }
 }
 
 
@@ -1744,6 +1759,7 @@ pub struct Buffer {
     insert_is_appending_force_move_at_line_start: bool,
     insert_is_appending_moved: bool,
     insert_original_position: Option<(usize, usize)>,
+    insert_just_autoindented: bool,
     replaced_chars: Vec<String>,
     replaced_chars_insert_after_count: usize,
 
@@ -1790,6 +1806,7 @@ impl Buffer {
             insert_is_appending_force_move_at_line_start: false,
             insert_is_appending_moved: false,
             insert_original_position: None,
+            insert_just_autoindented: false,
             replaced_chars: vec![],
             replaced_chars_insert_after_count: 0,
             options: BufferOptions::new_with_defaults(),
@@ -1834,6 +1851,7 @@ impl Buffer {
         self.mode = Mode::Normal;
         self.insert_is_appending = false;
         self.insert_is_appending_force_move_at_line_start = false;
+        self.insert_just_autoindented = false;
         self.replaced_chars.clear();
         self.replaced_chars_insert_after_count = 0;
         self.clear_command();
@@ -2056,6 +2074,19 @@ impl Buffer {
                 // FIXME: Temporary Escape!!
                 // This should be replaced with a real escape once things are further along
                 'q' | ESCAPE_CHAR => {
+                    // If a user presses escape right after performing an autoindent, get rid of
+                    // the whitespace that was added
+                    if self.insert_just_autoindented {
+                        // FIXME: add error handling if the below read_backwards_until fails?
+                        if let Ok(Some((_, _, selection))) = self.document.read_backwards_until(
+                            |c, _| c == NEWLINE_CHAR,
+                            false,
+                            true,
+                        ) {
+                            selection.remove_deep(&mut self.document, false).unwrap();
+                        }
+                    }
+
                     self.reset();
                     self.state = ViewState::Complete;
                 },
@@ -2126,18 +2157,36 @@ impl Buffer {
 
                 // When in insert mode, add characters at the cursor position.
                 c if self.mode == Mode::Insert => {
+                    self.insert_just_autoindented = false;
                     let offset = self.document.convert_rows_cols_to_offset(self.position);
 
                     if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
                         &mut self.document,
                         offset,
                     ) {
+                        // FIXME: Temporary newline!!
+                        let updated_c = if c == 'N' { '\n' } else { c };
+                        let mut text = String::from(updated_c);
+                        let mut text_char_count = 1;
+
+                        // Autoindent newlines if there is leading whitespace and the option is
+                        // turned on
+                        if updated_c == '\n' && self.options.autoindent_when_creating_new_lines() {
+                            if let Ok(Some((_, indentation_text, _))) = self.document.get_raw_indentation_for_row(
+                                self.position.0
+                            ) {
+                                text = format!("{}{}", text, indentation_text);
+                                text_char_count = text.len();
+                                self.insert_just_autoindented = true;
+                            }
+                        }
+
                         // FIXME: add in token template map below so text is parsed as it is
                         // inserted!
-                        selection.prepend_text(&mut self.document, String::from(c), &HashMap::new());
+                        selection.prepend_text(&mut self.document, text, &HashMap::new());
                         self.document.clear_newline_cache_at(offset);
 
-                        let final_offset = self.document.get_offset() + 1;
+                        let final_offset = self.document.get_offset() + text_char_count;
                         self.document.seek(final_offset);
                         self.position = self.document.convert_offset_to_rows_cols(final_offset);
 
@@ -6040,6 +6089,58 @@ mod test_engine {
                 
                 // Make sure the cursor moved back one to be at the end of the input
                 assert_eq!(buffer.position, (1, 15));
+            }
+
+            #[test]
+            fn it_should_append_at_end_of_line_and_autoindent() {
+                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "autoindent" is enabled
+                // See :h autoindent for more info about this
+                buffer.options.set("autoindent");
+
+                // Go to the end of line 2
+                buffer.process_input("2G$");
+
+                // Go into append mode
+                buffer.process_input("a");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Press enter, and make sure leading whitespace is added
+                buffer.process_input("\n");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n  \nbaz baz");
+
+                // Type a few more chars and make sure they show up
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n  HERE\nbaz baz");
+            }
+
+            #[test]
+            fn it_should_get_rid_of_empty_autoindents_when_pressing_escape() {
+                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "autoindent" is enabled
+                // See :h autoindent for more info about this
+                buffer.options.set("autoindent");
+
+                // Go to the end of line 2
+                buffer.process_input("2G$");
+
+                // Go into append mode
+                buffer.process_input("a");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Press enter, and make sure leading whitespace is added
+                buffer.process_input("\n");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n  \nbaz baz");
+
+                // Press escape
+                buffer.process_input(ESCAPE);
+
+                // And make sure the leading whitespace went away
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n\nbaz baz");
             }
         }
 

@@ -8,7 +8,15 @@ fn coerse_to_bool(raw_string: &str) -> bool {
 fn unabbreviate(option_name: &str) -> &str {
     match option_name {
         "cop" => "cpoptions",
+        "ai" => "autoindent",
         other => other,
+    }
+}
+fn unabbreviate_and_unprefix(option_name: &str) -> (&str, bool) {
+    if option_name.starts_with("no") {
+        (unabbreviate(&option_name[2..]), true)
+    } else {
+        (unabbreviate(option_name), false)
     }
 }
 
@@ -27,18 +35,29 @@ impl BufferOptions {
         let mut options = Self::new_empty();
         options.insert("matchpairs", "(:),{:},[:],<:>");
         // options.insert("cpoptions", "aABceFs");
-        options.insert("cpoptions", "M");
+        options.insert("cpoptions", "MH");
+        options.insert("autoindent", "true");
         options
     }
 
+    pub fn set(&mut self, key: &str) {
+        self.insert(key, "")
+    }
     pub fn insert(&mut self, key: &str, value: &str) {
-        self.options.insert(String::from(unabbreviate(key)), String::from(value));
+        let (long_key, is_inverted) = unabbreviate_and_unprefix(key);
+        let processed_value = if value.is_empty() {
+            if is_inverted { String::from("false") } else { String::from("true") }
+        } else {
+            String::from(value)
+        };
+        self.options.insert(String::from(long_key), processed_value);
     }
     pub fn append(&mut self, key: &str, value: &str) {
-        self.options.insert(String::from(unabbreviate(key)), format!("{}{}", self.get(key), value));
+        self.options.insert(String::from(unabbreviate_and_unprefix(key).0), format!("{}{}", self.get(key), value));
     }
     pub fn clear(&mut self, key: &str) {
-        self.options.remove(unabbreviate(key));
+        let (long_key, _) = unabbreviate_and_unprefix(key);
+        self.options.remove(long_key);
     }
 
     // Used by the % / MatchDelimeters command to figure out which delimeters should match.
@@ -60,6 +79,10 @@ impl BufferOptions {
 
     pub fn sentence_must_be_followed_by_double_space_no_tab(&self) -> bool {
         self.get("cpoptions").contains("J")
+    }
+
+    pub fn autoindent_when_creating_new_lines(&self) -> bool {
+        coerse_to_bool(self.get("autoindent"))
     }
 
     pub fn get(&self, key: &str) -> &str {
