@@ -2425,9 +2425,16 @@ impl Buffer {
                     self.state = ViewState::Complete;
                 },
                 'I' => {
-                    self.set_noun(Noun::StartOfLineAfterIndentation);
+                    if self.options.uppercase_i_skips_leading_space() {
+                        self.set_noun(Noun::StartOfLineAfterIndentation);
+                    } else {
+                        self.set_noun(Noun::StartOfLine);
+                    }
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
+                    // NOTE: set `insert_is_appending_moved` to not do the initial movement, only
+                    // move back when exiting out
+                    self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
                 },
                 'o' => {
@@ -6227,6 +6234,68 @@ mod test_engine {
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHEREbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 5));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 4));
+            }
+
+            #[test]
+            fn it_should_uppercase_insert_in_middle_of_document_skipping_leading_space() {
+                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "start at beginning without whitespace" is enabled
+                // See :h I for more info about this
+                buffer.options.append("cpoptions", "H");
+
+                // Go to the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Start inserting at the start of the line
+                buffer.process_input("I");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  HEREbar bar\nbaz baz");
+
+                // Make sure the cursor is AFTER the end of the input
+                assert_eq!(buffer.position, (2, 7));
+
+                // Exit insert mode
+                buffer.process_input(ESCAPE);
+                assert_eq!(buffer.mode, Mode::Normal);
+                
+                // Make sure the cursor is at the end of the input
+                assert_eq!(buffer.position, (2, 6));
+            }
+
+            #[test]
+            fn it_should_uppercase_insert_in_middle_of_document_including_leading_space() {
+                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let mut buffer = document.create_buffer();
+
+                // NOTE: Make sure that "start at beginning without whitespace" is disabled
+                // See :h I for more info about this
+                buffer.options.remove("cpoptions", "H");
+
+                // Go to the middle of the second line
+                buffer.process_input("2G0f ");
+
+                // Start inserting at the start of the line
+                buffer.process_input("I");
+                assert_eq!(buffer.mode, Mode::Insert);
+
+                // Make sure new text shows up in the right spot
+                buffer.process_input("HERE");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE  bar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));

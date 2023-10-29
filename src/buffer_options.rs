@@ -40,9 +40,6 @@ impl BufferOptions {
         options
     }
 
-    pub fn set(&mut self, key: &str) {
-        self.insert(key, "")
-    }
     pub fn insert(&mut self, key: &str, value: &str) {
         let (long_key, is_inverted) = unabbreviate_and_unprefix(key);
         let processed_value = if value.is_empty() {
@@ -52,12 +49,26 @@ impl BufferOptions {
         };
         self.options.insert(String::from(long_key), processed_value);
     }
-    pub fn append(&mut self, key: &str, value: &str) {
-        self.options.insert(String::from(unabbreviate_and_unprefix(key).0), format!("{}{}", self.get(key), value));
-    }
     pub fn clear(&mut self, key: &str) {
         let (long_key, _) = unabbreviate_and_unprefix(key);
         self.options.remove(long_key);
+    }
+
+    // For dealing with booleans:
+    // options.set("foo") / options.set("nofoo")
+    pub fn set(&mut self, key: &str) {
+        self.insert(key, "")
+    }
+
+    // For dealing with lists of option fields:
+    pub fn append(&mut self, key: &str, value: &str) {
+        self.options.insert(String::from(unabbreviate_and_unprefix(key).0), format!("{}{}", self.get(key), value));
+    }
+    pub fn remove(&mut self, key: &str, option: &str) {
+        self.options.insert(
+            String::from(unabbreviate_and_unprefix(key).0),
+            self.get(key).replace(option, "")
+        );
     }
 
     // Used by the % / MatchDelimeters command to figure out which delimeters should match.
@@ -79,6 +90,10 @@ impl BufferOptions {
 
     pub fn sentence_must_be_followed_by_double_space_no_tab(&self) -> bool {
         self.get("cpoptions").contains("J")
+    }
+
+    pub fn uppercase_i_skips_leading_space(&self) -> bool {
+        self.get("cpoptions").contains("H")
     }
 
     pub fn autoindent_when_creating_new_lines(&self) -> bool {
