@@ -5,10 +5,21 @@ fn coerse_to_bool(raw_string: &str) -> bool {
     raw_string.to_ascii_lowercase().starts_with("t")
 }
 
+fn coerse_to_usize(raw_string: &str) -> usize {
+    raw_string.parse::<usize>().unwrap_or(0)
+}
+
+fn string_of_n_spaces(n: usize) -> String {
+    (0..n).map(|_| " ").collect::<String>()
+}
+
 fn unabbreviate(option_name: &str) -> &str {
     match option_name {
         "cop" => "cpoptions",
         "ai" => "autoindent",
+        "sw" => "shiftwidth",
+        "ts" => "tabstop",
+        "et" => "expandtab",
         other => other,
     }
 }
@@ -36,7 +47,16 @@ impl BufferOptions {
         options.insert("matchpairs", "(:),{:},[:],<:>");
         // options.insert("cpoptions", "aABceFs");
         options.insert("cpoptions", "MH");
+
         options.insert("autoindent", "true");
+        options.insert("smartindent", "true");
+        options.insert("cinwords", "if,else,while,do,for,switch"); // "c indent words"
+
+        options.insert("shiftwidth", /* "8" */ "2"); // Pressing tab inserts this many spaces
+        options.insert("tabstop", /* "8" */ "2"); // One tab is this many spaces
+        options.insert("expandtab", "true"); // expandtab means turn tabs into spaces
+        options.insert("softtabstop", "0");
+
         options
     }
 
@@ -98,6 +118,30 @@ impl BufferOptions {
 
     pub fn autoindent_when_creating_new_lines(&self) -> bool {
         coerse_to_bool(self.get("autoindent"))
+    }
+    pub fn smartindent_enabled(&self) -> bool {
+        coerse_to_bool(self.get("smartindent"))
+    }
+
+    // When a user presses enter at the end of a line line `if foo {`, what should be inserted to
+    // go to the next indentation level?
+    pub fn get_smartindent_indentation_level(&self) -> String {
+        match coerse_to_bool(self.get("expandtab")) {
+            true => {
+                let shiftwidth = coerse_to_usize(self.get("shiftwidth"));
+                if shiftwidth == 0 {
+                    let tabstop = coerse_to_usize(self.get("tabstop"));
+                    string_of_n_spaces(tabstop)
+                } else {
+                    string_of_n_spaces(shiftwidth)
+                }
+            },
+            false => String::from("\t"),
+        }
+    }
+    // Words that if a line starts with, will trigger smartindenting behavior
+    pub fn get_smartindent_prefix_words(&self) -> Vec<&str> {
+        self.get("cinwords").split(",").collect()
     }
 
     pub fn get(&self, key: &str) -> &str {

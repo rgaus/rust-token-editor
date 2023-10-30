@@ -1887,6 +1887,59 @@ impl Buffer {
         println!("---\n{}\n--- mode={:?} position={:?} offset={:?}", tokens_collection.debug_stringify_highlight(offset, offset+1), self.mode, self.position, offset);
     }
 
+    fn should_smartindent_new_row(
+        &mut self,
+        initial_offset: usize,
+        is_direction_downwards: bool,
+    ) -> bool {
+        if !self.options.smartindent_enabled() {
+            return false
+        }
+        if initial_offset == 0 {
+            return false
+        }
+
+        let start_of_line_offset = self.document.convert_rows_cols_to_offset(
+            (self.position.0, 1)
+        );
+
+        match is_direction_downwards {
+            true => {
+                // If the last char on the previous line is a {, then
+                // smartindent!
+                self.document.seek_push(initial_offset-1);
+                if let Ok(Some(_)) = self.document.read_if_matches("{") {
+                    self.document.seek_pop();
+                    return true
+                }
+                self.document.seek_pop();
+
+                // If the first chars of the previous line are ons of
+                // `cinwords`, then smartindent!
+                for word in self.options.get_smartindent_prefix_words() {
+                    self.document.seek_push(start_of_line_offset);
+                    let result = self.document.read_if_matches(word);
+                    self.document.seek_pop();
+                    if let Ok(Some(_)) = result {
+                        return true
+                    }
+                }
+            },
+            false => {
+                // If the first char on the current line is a }, then
+                // smartindent!
+                self.document.seek_push(start_of_line_offset);
+                if let Ok(Some(_)) = self.document.read_if_matches("}") {
+                    self.document.seek_pop();
+                    return true
+                }
+                self.document.seek_pop();
+            },
+        }
+
+        return false;
+    }
+
     fn set_verb(&mut self, verb: Verb) {
         self.state = ViewState::HasVerb;
         self.verb = Some(verb);
@@ -1954,6 +2007,7 @@ impl Buffer {
                 // info on what these mean
                 //
                 // a / A / i / I / o / O / s / S / R - insert mode stuff DONE
+                // smartindent DONE FIXME: write tests
                 // Number prefixing a / A / i / I / o / O / s / S / R
                 // gi - special insert mode thing
                 // gI - insert at start of line always DONE FIXME: write tests
@@ -2165,34 +2219,47 @@ impl Buffer {
                 // When in insert mode, add characters at the cursor position.
                 c if self.mode == Mode::Insert => {
                     self.insert_just_autoindented = false;
-                    let offset = self.document.convert_rows_cols_to_offset(self.position);
+                    let initial_offset = self.document.convert_rows_cols_to_offset(self.position);
 
                     if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
                         &mut self.document,
-                        offset,
+                        initial_offset,
                     ) {
                         // FIXME: Temporary newline!!
                         let updated_c = if c == 'N' { '\n' } else { c };
                         let mut text = String::from(updated_c);
                         let mut text_char_count = 1;
+                        let mut indentation_text = String::from("");
+
 
                         // Autoindent newlines if there is leading whitespace and the option is
                         // turned on
                         if updated_c == '\n' && self.options.autoindent_when_creating_new_lines() {
-                            if let Ok(Some((_, indentation_text, _))) = self.document.get_raw_indentation_for_row(
+                            if let Ok(indentation_result) = self.document.get_raw_indentation_for_row(
                                 self.position.0
                             ) {
-                                text = format!("{}{}", text, indentation_text);
-                                text_char_count = text.len();
                                 self.insert_just_autoindented = true;
+
+                                // NOTE: `None` is returned if there is no indentation
+                                if let Some((_, computed_indentation_text, _)) = indentation_result {
+                                    indentation_text = computed_indentation_text;
+                                    text = format!("{}{}", text, indentation_text);
+                                    text_char_count = text.len();
+                                }
+
+                                // Perform a smartindent (go in another level) if the line makes this qualify
+                                if self.should_smartindent_new_row(initial_offset, true) {
+                                    text = format!("{}{}", text, self.options.get_smartindent_indentation_level());
+                                    text_char_count = text.len();
+                                }
                             }
                         }
 
                         // FIXME: add in token template map below so text is parsed as it is
                         // inserted!
+                        let inserted_indent_text = text.clone();
                         selection.prepend_text(&mut self.document, text, &HashMap::new());
-                        self.document.clear_newline_cache_at(offset);
-
+                        self.document.clear_newline_cache_at(initial_offset);
                         let final_offset = self.document.get_offset() + text_char_count;
                         self.document.seek(final_offset);
                         self.position = self.document.convert_offset_to_rows_cols(final_offset);
@@ -2465,12 +2532,20 @@ impl Buffer {
                         // Autoindent newlines if there is leading whitespace and the option is
                         // turned on
                         if self.options.autoindent_when_creating_new_lines() {
-                            if let Ok(Some((_, indentation_text, _))) = self.document.get_raw_indentation_for_row(
+                            if let Ok(result) = self.document.get_raw_indentation_for_row(
                                 self.position.0
                             ) {
-                                text = format!("{}{}", text, indentation_text);
-                                text_char_count = text.len() - 1;
                                 self.insert_just_autoindented = true;
+                                if let Some((_, indentation_text, _)) = result {
+                                    text = format!("{}{}", text, indentation_text);
+                                    text_char_count = text.len() - 1;
+                                }
+
+                                // Perform a smartindent (go in another level) if the line makes this qualify
+                                if self.should_smartindent_new_row(offset, true) {
+                                    text = format!("{}{}", text, self.options.get_smartindent_indentation_level());
+                                    text_char_count = text.len() - 1;
+                                }
                             }
                         }
 
@@ -2500,12 +2575,23 @@ impl Buffer {
                         // Autoindent newlines if there is leading whitespace and the option is
                         // turned on
                         if self.options.autoindent_when_creating_new_lines() {
-                            if let Ok(Some((_, indentation_text, _))) = self.document.get_raw_indentation_for_row(
+                            if let Ok(result) = self.document.get_raw_indentation_for_row(
                                 self.position.0
                             ) {
-                                text = format!("{}{}", indentation_text, text);
-                                adjust_offset = indentation_text.len()-1;
                                 self.insert_just_autoindented = true;
+
+                                // Perform a smartindent (go in another level) if the line makes this qualify
+                                if self.should_smartindent_new_row(offset, false) {
+                                    text = format!("{}{}", self.options.get_smartindent_indentation_level(), text);
+                                    adjust_offset = text.len()-2;
+                                }
+
+                                // Do the regular indenting second so the `text` order can go:
+                                // <PRE EXSISTING INDENTATION> <SMARTINDENT> \n
+                                if let Some((_, indentation_text, _)) = result {
+                                    text = format!("{}{}", indentation_text, text);
+                                    adjust_offset = indentation_text.len()-1;
+                                }
                             }
                         }
 
