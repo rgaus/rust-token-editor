@@ -1770,6 +1770,7 @@ enum ViewState {
     PressedF,
     PressedUpperF,
     PressedG(Box<ViewState>),
+    SingleCharReplace,
     Complete,
 }
 
@@ -2327,6 +2328,38 @@ impl Buffer {
                     self.state = ViewState::Complete;
                 },
 
+                // After pressing `r`, the next char pressed directly replaces the char that the
+                // cursor is over top
+                c if self.state == ViewState::SingleCharReplace => 'singlecharreplaceblock: {
+                    let char_count = self.compute_command_count().unwrap_or(1);
+                    let offset = self.document.convert_rows_cols_to_offset(self.position);
+
+                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                        &mut self.document,
+                        offset,
+                        offset + char_count,
+                    ) else {
+                        break 'singlecharreplaceblock;
+                    };
+
+                    let replaced_chars = (0..char_count).map(|_| String::from(c)).collect::<String>();
+
+                    selection
+                        .remove_deep(&mut self.document, false)
+                        .unwrap()
+                        // FIXME: add in token template map below so text is parsed as it is
+                        // inserted!
+                        .prepend_text(&mut self.document, replaced_chars, &HashMap::new());
+
+                    // NOTE: no need to clear the newline cache because the length of the input
+                    // does not change!
+                    // self.document.clear_newline_cache_at(offset);
+
+                    self.document.seek(offset + (char_count-1));
+
+                    self.state = ViewState::Complete;
+                },
+
                 // When the noun "t"/"T"/"f"/"F" is used, the enxt character refers to the
                 // character that should be navigated to.
                 c if self.state == ViewState::PressedT => self.set_noun(Noun::To(c)),
@@ -2489,6 +2522,9 @@ impl Buffer {
                     self.set_verb(Verb::Delete);
                     self.set_noun(Noun::Character);
                     self.is_backwards = true;
+                },
+                'r' if self.state == ViewState::Initial => {
+                    self.state = ViewState::SingleCharReplace;
                 },
 
                 // Insert Mode
