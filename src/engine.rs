@@ -1732,6 +1732,7 @@ enum Noun {
     StartOfLine,
     StartOfLineAfterIndentation,
     EndOfLine,
+    EndOfLineBeforeWhitespace,
     GoToRow(usize),
     GoToFirstRow,
     GoToLastRow,
@@ -2009,7 +2010,7 @@ impl Buffer {
                 // w / W / b / B / e / E - word+back+end DONE
                 // ge / gE - go to end of previous word FIXME: write tests for this & cge should consume 1 more char backwards
                 // 0 / ^ / $ - start + end of line DONE
-                // g_ - last non blank char on line
+                // g_ - last non blank char on line DONE FIXME: write tests
                 // f / F / t / T / ; / , - to+find DONE
                 // dd / cc DONE
                 // D / C / Y DONE
@@ -2441,6 +2442,7 @@ impl Buffer {
                 },
 
                 '$' => self.set_noun(Noun::EndOfLine),
+                '_' if self.in_g_mode() => self.set_noun(Noun::EndOfLineBeforeWhitespace),
                 '0' => self.set_noun(Noun::StartOfLine),
                 '^' => self.set_noun(Noun::StartOfLineAfterIndentation),
 
@@ -2897,6 +2899,34 @@ impl Buffer {
                         self.document.seek(self.document.get_offset() - 1);
 
                         Ok(Some((range, literal, selection)))
+                    },
+                    other => other,
+                }
+            },
+            Some(Noun::EndOfLineBeforeWhitespace) => {
+                let initial_offset = self.document.get_offset();
+                self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                let result = self.document.read_backwards_until(|c, _| !is_whitespace_char(c), true, true);
+                match result {
+                    Ok(Some((_, _, selection))) => {
+                        // Use this final offset combined with the initial offset calculated at the
+                        // very start to get the range
+                        let mut final_offset = selection.compute_final_offset(&mut self.document);
+                        if self.verb.is_some() {
+                            final_offset += 2;
+                        }
+
+                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                            &mut self.document,
+                            initial_offset,
+                            final_offset,
+                        )?;
+
+                        Ok(Some((
+                            selection.range(&mut self.document),
+                            selection.text(&mut self.document),
+                            selection,
+                        )))
                     },
                     other => other,
                 }
