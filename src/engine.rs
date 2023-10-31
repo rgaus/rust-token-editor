@@ -990,74 +990,90 @@ impl Document {
                         end_delimeter_list: Vec<&'a str>,
                     }
 
-                    let original_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
+                    let mut original_is_backslash_escaped = false;
+                    let mut result: Option<DelimeterSet> = None;
+                    loop {
+                        original_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
 
-                    // Figure out the start and end strings that represent an "open" and a "close"
-                    //
-                    // This is important so that matching patterns can be reference counted to
-                    // determine which "open" goes with which "close"
-                    let result = 'block: {
-                        let backslash_escaping_supported = options.should_match_escaped_delimeters_distinctly();
-                        for (open, close, maybe_end) in options.supported_match_delimeters() {
-                            let open_symbol_match = self.read_if_matches(open)?;
-                            let close_symbol_match = self.read_if_matches(close)?;
-                            if open_symbol_match.is_some() || close_symbol_match.is_some() {
+                        // Figure out the start and end strings that represent an "open" and a "close"
+                        //
+                        // This is important so that matching patterns can be reference counted to
+                        // determine which "open" goes with which "close"
+                        result = 'block: {
+                            let backslash_escaping_supported = options.should_match_escaped_delimeters_distinctly();
+                            for (open, close, maybe_end) in options.supported_match_delimeters() {
+                                let open_symbol_match = self.read_if_matches(open)?;
+                                let close_symbol_match = self.read_if_matches(close)?;
+                                if open_symbol_match.is_some() || close_symbol_match.is_some() {
+                                    break 'block Some(DelimeterSet{
+                                        search_forwards: open_symbol_match.is_some(),
+                                        backslash_escaping_supported,
+                                        open_delimeter_list: vec![open],
+                                        close_delimeter_list: vec![close],
+                                        end_delimeter_list: if let Some(end) = maybe_end { vec![end] } else { vec![] },
+                                    });
+                                }
+                            }
+
+                            let c_block_comment_start = self.read_if_matches("/*")?;
+                            let c_block_comment_end = self.read_if_matches("*/")?;
+                            if c_block_comment_start.is_some() || c_block_comment_end.is_some() {
                                 break 'block Some(DelimeterSet{
-                                    search_forwards: open_symbol_match.is_some(),
-                                    backslash_escaping_supported,
-                                    open_delimeter_list: vec![open],
-                                    close_delimeter_list: vec![close],
-                                    end_delimeter_list: if let Some(end) = maybe_end { vec![end] } else { vec![] },
+                                    search_forwards: c_block_comment_start.is_some(),
+                                    backslash_escaping_supported: false,
+                                    open_delimeter_list: vec!["/*"],
+                                    close_delimeter_list: vec!["*/"],
+                                    end_delimeter_list: vec![],
                                 });
                             }
+
+                            let preprocesser_if = self.read_if_matches("#if")?;
+                            let preprocesser_ifndef = self.read_if_matches("#ifndef")?;
+                            let preprocesser_ifdef = self.read_if_matches("#ifdef")?;
+                            let preprocesser_elif = self.read_if_matches("#elif")?;
+                            let preprocesser_else = self.read_if_matches("#else")?;
+                            if (
+                                preprocesser_if.is_some() ||
+                                preprocesser_ifndef.is_some() ||
+                                preprocesser_ifdef.is_some() ||
+                                preprocesser_elif.is_some() ||
+                                preprocesser_else.is_some()
+                            ) {
+                                break 'block Some(DelimeterSet{
+                                    search_forwards: true,
+                                    backslash_escaping_supported: false,
+                                    open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
+                                    close_delimeter_list: vec!["#endif"],
+                                    end_delimeter_list: vec!["#elif", "#else"],
+                                });
+                            }
+
+                            let preprocesser_endif = self.read_if_matches("#endif")?;
+                            if preprocesser_endif.is_some() {
+                                break 'block Some(DelimeterSet{
+                                    search_forwards: false,
+                                    backslash_escaping_supported: false,
+                                    open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
+                                    close_delimeter_list: vec!["#endif"],
+                                    end_delimeter_list: vec!["#elif", "#else"],
+                                });
+                            }
+
+                            None
+                        };
+                        if result.is_some() {
+                            break;
                         }
 
-                        let c_block_comment_start = self.read_if_matches("/*")?;
-                        let c_block_comment_end = self.read_if_matches("*/")?;
-                        if c_block_comment_start.is_some() || c_block_comment_end.is_some() {
-                            break 'block Some(DelimeterSet{
-                                search_forwards: c_block_comment_start.is_some(),
-                                backslash_escaping_supported: false,
-                                open_delimeter_list: vec!["/*"],
-                                close_delimeter_list: vec!["*/"],
-                                end_delimeter_list: vec![],
-                            });
+                        // Advance forward by a character until we're at the end
+                        let result = self.read(1)?;
+                        println!(">>>>> {result:?}");
+                        if let Some((range, text, _)) = result {
+                            if text == "\n" || range.is_empty() { // FIXME: NEWLINE_CHAR
+                                break;
+                            }
                         }
-
-                        let preprocesser_if = self.read_if_matches("#if")?;
-                        let preprocesser_ifndef = self.read_if_matches("#ifndef")?;
-                        let preprocesser_ifdef = self.read_if_matches("#ifdef")?;
-                        let preprocesser_elif = self.read_if_matches("#elif")?;
-                        let preprocesser_else = self.read_if_matches("#else")?;
-                        if (
-                            preprocesser_if.is_some() ||
-                            preprocesser_ifndef.is_some() ||
-                            preprocesser_ifdef.is_some() ||
-                            preprocesser_elif.is_some() ||
-                            preprocesser_else.is_some()
-                        ) {
-                            break 'block Some(DelimeterSet{
-                                search_forwards: true,
-                                backslash_escaping_supported: false,
-                                open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
-                                close_delimeter_list: vec!["#endif"],
-                                end_delimeter_list: vec!["#elif", "#else"],
-                            });
-                        }
-
-                        let preprocesser_endif = self.read_if_matches("#endif")?;
-                        if preprocesser_endif.is_some() {
-                            break 'block Some(DelimeterSet{
-                                search_forwards: false,
-                                backslash_escaping_supported: false,
-                                open_delimeter_list: vec!["#if", "#ifndef", "#ifdef"],
-                                close_delimeter_list: vec!["#endif"],
-                                end_delimeter_list: vec!["#elif", "#else"],
-                            });
-                        }
-
-                        None
-                    };
+                    }
                     println!("MATCH DELIMITER: {:?} {}", result, original_is_backslash_escaped);
 
                     if let Some(DelimeterSet{
@@ -1280,6 +1296,7 @@ impl Document {
                             selection,
                         )))
                     } else {
+                        self.seek(initial_offset);
                         Ok(None)
                     }
                 },
@@ -5897,6 +5914,15 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_go_to_later_parenthesis() {
+                let mut document = Document::new_from_literal("foo (bar) baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo (bar baz");
+            }
+
+            #[test]
             fn it_should_go_to_escaped_parenthesis() {
                 let mut document = Document::new_from_literal("\\(foo (bar\\) baz)");
                 let mut buffer = document.create_buffer();
@@ -5928,6 +5954,15 @@ mod test_engine {
             }
 
             #[test]
+            fn it_should_go_to_later_curly_brace() {
+                let mut document = Document::new_from_literal("foo {bar} baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo {bar baz");
+            }
+
+            #[test]
             fn it_should_go_to_escaped_curly_brace() {
                 let mut document = Document::new_from_literal("\\{foo {bar\\} baz}");
                 let mut buffer = document.create_buffer();
@@ -5956,6 +5991,15 @@ mod test_engine {
 
                 buffer.process_input("%dl");
                 assert_eq!(buffer.document.tokens_mut().stringify(), "[foo [bar] baz");
+            }
+
+            #[test]
+            fn it_should_go_to_later_square_bracket() {
+                let mut document = Document::new_from_literal("foo [bar] baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo [bar baz");
             }
 
             #[test]
@@ -5997,6 +6041,16 @@ mod test_engine {
                 buffer.process_input("%dl");
                 // FIXME: this test isn't quite right, the expected output is `/*foo bar* baz`
                 assert_eq!(buffer.document.tokens_mut().stringify(), "/*foo bar/ baz");
+            }
+
+            #[test]
+            fn it_should_go_to_later_c_multiline_comment() {
+                let mut document = Document::new_from_literal("foo /*bar*/ baz");
+                let mut buffer = document.create_buffer();
+
+                buffer.process_input("%dl");
+                // FIXME: this test isn't quite right, the expected output is `foo /*bar* baz`
+                assert_eq!(buffer.document.tokens_mut().stringify(), "foo /*bar/ baz");
             }
 
             #[test]
