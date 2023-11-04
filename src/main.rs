@@ -386,7 +386,7 @@ fn main() {
     // let mut document = Document::new_from_literal("foo.foo bar baz");
     // let mut document = Document::new_from_literal("foo.foo bar\nbaz\nfinal");
     // let mut document = Document::new_from_literal("foo   {bar....{}  }baaaaar baz\n  baz\nfinalaaaaaaaa");
-    let mut document = Document::new_from_literal("if (foo == 1) {\n  \\{/* foo */\\}\n  println!(123)\n}\n#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
+    let mut document = Document::new_from_literal("# ab\nif (foo == 1) {\n  \\{/* foo */\\}\n  println!(123)\n}\n#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
     // let mut document = Document::new_from_literal("#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
     // document.seek(3); // First space          ----> "TEST bar.baaaaar baz"
     // document.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"

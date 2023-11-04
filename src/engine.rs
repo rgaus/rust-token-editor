@@ -140,6 +140,7 @@ impl Document {
                 }
             },
             Ok(None) => Ok(None),
+            // Err(err) if err.starts_with("Cannot get token at offset") => Ok(None),
             Err(err) => Err(err),
         }
     }
@@ -2027,6 +2028,7 @@ impl Buffer {
                 //
                 // a / A / i / I / o / O / s / S / R - insert mode stuff DONE
                 // smartindent DONE FIXME: write tests
+                // MATCHING BRACE % WHEN EARLIER ON THE LINE THAN THE FIRST BRACE!!
                 // Number prefixing a / A / i / I / o / O / s / S / R
                 // gi - special insert mode thing
                 // gI - insert at start of line always DONE FIXME: write tests
@@ -3280,6 +3282,7 @@ impl Buffer {
                 // An example case where this is hit is with `D`.
                 let (rows, cols) = self.document.convert_offset_to_rows_cols(new_offset);
                 let modified_new_offset = match self.document.compute_length_of_row_in_chars_excluding_newline(rows) {
+                    Ok(0) => Ok(new_offset), // This is hit with `dd`
                     Ok(row_length) => {
                         if cols > row_length {
                             Ok(self.document.convert_rows_cols_to_offset((rows, row_length)))
@@ -3294,7 +3297,59 @@ impl Buffer {
                 Ok(())
             },
             // Yank,
-            // Change,
+            Some(Verb::Change) => {
+                let mut selection_without_whitespace = selection.clone();
+
+                // NOTE: if a selection starts in a newline, don't delete that newline
+                // This comes into play with `cc`
+                let selection_text = selection_without_whitespace.text(&mut self.document);
+                if selection_text.starts_with(NEWLINE_CHAR) {
+                    selection_without_whitespace = selection_without_whitespace.move_forwards(&mut self.document, 1).unwrap();
+                    selection_without_whitespace.char_count -= 1;
+                };
+                // if selection_text.ends_with(NEWLINE_CHAR) {
+                //     selection_without_whitespace = selection_without_whitespace.move_backwards(&mut self.document, 1).unwrap();
+                //     selection_without_whitespace.char_count -= 1;
+                // }
+                // For `cc` on the first line, since there isn't a preceeding newline, keep the
+                // trailing newline instead.
+                if selection_text.ends_with(NEWLINE_CHAR) && self.document.get_offset() > 0 {
+                    selection_without_whitespace.char_count -= 1;
+                }
+
+                println!("SELECTION: {selection_without_whitespace:?}");
+                let deleted_selection = selection_without_whitespace
+                    .remove_deep(&mut self.document, false)
+                    .unwrap();
+
+                self.mode = Mode::Insert;
+                self.insert_is_appending = true;
+                self.state = ViewState::Complete;
+
+                // After the delete, reset the offset to the start of the deletion operation
+                let tokens_collection = self.document.tokens_mut();
+                let new_offset = deleted_selection.compute_start_offset(&mut self.document);
+
+                // If the character this offset is supposed to be on is greater than the number of
+                // characters in that row, then move the selection to the end of the row.
+                //
+                // An example case where this is hit is with `C`.
+                let (rows, cols) = self.document.convert_offset_to_rows_cols(new_offset);
+                let modified_new_offset = match self.document.compute_length_of_row_in_chars_excluding_newline(rows) {
+                    Ok(0) => Ok(new_offset), // This is hit with `cc`
+                    Ok(row_length) => {
+                        if cols > row_length {
+                            Ok(self.document.convert_rows_cols_to_offset((rows, row_length)))
+                        } else {
+                            Ok(new_offset)
+                        }
+                    },
+                    Err(e) => Err(e),
+                }?;
+
+                self.document.seek(modified_new_offset);
+                Ok(())
+            },
             // IndentRight,
             // IndentLeft,
             // AutoIndent,
