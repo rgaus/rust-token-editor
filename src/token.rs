@@ -1,3 +1,4 @@
+use uuid::Uuid;
 use std::collections::HashMap;
 use rangemap::RangeMap;
 use colored::Colorize;
@@ -16,6 +17,10 @@ pub struct TokensCollection {
     // A cache that stores the character offset of each token's start and end in the final output
     // string, mapped BACKWARDS. Use this to query for a token at a specific character offset.
     tokens_by_start_offset_cache: RangeMap<usize, uuid::Uuid>,
+
+    // Stores the offset of set locations in the document which the system attempts to keep in the
+    // same locations as mofidicaations are made.
+    bookmarks: HashMap<uuid::Uuid, (uuid::Uuid, usize)>,
 }
 
 impl TokensCollection {
@@ -24,6 +29,7 @@ impl TokensCollection {
             tokens: tokens,
             offset_cache: HashMap::new(),
             tokens_by_start_offset_cache: RangeMap::new(),
+            bookmarks: HashMap::new(),
         }
     }
     pub fn new_empty() -> TokensCollection {
@@ -583,6 +589,33 @@ impl TokensCollection {
             },
             Err(err) => Err(err),
         }
+    }
+
+    pub fn add_bookmark(&mut self, offset: usize) -> Result<uuid::Uuid, String> {
+        let id = Uuid::new_v4();
+
+        let Some((token, token_offset)) = self.get_by_offset(offset) else {
+            return Err(format!("Error in Document.add_bookmark: cannot find token at offset {offset}!"));
+        };
+        let token_id = token.id;
+
+        self.bookmarks.insert(id, (token_id, token_offset));
+        Ok(id)
+    }
+
+    pub fn get_bookmark_offset(&mut self, bookmark_id: uuid::Uuid) -> Result<usize, String> {
+        let Some((token_id, token_offset)) = self.bookmarks.get(&bookmark_id) else {
+            return Err(format!("Error in Document.get_bookmark_offset: cannot find bookmark with id {bookmark_id}!"));
+        };
+        let token_id_cloned = token_id.clone();
+        let token_offset_cloned = token_offset.clone();
+        let offset = self.compute_offset(token_id_cloned);
+        Ok(offset + token_offset_cloned)
+    }
+
+    pub fn remove_bookmark(&mut self, bookmark_id: uuid::Uuid) -> Result<(), String> {
+        self.bookmarks.remove(&bookmark_id);
+        Ok(())
     }
 
     // // Starting at the given token + offset within the literal of that offset, scan forward
