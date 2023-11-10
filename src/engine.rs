@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::token::*;
-use crate::token_match_template::*;
+
 use crate::token_selection::*;
 use crate::text_utils::*;
 use crate::buffer_options::*;
@@ -237,7 +237,7 @@ impl Document {
         let Some(offset) = self.offset_stack.last() else {
             panic!("offset_stack vector is empty!")
         };
-        let mut initial_offset = *offset;
+        let initial_offset = *offset;
 
         let Some((token, token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
             // If at the start of the document, the document may just be empty
@@ -349,7 +349,7 @@ impl Document {
             return Ok(None);
         };
         let initial_offset = *offset - 1;
-        let Some((token, mut token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
+        let Some((token, token_offset)) = self.tokens_collection.get_by_offset(initial_offset) else {
             // If at the start of the document, the document may just be empty
             // So fail gracefully in this case
             if initial_offset == 0 {
@@ -399,8 +399,8 @@ impl Document {
             is_first = false;
         }
 
-        let mut result_length = result.len();
-        let mut final_offset = initial_offset - (result_length-1);
+        let result_length = result.len();
+        let final_offset = initial_offset - (result_length-1);
         println!("BACK: '{}' {} - ({}-1)", result, initial_offset, result_length);
 
         if !is_done {
@@ -488,10 +488,10 @@ impl Document {
             let result = match pattern {
                 TraversalPattern::Left => {
                     let offset = self.get_offset();
-                    let (initial_row, initial_column) = self.convert_offset_to_rows_cols(offset);
+                    let (_initial_row, initial_column) = self.convert_offset_to_rows_cols(offset);
                     let mut count = 0;
 
-                    self.read_backwards_until(|c, i| {
+                    self.read_backwards_until(|_c, i| {
                         count += 1;
                         let new_column = initial_column - count;
                         if new_column == 0 {
@@ -514,7 +514,7 @@ impl Document {
 
                     let mut count = 0;
 
-                    self.read_forwards_until(|c, i| {
+                    self.read_forwards_until(|_c, i| {
                         count += 1;
                         let new_column = initial_column + count;
                         if new_column >= initial_row_length {
@@ -555,12 +555,12 @@ impl Document {
                     }, false, true);
 
                     match result {
-                        Ok(Some((range, literal, selection))) => {
+                        Ok(Some((_range, _literal, selection))) => {
                             // NOTE: the below is a bit of a special case. When navigating by word, add an
                             // extra character to the offset so that the cursor ends up right on top of the
                             // word instead of right before it
                             let mut modified_selection = selection.clone();
-                            let mut seek_offset = 0;
+                            let seek_offset = 0;
                             if is_not_last_iteration || verb.is_none() || *verb == Some(Verb::Delete) {
                                 modified_selection = modified_selection.select_whitespace_after(self)?;
                                 if is_not_last_iteration || verb.is_none() {
@@ -682,7 +682,7 @@ impl Document {
                             first_char_was_whitespace = is_whitespace_char(c); 
                             return false;
                         }
-                        let is_current_not_whitespace_char = !is_whitespace_char(c);
+                        let _is_current_not_whitespace_char = !is_whitespace_char(c);
 
                         if first_char_was_whitespace && !is_whitespace_char(c) {
                             first_char_was_whitespace = false;
@@ -824,7 +824,7 @@ impl Document {
                     let mut is_second_other_char = false;
 
                     let mut started_whitespace = false;
-                    let mut finished_whitespace = false;
+                    let finished_whitespace = false;
 
                     self.seek(self.get_offset() + 1);
                     let result = self.read_backwards_until(|c, _| {
@@ -903,7 +903,7 @@ impl Document {
                 },
                 TraversalPattern::UpperBackEnd => {
                     let mut is_first = true;
-                    let mut is_first_other_char = false;
+                    let _is_first_other_char = false;
                     let mut is_second = false;
 
                     let mut is_second_whitespace_char = false;
@@ -911,7 +911,7 @@ impl Document {
                     let mut is_second_other_char = false;
 
                     let mut started_whitespace = false;
-                    let mut finished_whitespace = false;
+                    let finished_whitespace = false;
 
                     self.seek(self.get_offset() + 1);
                     let result = self.read_backwards_until(|c, _| {
@@ -991,8 +991,8 @@ impl Document {
                         end_delimeter_list: Vec<&'a str>,
                     }
 
-                    let mut original_is_backslash_escaped = false;
-                    let mut result: Option<DelimeterSet> = None;
+                    let mut original_is_backslash_escaped;
+                    let mut result: Option<DelimeterSet>;
                     loop {
                         original_is_backslash_escaped = self.read_forwards_and_backwards_to_find_backslashes() % 2 != 0;
 
@@ -1033,13 +1033,11 @@ impl Document {
                             let preprocesser_ifdef = self.read_if_matches("#ifdef")?;
                             let preprocesser_elif = self.read_if_matches("#elif")?;
                             let preprocesser_else = self.read_if_matches("#else")?;
-                            if (
-                                preprocesser_if.is_some() ||
+                            if preprocesser_if.is_some() ||
                                 preprocesser_ifndef.is_some() ||
                                 preprocesser_ifdef.is_some() ||
                                 preprocesser_elif.is_some() ||
-                                preprocesser_else.is_some()
-                            ) {
+                                preprocesser_else.is_some() {
                                 break 'block Some(DelimeterSet{
                                     search_forwards: true,
                                     backslash_escaping_supported: false,
@@ -1695,7 +1693,7 @@ enum Mode {
 #[derive(PartialEq)]
 #[derive(Debug)]
 #[derive(Clone)]
-enum Verb {
+pub enum Verb {
     Delete,
     Yank,
     Change,
@@ -1710,7 +1708,7 @@ enum Verb {
 #[derive(PartialEq)]
 #[derive(Debug)]
 #[derive(Clone)]
-enum Noun {
+pub enum Noun {
     Character,
     LowerWord,
     UpperWord,
@@ -1960,16 +1958,17 @@ impl Buffer {
         return false;
     }
 
-    fn set_verb(&mut self, verb: Verb) {
+    fn set_verb(&mut self, verb: Verb) -> Result<(), String> {
         self.state = ViewState::HasVerb;
         self.verb = Some(verb);
 
         self.command_count_pre_verb = self.command_count.clone();
         self.command_count = String::from("");
         println!("  SET VERB: {:?}", self.verb);
+        Ok(())
     }
 
-    fn set_noun(&mut self, noun: Noun) {
+    fn set_noun(&mut self, noun: Noun) -> Result<(), String> {
         if self.state == ViewState::IsInside {
             self.noun = Some(Noun::Inside(Box::new(noun)));
         } else if self.state == ViewState::IsAround {
@@ -1979,6 +1978,7 @@ impl Buffer {
         }
         println!("  SET NOUN: {:?}", self.noun);
         self.state = ViewState::Complete;
+        Ok(())
     }
 
     fn in_g_mode(&self) -> bool {
@@ -2004,9 +2004,9 @@ impl Buffer {
 
     // When called with string input, parses the input and calls `on_complete` every time that
     // a new command is successfully parsed
-    pub fn raw_parse_input<F>(&mut self, input: &str, mut on_complete: F) where F: FnMut(&mut Self) {
+    pub fn raw_parse_input<F>(&mut self, input: &str, mut on_complete: F) -> Result<(), String> where F: FnMut(&mut Self) {
         for character in input.chars() {
-            match character {
+            let result: Result<(), String> = match character {
                 // TODO:
                 // h / j / k / l - moving around DONE
                 // w / W / b / B / e / E - word+back+end DONE
@@ -2171,6 +2171,7 @@ impl Buffer {
 
                     self.reset();
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
 
                 // FIXME: Temporary backspace!!
@@ -2178,22 +2179,21 @@ impl Buffer {
                 'B' | BACKSPACE_CHAR if self.mode == Mode::Insert => 'backspaceblock: {
                     let offset = self.document.get_offset();
                     if offset == 0 {
-                        break 'backspaceblock;
+                        break 'backspaceblock Ok(());
                     }
 
                     let final_offset = offset - 1;
-                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                    let selection = SequentialTokenSelection::new_from_offsets(
                         &mut self.document,
                         final_offset,
                         offset,
-                    ) else {
-                        break 'backspaceblock;
-                    };
+                    )?;
 
                     selection.remove_deep(&mut self.document, false).unwrap();
 
                     self.document.seek(final_offset);
                     self.position = self.document.convert_offset_to_rows_cols(final_offset);
+                    Ok(())
                 },
 
                 // FIXME: Temporary backspace!!
@@ -2201,17 +2201,15 @@ impl Buffer {
                 'B' | BACKSPACE_CHAR if self.mode == Mode::Replace => 'backspaceblock: {
                     let offset = self.document.get_offset();
                     if offset == 0 {
-                        break 'backspaceblock;
+                        break 'backspaceblock Ok(());
                     }
 
                     let final_offset = offset - 1;
-                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                    let selection = SequentialTokenSelection::new_from_offsets(
                         &mut self.document,
                         final_offset,
                         offset,
-                    ) else {
-                        break 'backspaceblock;
-                    };
+                    )?;
 
                     // If the chars weren't there when the replace was started, then get rid of
                     // them as if they were never inserted in the first place
@@ -2228,13 +2226,14 @@ impl Buffer {
                             // FIXME: add in token template map below so text is parsed as it is
                             // inserted!
                             &HashMap::new(),
-                        );
+                        )?;
                     }
                     // If neither of the above cases ran, then we must be before the replace
                     // was started. In this case, just move the cursor left.
 
                     self.document.seek(final_offset);
                     self.position = self.document.convert_offset_to_rows_cols(final_offset);
+                    Ok(())
                 },
 
                 // When in insert mode, add characters at the cursor position.
@@ -2250,7 +2249,7 @@ impl Buffer {
                         let updated_c = if c == 'N' { '\n' } else { c };
                         let mut text = String::from(updated_c);
                         let mut text_char_count = 1;
-                        let mut indentation_text = String::from("");
+                        let mut indentation_text;
 
 
                         // Autoindent newlines if there is leading whitespace and the option is
@@ -2278,8 +2277,8 @@ impl Buffer {
 
                         // FIXME: add in token template map below so text is parsed as it is
                         // inserted!
-                        let inserted_indent_text = text.clone();
-                        selection.prepend_text(&mut self.document, text, &HashMap::new());
+                        let _inserted_indent_text = text.clone();
+                        selection.prepend_text(&mut self.document, text, &HashMap::new())?;
                         self.document.clear_newline_cache_at(initial_offset);
                         let final_offset = self.document.get_offset() + text_char_count;
                         self.document.seek(final_offset);
@@ -2287,22 +2286,21 @@ impl Buffer {
 
                         self.state = ViewState::Complete;
                     }
+                    Ok(())
                 },
 
                 // When in replace mode, overwrite characters in the document
                 c if self.mode == Mode::Replace => 'replaceblock: {
                     let offset = self.document.convert_rows_cols_to_offset(self.position);
 
-                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                    let selection = SequentialTokenSelection::new_from_offsets(
                         &mut self.document,
                         offset,
                         offset + 1,
-                    ) else {
-                        break 'replaceblock;
-                    };
+                    )?;
 
                     let Some((row, _)) = self.insert_original_position else {
-                        break 'replaceblock;
+                        break 'replaceblock Ok(());
                     };
 
                     let row_length = self.document.compute_length_of_row_in_chars_excluding_newline(
@@ -2320,7 +2318,7 @@ impl Buffer {
 
                     // FIXME: add in token template map below so text is parsed as it is
                     // inserted!
-                    deleted_selection.prepend_text(&mut self.document, String::from(c), &HashMap::new());
+                    deleted_selection.prepend_text(&mut self.document, String::from(c), &HashMap::new())?;
                     self.document.clear_newline_cache_at(offset);
 
                     let final_offset = self.document.get_offset() + 1;
@@ -2328,21 +2326,20 @@ impl Buffer {
                     self.position = self.document.convert_offset_to_rows_cols(final_offset);
 
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
 
                 // After pressing `r`, the next char pressed directly replaces the char that the
                 // cursor is over top
-                c if self.state == ViewState::SingleCharReplace => 'singlecharreplaceblock: {
+                c if self.state == ViewState::SingleCharReplace => {
                     let char_count = self.compute_command_count().unwrap_or(1);
                     let offset = self.document.convert_rows_cols_to_offset(self.position);
 
-                    let Ok(selection) = SequentialTokenSelection::new_from_offsets(
+                    let selection = SequentialTokenSelection::new_from_offsets(
                         &mut self.document,
                         offset,
                         offset + char_count,
-                    ) else {
-                        break 'singlecharreplaceblock;
-                    };
+                    )?;
 
                     let replaced_chars = (0..char_count).map(|_| String::from(c)).collect::<String>();
 
@@ -2351,7 +2348,7 @@ impl Buffer {
                         .unwrap()
                         // FIXME: add in token template map below so text is parsed as it is
                         // inserted!
-                        .prepend_text(&mut self.document, replaced_chars, &HashMap::new());
+                        .prepend_text(&mut self.document, replaced_chars, &HashMap::new())?;
 
                     // NOTE: no need to clear the newline cache because the length of the input
                     // does not change!
@@ -2360,6 +2357,7 @@ impl Buffer {
                     self.document.seek(offset + (char_count-1));
 
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
 
                 // When the noun "t"/"T"/"f"/"F" is used, the enxt character refers to the
@@ -2383,17 +2381,19 @@ impl Buffer {
 
                 // Uppercase Verbs - ie, `D` / `C`
                 'D' if self.state == ViewState::Initial => {
-                    self.set_verb(Verb::Delete);
-                    self.set_noun(Noun::RestOfLine);
+                    self.set_verb(Verb::Delete)?;
+                    self.set_noun(Noun::RestOfLine)?;
+                    Ok(())
                 },
                 'C' if self.state == ViewState::Initial => {
-                    self.set_verb(Verb::Change);
-                    self.set_noun(Noun::RestOfLine);
+                    self.set_verb(Verb::Change)?;
+                    self.set_noun(Noun::RestOfLine)?;
+                    Ok(())
                 },
 
                 // "inside" and "around" - ie, `cip`
-                'i' if self.state == ViewState::HasVerb => { self.state = ViewState::IsInside },
-                'a' if self.state == ViewState::HasVerb => { self.state = ViewState::IsAround },
+                'i' if self.state == ViewState::HasVerb => { self.state = ViewState::IsInside; Ok(()) },
+                'a' if self.state == ViewState::HasVerb => { self.state = ViewState::IsAround; Ok(()) },
 
                 // Repeated Verbs - ie, `cc`, `gUU`
                 'c' | 'd' | 'y' if self.state == ViewState::HasVerb => self.set_noun(Noun::CurrentLine),
@@ -2406,7 +2406,7 @@ impl Buffer {
                 // NOTE: this must go before regular nouns, because there are things like `b` that
                 // mean different things: `cib` is  "change inside block" BUT `cb`is "change back"
                 'p' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
-                    self.set_noun(Noun::Paragraph);
+                    self.set_noun(Noun::Paragraph)
                 },
                 's' if self.state == ViewState::IsInside || self.state == ViewState::IsAround => {
                     self.set_noun(Noun::Sentence)
@@ -2453,27 +2453,31 @@ impl Buffer {
                 'E' => self.set_noun(Noun::UpperEnd),
 
                 'h' => {
-                    self.set_noun(Noun::Character);
+                    self.set_noun(Noun::Character)?;
                     self.is_backwards = true;
+                    Ok(())
                 },
                 'j' => self.set_noun(Noun::NextLine),
                 'k' => {
-                    self.set_noun(Noun::NextLine);
+                    self.set_noun(Noun::NextLine)?;
                     self.is_backwards = true;
+                    Ok(())
                 },
                 'l' => self.set_noun(Noun::Character),
 
-                't' => self.state = ViewState::PressedT,
-                'T' => self.state = ViewState::PressedUpperT,
-                'f' => self.state = ViewState::PressedF,
-                'F' => self.state = ViewState::PressedUpperF,
+                't' => { self.state = ViewState::PressedT; Ok(()) },
+                'T' => { self.state = ViewState::PressedUpperT; Ok(()) },
+                'f' => { self.state = ViewState::PressedF; Ok(()) },
+                'F' => { self.state = ViewState::PressedUpperF; Ok(()) },
 
                 // A number: adjust the number of times the command should be run
                 '1'..='9' => {
                     self.command_count = format!("{}{}", self.command_count, character);
+                    Ok(())
                 },
                 '0' if !self.command_count.is_empty() => {
                     self.command_count = format!("{}0", self.command_count);
+                    Ok(())
                 },
 
                 '$' => self.set_noun(Noun::EndOfLine),
@@ -2494,17 +2498,17 @@ impl Buffer {
                 // `123|` goes to column 123
                 '|' => {
                     let col_number = self.compute_command_count().unwrap_or(1);
-                    self.set_noun(Noun::GoToColumn(col_number));
+                    self.set_noun(Noun::GoToColumn(col_number))
                 },
                 // `50%` goes to halfway through the document
                 '%' if !self.command_count.is_empty() => {
                     let percentage = self.compute_command_count().unwrap_or(1);
-                    self.set_noun(Noun::GoToPercentage(percentage));
+                    self.set_noun(Noun::GoToPercentage(percentage))
                 },
                 // `50go` goes to the 50th byte of the file
                 'o' if self.in_g_mode() => {
                     let byte_offset = self.compute_command_count().unwrap_or(1);
-                    self.set_noun(Noun::GoToByte(byte_offset));
+                    self.set_noun(Noun::GoToByte(byte_offset))
                 },
 
                 '%' => self.set_noun(Noun::MatchingDelimiter),
@@ -2513,20 +2517,24 @@ impl Buffer {
                 // So go into a different mode once it is pressed
                 'g' => {
                     self.state = ViewState::PressedG(Box::new(self.state.clone()));
+                    Ok(())
                 },
 
                 // `x` is kinda weird, it's both a noun and a verb
                 'x' if self.state == ViewState::Initial => {
-                    self.set_verb(Verb::Delete);
-                    self.set_noun(Noun::Character);
+                    self.set_verb(Verb::Delete)?;
+                    self.set_noun(Noun::Character)?;
+                    Ok(())
                 },
                 'X' if self.state == ViewState::Initial => {
-                    self.set_verb(Verb::Delete);
-                    self.set_noun(Noun::Character);
+                    self.set_verb(Verb::Delete)?;
+                    self.set_noun(Noun::Character)?;
                     self.is_backwards = true;
+                    Ok(())
                 },
                 'r' if self.state == ViewState::Initial => {
                     self.state = ViewState::SingleCharReplace;
+                    Ok(())
                 },
 
                 // Insert Mode
@@ -2536,21 +2544,24 @@ impl Buffer {
                     self.insert_is_appending = true;
                     self.insert_is_appending_force_move_at_line_start = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
                 'A' => {
-                    self.set_noun(Noun::EndOfLine);
+                    self.set_noun(Noun::EndOfLine)?;
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
                 'I' if self.in_g_mode() => {
-                    self.set_noun(Noun::StartOfLine);
+                    self.set_noun(Noun::StartOfLine)?;
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
                     // NOTE: set `insert_is_appending_moved` to not do the initial movement, only
                     // move back when exiting out
                     self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
                 'i' => {
                     self.mode = Mode::Insert;
@@ -2559,12 +2570,13 @@ impl Buffer {
                     // move back when exiting out
                     self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
                 'I' => {
                     if self.options.uppercase_i_skips_leading_space() {
-                        self.set_noun(Noun::StartOfLineAfterIndentation);
+                        self.set_noun(Noun::StartOfLineAfterIndentation)?;
                     } else {
-                        self.set_noun(Noun::StartOfLine);
+                        self.set_noun(Noun::StartOfLine)?;
                     }
                     self.mode = Mode::Insert;
                     self.insert_is_appending = true;
@@ -2572,98 +2584,111 @@ impl Buffer {
                     // move back when exiting out
                     self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
-                'o' => {
+                'o' => 'loweroblock: {
                     let offset = self.document.convert_rows_cols_to_offset((self.position.0, 1));
                     self.document.seek(offset);
-                    self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                    if let Err(e) = self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true) {
+                        break 'loweroblock Err(format!("Error reading to: {e}"));
+                    };
                     let offset = self.document.get_offset();
 
-                    if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
+                    match SequentialTokenSelection::new_zero_length_at_offset(
                         &mut self.document,
                         offset,
                     ) {
-                        let mut text = format!("{}", NEWLINE_CHAR);
-                        let mut text_char_count = 1;
+                        Ok(selection) => {
+                            let mut text = format!("{}", NEWLINE_CHAR);
+                            let mut text_char_count = 1;
 
-                        // Autoindent newlines if there is leading whitespace and the option is
-                        // turned on
-                        if self.options.autoindent_when_creating_new_lines() {
-                            if let Ok(result) = self.document.get_raw_indentation_for_row(
-                                self.position.0
-                            ) {
-                                self.insert_just_autoindented = true;
-                                if let Some((_, indentation_text, _)) = result {
-                                    text = format!("{}{}", text, indentation_text);
-                                    text_char_count = text.len() - 1;
-                                }
+                            // Autoindent newlines if there is leading whitespace and the option is
+                            // turned on
+                            if self.options.autoindent_when_creating_new_lines() {
+                                if let Ok(result) = self.document.get_raw_indentation_for_row(
+                                    self.position.0
+                                ) {
+                                    self.insert_just_autoindented = true;
+                                    if let Some((_, indentation_text, _)) = result {
+                                        text = format!("{}{}", text, indentation_text);
+                                        text_char_count = text.len() - 1;
+                                    }
 
-                                // Perform a smartindent (go in another level) if the line makes this qualify
-                                if self.should_smartindent_new_row(offset, true) {
-                                    text = format!("{}{}", text, self.options.get_smartindent_indentation_level());
-                                    text_char_count = text.len() - 1;
+                                    // Perform a smartindent (go in another level) if the line makes this qualify
+                                    if self.should_smartindent_new_row(offset, true) {
+                                        text = format!("{}{}", text, self.options.get_smartindent_indentation_level());
+                                        text_char_count = text.len() - 1;
+                                    }
                                 }
                             }
-                        }
 
-                        // FIXME: add in token template map below so text is parsed as it is
-                        // inserted!
-                        selection.prepend_text(&mut self.document, text, &HashMap::new());
-                        self.document.clear_newline_cache_at(offset);
+                            // FIXME: add in token template map below so text is parsed as it is
+                            // inserted!
+                            selection.prepend_text(&mut self.document, text, &HashMap::new())?;
+                            self.document.clear_newline_cache_at(offset);
 
-                        self.document.seek(offset + text_char_count);
+                            self.document.seek(offset + text_char_count);
 
-                        self.mode = Mode::Insert;
-                        self.insert_is_appending = true;
-                        self.state = ViewState::Complete;
+                            self.mode = Mode::Insert;
+                            self.insert_is_appending = true;
+                            self.state = ViewState::Complete;
+                            Ok(())
+                        },
+                        Err(e) => Err(format!("Error creating selection for o: {e}"))
                     }
                 },
                 'O' => {
                     let offset = self.document.convert_rows_cols_to_offset((self.position.0, 1));
                     self.document.seek(offset);
 
-                    if let Ok(selection) = SequentialTokenSelection::new_zero_length_at_offset(
+                    match SequentialTokenSelection::new_zero_length_at_offset(
                         &mut self.document,
                         offset,
                     ) {
-                        let mut text = format!("{}", NEWLINE_CHAR);
-                        let mut adjust_offset: usize = 0;
+                        Ok(selection) => {
+                            let mut text = format!("{}", NEWLINE_CHAR);
+                            let mut adjust_offset: usize = 0;
 
-                        // Autoindent newlines if there is leading whitespace and the option is
-                        // turned on
-                        if self.options.autoindent_when_creating_new_lines() {
-                            if let Ok(result) = self.document.get_raw_indentation_for_row(
-                                self.position.0
-                            ) {
-                                self.insert_just_autoindented = true;
+                            // Autoindent newlines if there is leading whitespace and the option is
+                            // turned on
+                            if self.options.autoindent_when_creating_new_lines() {
+                                if let Ok(result) = self.document.get_raw_indentation_for_row(
+                                    self.position.0
+                                ) {
+                                    self.insert_just_autoindented = true;
 
-                                // Perform a smartindent (go in another level) if the line makes this qualify
-                                if self.should_smartindent_new_row(offset, false) {
-                                    text = format!("{}{}", self.options.get_smartindent_indentation_level(), text);
-                                    adjust_offset = text.len()-2;
-                                }
+                                    // Perform a smartindent (go in another level) if the line makes this qualify
+                                    if self.should_smartindent_new_row(offset, false) {
+                                        text = format!("{}{}", self.options.get_smartindent_indentation_level(), text);
+                                        adjust_offset = text.len()-2;
+                                    }
 
-                                // Do the regular indenting second so the `text` order can go:
-                                // <PRE EXSISTING INDENTATION> <SMARTINDENT> \n
-                                if let Some((_, indentation_text, _)) = result {
-                                    text = format!("{}{}", indentation_text, text);
-                                    adjust_offset = indentation_text.len()-1;
+                                    // Do the regular indenting second so the `text` order can go:
+                                    // <PRE EXSISTING INDENTATION> <SMARTINDENT> \n
+                                    if let Some((_, indentation_text, _)) = result {
+                                        text = format!("{}{}", indentation_text, text);
+                                        adjust_offset = indentation_text.len()-1;
+                                    }
                                 }
                             }
-                        }
 
-                        // FIXME: add in token template map below so text is parsed as it is
-                        // inserted!
-                        selection.prepend_text(&mut self.document, text, &HashMap::new());
-                        self.document.clear_newline_cache_at(offset);
+                            // FIXME: add in token template map below so text is parsed as it is
+                            // inserted!
+                            if let Err(e) = selection.prepend_text(&mut self.document, text, &HashMap::new()) {
+                                return Err(format!("Error prepending text via O: {e}"));
+                            };
+                            self.document.clear_newline_cache_at(offset);
 
-                        if adjust_offset > 0 {
-                            self.document.seek(self.document.get_offset() + adjust_offset);
-                        }
+                            if adjust_offset > 0 {
+                                self.document.seek(self.document.get_offset() + adjust_offset);
+                            }
 
-                        self.mode = Mode::Insert;
-                        self.insert_is_appending = true;
-                        self.state = ViewState::Complete;
+                            self.mode = Mode::Insert;
+                            self.insert_is_appending = true;
+                            self.state = ViewState::Complete;
+                            Ok(())
+                        },
+                        Err(e) => Err(format!("Error creating selection for O: {e}"))
                     }
                 },
                 's' => {
@@ -2676,11 +2701,13 @@ impl Buffer {
                     // move back when exiting out
                     self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
                 'S' => {
-                    self.set_noun(Noun::CurrentLine);
-                    self.set_verb(Verb::Change);
+                    self.set_noun(Noun::CurrentLine)?;
+                    self.set_verb(Verb::Change)?;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
                 'R' => {
                     self.mode = Mode::Replace;
@@ -2689,6 +2716,7 @@ impl Buffer {
                     // move back when exiting out
                     self.insert_is_appending_moved = true;
                     self.state = ViewState::Complete;
+                    Ok(())
                 },
 
                 // If an unknown character was specified for this part in a command, reset back to
@@ -2696,13 +2724,18 @@ impl Buffer {
                 _ => {
                     println!("RESET!");
                     self.reset();
+                    Ok(())
                 },
+            };
+            if let Err(e) = result {
+                return Err(e);
             }
 
             if self.state == ViewState::Complete {
                 on_complete(self);
             }
-        }
+        };
+        Ok(())
     }
 
     pub fn process_input(&mut self, input: &str) -> Result<bool, String> {
@@ -2712,7 +2745,7 @@ impl Buffer {
             result = inner_self.execute_command();
 
             inner_self.clear_command();
-        });
+        })?;
         result
     }
 
@@ -2762,7 +2795,7 @@ impl Buffer {
                 cols = number_of_chars_in_next_row;
                 println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
 
-                let mut final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
+                let final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
                 println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
                 self.document.seek(final_offset);
 
@@ -2860,7 +2893,7 @@ impl Buffer {
 
                         // Compute the final offset and generate the output selection!
                         println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
-                        let mut final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
+                        let final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
                         println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
                         self.document.seek(final_offset);
 
@@ -2898,7 +2931,9 @@ impl Buffer {
                 self.document.seek(initial_offset); // FIXME: I think this is redundant?
 
                 // Go to the start of the line
-                self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                if let Err(e) = self.document.read_backwards_until(|c, _| c == NEWLINE_CHAR, false, true) {
+                    return Err(format!("Error processing noun Noun::StartOfLineAfterIndentation: {e}"));
+                };
 
                 // Then read forwards until the whitespace at the beginning stops
                 match self.document.read_forwards_until(|c, _| !is_whitespace_char(c), false, true) {
@@ -2943,7 +2978,10 @@ impl Buffer {
             },
             Some(Noun::EndOfLineBeforeWhitespace) => {
                 let initial_offset = self.document.get_offset();
-                self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true);
+                if let Err(e) = self.document.read_forwards_until(|c, _| c == NEWLINE_CHAR, false, true) {
+                    return Err(format!("Error processing noun Noun::EndOfLineBeforeWhitespace: {e}"));
+                };
+
                 let result = self.document.read_backwards_until(|c, _| !is_whitespace_char(c), true, true);
                 match result {
                     Ok(Some((_, _, selection))) => {
@@ -2954,7 +2992,7 @@ impl Buffer {
                             final_offset += 2;
                         }
 
-                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                        let selection = SequentialTokenSelection::new_from_offsets(
                             &mut self.document,
                             initial_offset,
                             final_offset,
@@ -3004,7 +3042,7 @@ impl Buffer {
                         // very start to get the range
                         let final_offset = selection.compute_final_offset(&mut self.document);
 
-                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                        let selection = SequentialTokenSelection::new_from_offsets(
                             &mut self.document,
                             initial_offset,
                             final_offset,
@@ -3037,7 +3075,7 @@ impl Buffer {
                         let final_offset = self.document.convert_rows_cols_to_offset((initial_rows, column_number));
                         self.document.seek(final_offset);
 
-                        let mut selection = SequentialTokenSelection::new_from_offsets(
+                        let selection = SequentialTokenSelection::new_from_offsets(
                             &mut self.document,
                             initial_offset,
                             final_offset,
@@ -3069,7 +3107,7 @@ impl Buffer {
 
                 self.document.seek(final_offset);
 
-                let mut selection = SequentialTokenSelection::new_from_offsets(
+                let selection = SequentialTokenSelection::new_from_offsets(
                     &mut self.document,
                     initial_offset,
                     final_offset,
@@ -3101,7 +3139,7 @@ impl Buffer {
 
                 self.document.seek(final_offset);
 
-                let mut selection = SequentialTokenSelection::new_from_offsets(
+                let selection = SequentialTokenSelection::new_from_offsets(
                     &mut self.document,
                     initial_offset,
                     final_offset,
@@ -3273,7 +3311,7 @@ impl Buffer {
                 let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
 
                 // After the delete, reset the offset to the start of the deletion operation
-                let tokens_collection = self.document.tokens_mut();
+                let _tokens_collection = self.document.tokens_mut();
                 let new_offset = deleted_selection.compute_start_offset(&mut self.document);
 
                 // If the character this offset is supposed to be on is greater than the number of
@@ -3327,7 +3365,7 @@ impl Buffer {
                 self.state = ViewState::Complete;
 
                 // After the delete, reset the offset to the start of the deletion operation
-                let tokens_collection = self.document.tokens_mut();
+                let _tokens_collection = self.document.tokens_mut();
                 let new_offset = deleted_selection.compute_start_offset(&mut self.document);
 
                 // If the character this offset is supposed to be on is greater than the number of
@@ -3390,7 +3428,7 @@ impl Buffer {
         // Update the cursor to be in the right spot
         let mut offset = self.document.get_offset();
         if let Some((row, cols)) = self.insert_original_position {
-            if let Ok(count) = self.document.compute_length_of_row_in_chars_excluding_newline(row) {
+            if let Ok(_count) = self.document.compute_length_of_row_in_chars_excluding_newline(row) {
                 // Offset the cursor one to the right if appending
                 if self.insert_is_appending && !self.insert_is_appending_moved {
                     // Normally, if the cursor is at the start of the line in append mode, it
@@ -3421,6 +3459,8 @@ impl Buffer {
 
 #[cfg(test)]
 mod test_engine {
+    use crate::TokenMatchTemplate;
+    use crate::TokenParseStatus;
     use regex::Regex;
     use super::*;
 

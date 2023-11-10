@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::token::*;
+
 use crate::token_match_template::*;
 use crate::engine::*;
 use crate::text_utils::*;
@@ -349,7 +349,7 @@ impl SequentialTokenSelection {
         document.seek_push(end_offset);
 
         let result = match document.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
-            Ok(Some((range, _, selection))) => {
+            Ok(Some((_range, _, selection))) => {
                 println!("NEW SELECTION: {:?}", selection);
                 self.extend(document, selection)
             },
@@ -425,7 +425,7 @@ impl SequentialTokenSelection {
     // This returns `None` is the given selection move is impossible (ie, moving to after the
     // end of the document)
     pub fn move_forwards(&self, document: &mut Document, char_offset: usize) -> Option<Self> {
-        let mut start_offset = self.compute_start_offset(document);
+        let start_offset = self.compute_start_offset(document);
 
         let Some((token, token_offset)) = document.tokens_mut().get_by_offset(start_offset + char_offset) else {
             // This new offset is not a valid position in the document.
@@ -444,7 +444,7 @@ impl SequentialTokenSelection {
     // This returns `None` is the given selection move is impossible (ie, moving to before the
     // start of the document)
     pub fn move_backwards(&self, document: &mut Document, char_offset: usize) -> Option<Self> {
-        let mut start_offset = self.compute_start_offset(document);
+        let start_offset = self.compute_start_offset(document);
         if char_offset > start_offset {
             // One cannot move to before the start of the document.
             return None;

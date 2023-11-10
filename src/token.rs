@@ -738,7 +738,7 @@ impl TokensCollection {
                     } else {
                         format!("{}", character)
                     };
-                    let mut colored_character = if index >= offset_start && index < offset_end {
+                    let colored_character = if index >= offset_start && index < offset_end {
                         character_as_string.red().on_white()
                     } else {
                         character_as_string.normal()
