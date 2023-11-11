@@ -53,7 +53,7 @@ impl SequentialTokenSelection {
         let tokens_collection = document.tokens_mut();
 
         let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(offset_a) else {
-            return Err(format!("Cannot get start token at offset {} in tokens collection!", offset_a));
+            return Err(format!("Error in SequentialTokenSelection.new_from_offsets: Cannot get start token at offset {} in tokens collection!", offset_a));
         };
 
         if offset_a <= offset_b {
@@ -100,7 +100,7 @@ impl SequentialTokenSelection {
         loop {
             let result = {
                 let Some(pointer) = tokens_collection.get_by_id(pointer_id) else {
-                    return Err(format!("Unable to find token with id {} ({} chars in to removal)", pointer_id, chars_removed));
+                    return Err(format!("Error in SequentialTokenSelection.remove_deep: Unable to find token with id {} ({} chars in to removal)", pointer_id, chars_removed));
                 };
 
                 Ok((pointer.next_id, pointer.literal.clone()))
@@ -251,7 +251,7 @@ impl SequentialTokenSelection {
         };
 
         let Some((token, token_offset)) = tokens_collection.get_by_offset(end_offset) else {
-            return Err(format!("Cannot get token at offset {} in tokens collection!", end_offset));
+            return Err(format!("Error in SequentialTokenSelection.as_forwards_selection: cannot get token at offset {} in tokens collection!", end_offset));
         };
 
         Ok(Self::new(
@@ -334,10 +334,10 @@ impl SequentialTokenSelection {
         ];
         println!("OFFSETS: {:?}", offsets);
         let Some(smallest_offset) = offsets.iter().min() else {
-            return Err(format!("Cannot get smallest offset in vec: {:?}", offsets));
+            return Err(format!("Error in SequentialTokenSelection.extend: Cannot get smallest offset in vec: {:?}", offsets));
         };
         let Some(largest_offset) = offsets.iter().max() else {
-            return Err(format!("Cannot get smallest offset in vec: {:?}", offsets));
+            return Err(format!("Error in SequentialTokenSelection.extend: Cannot get smallest offset in vec: {:?}", offsets));
         };
         let char_count = largest_offset - smallest_offset;
         println!("CHAR COUNT? {} - {} = {}", largest_offset, smallest_offset, char_count);
@@ -347,13 +347,13 @@ impl SequentialTokenSelection {
         // direction
         if range.is_backwards {
             let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*largest_offset) else {
-                return Err(format!("Cannot get token at offset {} in tokens collection!", largest_offset));
+                return Err(format!("Error in SequentialTokenSelection.extend: Cannot get token at offset {} in tokens collection!", largest_offset));
             };
             println!("EXTEND RESULT: is_backwards=true char_count={char_count}");
             Ok(Self::new_backwards(start_token.id, start_token_offset, char_count))
         } else {
             let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*smallest_offset) else {
-                return Err(format!("Cannot get token at offset {} in tokens collection!", smallest_offset));
+                return Err(format!("Error in SequentialTokenSelection.extend: Cannot get token at offset {} in tokens collection!", smallest_offset));
             };
             println!("EXTEND RESULT: is_backwards=false char_count={char_count}");
             Ok(Self::new(start_token.id, start_token_offset, char_count))
