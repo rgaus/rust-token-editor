@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::cell::RefCell;
 
 use crate::token::*;
 
@@ -32,7 +33,7 @@ pub struct Document {
     // A cache that maps 1-indexed row to the offset at the start of that row.
     // This is used to quickly be able to convert from an offset to a (x, y) position and back
     // again
-    newline_offset_cache: HashMap<usize, usize>,
+    newline_offset_cache: RefCell<HashMap<usize, usize>>,
 }
 
 impl Document {
@@ -40,7 +41,7 @@ impl Document {
         Self {
             tokens_collection: tokens_collection,
             offset_stack: vec![0],
-            newline_offset_cache: HashMap::new(),
+            newline_offset_cache: RefCell::new(HashMap::new()),
         }
     }
     pub fn new_from_literal(literal: &str) -> Self {
@@ -1406,14 +1407,15 @@ impl Document {
 
     // Remove all cached newlines that are at or after the given offset
     pub fn clear_newline_cache_at(&mut self, offset: usize) {
-        self.newline_offset_cache.retain(|_, newline_start_offset| {
+        self.newline_offset_cache.borrow_mut().retain(|_, newline_start_offset| {
             *newline_start_offset < offset
         })
     }
 
     fn seed_newline_cache_if_empty(&mut self) {
-        if self.newline_offset_cache.is_empty() {
-            self.newline_offset_cache.insert(1, 0);
+        let is_empty = self.newline_offset_cache.borrow().is_empty();
+        if is_empty {
+            self.newline_offset_cache.borrow_mut().insert(1, 0);
         }
     }
 
@@ -1432,6 +1434,7 @@ impl Document {
         self.seed_newline_cache_if_empty();
 
         let (start_row, start_offset) = self.newline_offset_cache
+            .borrow()
             .iter()
             .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
                 if *cached_row > row {
@@ -1464,7 +1467,7 @@ impl Document {
             current_offset += number_of_matched_chars_including_newline;
             current_row += 1;
 
-            self.newline_offset_cache.insert(current_row, current_offset);
+            self.newline_offset_cache.borrow_mut().insert(current_row, current_offset);
         }
         self.seek_pop();
 
@@ -1481,6 +1484,7 @@ impl Document {
         self.seed_newline_cache_if_empty();
 
         let (start_row, start_offset) = self.newline_offset_cache
+            .borrow()
             .iter()
             .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
                 if *cached_offset > offset {
@@ -1513,7 +1517,7 @@ impl Document {
             current_offset += number_of_matched_chars_including_newline;
             current_row += 1;
 
-            self.newline_offset_cache.insert(current_row, current_offset);
+            self.newline_offset_cache.borrow_mut().insert(current_row, current_offset);
         }
         self.seek_pop();
 
@@ -1555,6 +1559,7 @@ impl Document {
         self.seed_newline_cache_if_empty();
 
         let (final_cached_row, final_cached_row_offset) = self.newline_offset_cache
+            .borrow()
             .iter()
             .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
                 if *cached_offset > previous_offset {
@@ -1580,7 +1585,7 @@ impl Document {
             current_offset += number_of_matched_chars_including_newline;
             current_row += 1;
 
-            self.newline_offset_cache.insert(current_row, current_offset);
+            self.newline_offset_cache.borrow_mut().insert(current_row, current_offset);
         }
         self.seek_pop();
 
@@ -1597,6 +1602,7 @@ impl Document {
         // Because counting all rows is really slow, if there are cached newlines that are after
         // the row being queried, then assume that the document goes on beyond that point.
         let (final_cached_row, _) = self.newline_offset_cache
+            .borrow()
             .iter()
             .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
                 if *cached_offset > previous_offset {
@@ -1638,6 +1644,7 @@ impl Document {
         // Because counting all chars is really slow, if there are cached newlines that are after
         // the offset being queried, then assume that the document goes on beyond that point.
         let (_, final_cached_row_offset) = self.newline_offset_cache
+            .borrow()
             .iter()
             .fold((1, 0), |(previous_row, previous_offset), (cached_row, cached_offset)| {
                 if *cached_offset > previous_offset {
