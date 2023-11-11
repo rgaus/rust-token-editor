@@ -1,8 +1,9 @@
-use uuid::Uuid;
+use colored::Colorize;
+use rangemap::RangeMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use rangemap::RangeMap;
-use colored::Colorize;
+use std::rc::Rc;
+use uuid::Uuid;
 
 use crate::token_match_template::*;
 
@@ -10,6 +11,7 @@ use crate::token_match_template::*;
 #[derive(Debug)]
 pub struct TokensCollection {
     pub tokens: Vec<Box<Token>>,
+    token_match_templates_map: Rc<TokenMatchTemplateMap>,
 
     // A cache that stores the character offset of each token's start and end in the final output
     // string, mapped FORWARDS. Use this to figure out where a token will be in the output.
@@ -25,16 +27,17 @@ pub struct TokensCollection {
 }
 
 impl TokensCollection {
-    pub fn new(tokens: Vec<Box<Token>>) -> TokensCollection {
+    pub fn new(tokens: Vec<Box<Token>>, token_match_templates_map: Rc<TokenMatchTemplateMap>) -> TokensCollection {
         TokensCollection {
             tokens: tokens,
+            token_match_templates_map: token_match_templates_map,
             offset_cache: RefCell::new(HashMap::new()),
             tokens_by_start_offset_cache: RefCell::new(RangeMap::new()),
             bookmarks: HashMap::new(),
         }
     }
     pub fn new_empty() -> TokensCollection {
-        TokensCollection::new(vec![])
+        TokensCollection::new(vec![], Rc::new(HashMap::new()))
     }
     pub fn new_unparsed_literal(literal: &str) -> TokensCollection {
         let mut document = TokensCollection::new_empty();
@@ -239,7 +242,7 @@ impl TokensCollection {
         let Some(pointer_id_unwrapped) = pointer_id else {
             return None;
         };
-        // println!("FOO: {} - {}", input_offset, offset);
+        println!("FOO: {} - {}", input_offset, offset);
         let offset_into_token = input_offset - offset;
         let Some(token) = self.get_by_id(pointer_id_unwrapped) else {
             return None;
@@ -330,7 +333,9 @@ impl TokensCollection {
                 result_range.end
             };
 
-            self.tokens_by_start_offset_cache.borrow_mut().remove(offset..maximum_cached_offset);
+            if maximum_cached_offset > offset {
+                self.tokens_by_start_offset_cache.borrow_mut().remove(offset..maximum_cached_offset);
+            }
         };
 
         true
@@ -351,7 +356,6 @@ impl TokensCollection {
         &mut self,
         token_id: uuid::Uuid,
         new_text: String,
-        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<Option<uuid::Uuid>, String> {
         let Some(old_token) = self.get_by_id(token_id) else {
             return Err(format!("Cannot find token with id {}", token_id));
@@ -388,7 +392,7 @@ impl TokensCollection {
                 working_token.previous_id,
                 true,
                 0,
-                token_match_templates_map,
+                self.token_match_templates_map.clone(),
             ) {
                 Ok((match_status, _offset, last_token_id, child_ids, new_tokens)) => {
                     println!("MATCHED STATUS: {:?} => {:?}", working_token.template, match_status);

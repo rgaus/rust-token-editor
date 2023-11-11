@@ -1,7 +1,8 @@
-use std::io;
-use std::collections::HashMap;
-use regex::Regex;
 use colored::Colorize;
+use regex::Regex;
+use std::collections::HashMap;
+use std::io;
+use std::rc::Rc;
 
 mod token;
 use token::*;
@@ -131,7 +132,7 @@ fn stringify_colors(
 
 
 
-fn make_token_template_map() -> HashMap<&'static str, TokenMatchTemplate> {
+fn make_token_template_map() -> TokenMatchTemplateMap {
     let mut token_match_templates_map = HashMap::new();
     token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
@@ -386,7 +387,7 @@ fn main() {
     // let mut document = Document::new_from_literal("foo.foo bar baz");
     // let mut document = Document::new_from_literal("foo.foo bar\nbaz\nfinal");
     // let mut document = Document::new_from_literal("foo   {bar....{}  }baaaaar baz\n  baz\nfinalaaaaaaaa");
-    let document = Document::new_from_literal("# ab\nif (foo == 1) {\n  \\{/* foo */\\}\n  println!(123)\n}\n#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
+    // let document = Document::new_from_literal("# ab\nif (foo == 1) {\n  \\{#<{(| foo |)}>#\\}\n  println!(123)\n}\n#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
     // let mut document = Document::new_from_literal("#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
     // document.seek(3); // First space          ----> "TEST bar.baaaaar baz"
     // document.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
@@ -412,6 +413,54 @@ fn main() {
     //     let tokens_collection = document.tokens_mut();
     //     println!("POST: {}", tokens_collection.stringify());
     // }
+
+
+
+
+    let token_match_templates_map = make_token_template_map();
+    let token_match_templates_map_cloned = token_match_templates_map.clone();
+    let Some(all_template) = token_match_templates_map_cloned.get("All") else {
+        panic!("No 'All' template found!");
+    };
+
+//     let input = "
+// let b = {
+//     'foo': 2,
+//     'nested': {
+//         'again': [5, 6]
+//     }
+// }
+// {
+//     {
+//         let a = 'aaa'
+//     }
+// }";
+
+    // let input = "{let a = ['aaa', ['cc', 'bbb']]}";
+    let input = "{
+        let a = [
+            'aaa', ['cc', 'bbb']
+        ]
+    }";
+    // foo.bar bar baz
+    // let input = "let a = ['aaa'@, 1]";
+    // let input = "let @a = 'fo'@@";
+    // let input = "456";
+
+    // let input = "1aa1bb";
+
+    // match all_template.consume_from_start(input, false, &token_match_templates_map) {
+    let Ok((
+        _match_status,
+        _offset,
+        _last_token_id,
+        _child_ids,
+        mut tokens_collection
+    )) = all_template.consume_from_start(input, true, Rc::new(token_match_templates_map)) else {
+        panic!("Error parsing initial tokens!");
+    };
+    let mut document = Document::new_from_tokenscollection(Box::new(tokens_collection));
+
 
     let mut buffer = document.create_buffer();
     buffer.dump_string();
@@ -571,6 +620,7 @@ fn main() {
 #[cfg(test)]
 mod test_parsing {
     use super::*;
+    use std::rc::Rc; 
 
     mod mini_language_twelve {
         use super::*;
@@ -578,7 +628,7 @@ mod test_parsing {
         // This mini language is either:
         // - A single `1`
         // - Between 1 to 3 `1`s, followed by a `2`
-        fn initialize_mini_language_twelve() -> HashMap<&'static str, TokenMatchTemplate> {
+        fn initialize_mini_language_twelve() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
             let mut token_match_templates_map = HashMap::new();
             token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
                 TokenMatchTemplateMatcher::any(vec![
@@ -599,7 +649,7 @@ mod test_parsing {
                 ),
             ]));
 
-            token_match_templates_map
+            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
         }
 
         mod exact_parsing {
@@ -607,10 +657,9 @@ mod test_parsing {
 
             #[test]
             fn it_fully_parses_1() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("1", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::FullParse); // status
                 assert_eq!(result.1, 1); // offset
                 assert_eq!(result.3.len(), 1); // child_ids
@@ -621,10 +670,9 @@ mod test_parsing {
 
             #[test]
             fn it_fully_parses_12() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("12", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("12", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::FullParse); // status
                 assert_eq!(result.1, 2); // offset
                 assert_eq!(result.3.len(), 1); // child_ids
@@ -635,10 +683,9 @@ mod test_parsing {
 
             #[test]
             fn it_fully_parses_112() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("112", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::FullParse); // status
                 assert_eq!(result.1, 3); // offset
                 assert_eq!(result.3.len(), 1); // child_ids
@@ -649,10 +696,9 @@ mod test_parsing {
 
             #[test]
             fn it_fully_parses_1112() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1112", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::FullParse); // status
                 assert_eq!(result.1, 4); // offset
                 assert_eq!(result.3.len(), 1); // child_ids
@@ -663,10 +709,9 @@ mod test_parsing {
 
             #[test]
             fn it_starts_to_parse_1112aa() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("1112aa", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1112aa", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::FullParse); // status
                 assert_eq!(result.1, 4); // offset - NOTE: not the whole string!
                 assert_eq!(result.3.len(), 1); // child_ids
@@ -677,10 +722,9 @@ mod test_parsing {
 
             #[test]
             fn it_parses_11112_as_just_1() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("11112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("11112", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::FullParse); // status
                 assert_eq!(result.1, 1); // offset - NOTE: not the whole string!
                 assert_eq!(result.3.len(), 1); // child_ids
@@ -691,10 +735,9 @@ mod test_parsing {
 
             #[test]
             fn it_doesnt_parse_333() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("333", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("333", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::Failed); // status
                 assert_eq!(result.1, 0); // offset - NOTE: it parsed no characters!
                 assert_eq!(result.3.len(), 0); // child_ids
@@ -704,10 +747,9 @@ mod test_parsing {
 
             #[test]
             fn it_doesnt_parse_empty_string() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("", false, Rc::new(template_map)).unwrap();
                 assert_eq!(result.0, TokenParseStatus::Failed); // status
                 assert_eq!(result.1, 0); // offset - NOTE: not the whole string!
                 assert_eq!(result.3.len(), 0); // child_ids
@@ -721,10 +763,9 @@ mod test_parsing {
 
             #[test]
             fn it_loosely_parses_1_with_prefix() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("a1", true, &template_map).unwrap();
+                let result = all_template.consume_from_start("a1", true, Rc::new(template_map)).unwrap();
                 // dump(result.3[0], &result.4.tokens);
                 assert_eq!(result.0, TokenParseStatus::PartialParse(2, Some(0))); // status
                 assert_eq!(result.1, 2); // offset
@@ -735,10 +776,9 @@ mod test_parsing {
 
             #[test]
             fn it_loosely_parses_1_with_suffix() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("1a", true, &template_map).unwrap();
+                let result = all_template.consume_from_start("1a", true, Rc::new(template_map)).unwrap();
                 dump(result.3[0], &result.4.tokens);
                 assert_eq!(result.0, TokenParseStatus::PartialParse(2, Some(1))); // status
                 assert_eq!(result.1, 2); // offset
@@ -749,10 +789,9 @@ mod test_parsing {
 
             #[test]
             fn it_loosely_parses_112_with_garbage_in_the_middle() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("AA11BB2CC", true, &template_map).unwrap();
+                let result = all_template.consume_from_start("AA11BB2CC", true, Rc::new(template_map)).unwrap();
                 // dump(result.3[0], &result.4.tokens);
                 assert_eq!(result.0, TokenParseStatus::PartialParse(9, Some(0))); // status
                 assert_eq!(result.1, 9); // offset
@@ -763,10 +802,9 @@ mod test_parsing {
 
             #[test]
             fn it_loosely_parses_total_garbage() {
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("TOTAL GARBAGE", true, &template_map).unwrap();
+                let result = all_template.consume_from_start("TOTAL GARBAGE", true, Rc::new(template_map)).unwrap();
                 // dump(result.3[0], &result.4.tokens);
                 assert_eq!(result.0, TokenParseStatus::PartialParse(13, Some(0))); // status
                 assert_eq!(result.1, 13); // offset
@@ -784,10 +822,9 @@ mod test_parsing {
                 // matches, and that is prioritized over a path that partially matches / contains
                 // skipped tokens ("Twelve"), even if that path is longer!
 
-                let template_map = initialize_mini_language_twelve();
-                let all_template = template_map.get("All").unwrap();
+                let (template_map, all_template) = initialize_mini_language_twelve();
 
-                let result = all_template.consume_from_start("111112", true, &template_map).unwrap();
+                let result = all_template.consume_from_start("111112", true, Rc::new(template_map)).unwrap();
                 // dump(result.3[0], &result.4.tokens);
                 assert_eq!(result.0, TokenParseStatus::PartialParse(6, Some(1))); // status
                 assert_eq!(result.1, 6); // offset
@@ -803,7 +840,7 @@ mod test_parsing {
 
         // This mini language implements a four function math expression parser with parenthesis
         // for grouping.
-        fn initialize_mini_language_math() -> HashMap<&'static str, TokenMatchTemplate> {
+        fn initialize_mini_language_math() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
             let mut token_match_templates_map = HashMap::new();
             token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
                 TokenMatchTemplateMatcher::any(vec![
@@ -857,15 +894,14 @@ mod test_parsing {
                 ),
             ]));
 
-            token_match_templates_map
+            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
         }
 
         #[test]
         fn it_fully_parses_1_plus_1() {
-            let template_map = initialize_mini_language_math();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_math();
 
-            let result = all_template.consume_from_start("1+1", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("1+1", false, Rc::new(template_map)).unwrap();
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
             assert_eq!(result.1, 3); // offset
             assert_eq!(result.3.len(), 1); // child_ids
@@ -876,10 +912,9 @@ mod test_parsing {
 
         #[test]
         fn it_fully_parses_1_plus_negative_1() {
-            let template_map = initialize_mini_language_math();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_math();
 
-            let result = all_template.consume_from_start("1+-1", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("1+-1", false, Rc::new(template_map)).unwrap();
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
             assert_eq!(result.1, 4); // offset
             assert_eq!(result.3.len(), 1); // child_ids
@@ -890,10 +925,9 @@ mod test_parsing {
 
         #[test]
         fn it_fully_parses_1_plus_quantity_5_times_6() {
-            let template_map = initialize_mini_language_math();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_math();
 
-            let result = all_template.consume_from_start("1+(5*6)", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("1+(5*6)", false, Rc::new(template_map)).unwrap();
             // dump(result.3[0], &result.4.tokens);
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
             assert_eq!(result.1, 7); // offset
@@ -904,10 +938,9 @@ mod test_parsing {
 
         #[test]
         fn it_partially_parses_1_plus_as_just_one() {
-            let template_map = initialize_mini_language_math();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_math();
 
-            let result = all_template.consume_from_start("1+", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("1+", false, Rc::new(template_map)).unwrap();
             // dump(result.3[0], &result.4.tokens);
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
             assert_eq!(result.1, 1); // offset
@@ -924,7 +957,7 @@ mod test_parsing {
         use super::*;
 
         // This mini language implements a series of strings and numbers with whitespace in between
-        fn initialize_mini_language_looping_expressions() -> HashMap<&'static str, TokenMatchTemplate> {
+        fn initialize_mini_language_looping_expressions() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
             let mut token_match_templates_map = HashMap::new();
             token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
                 TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
@@ -953,15 +986,14 @@ mod test_parsing {
                 ),
             ]));
 
-            token_match_templates_map
+            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
         }
 
         #[test]
         fn it_fully_parses_abc_enter_123() {
-            let template_map = initialize_mini_language_looping_expressions();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_looping_expressions();
 
-            let result = all_template.consume_from_start("'abc'\n123", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("'abc'\n123", false, Rc::new(template_map)).unwrap();
             dump(result.3[0], &result.4.tokens);
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
             assert_eq!(result.1, 9); // offset
@@ -972,10 +1004,9 @@ mod test_parsing {
 
         #[test]
         fn it_fully_parses_quote_123_quote_as_string() {
-            let template_map = initialize_mini_language_looping_expressions();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_looping_expressions();
 
-            let result = all_template.consume_from_start("'123'", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("'123'", false, Rc::new(template_map)).unwrap();
             dump(result.3[0], &result.4.tokens);
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
             assert_eq!(result.1, 5); // offset
@@ -995,7 +1026,7 @@ mod test_parsing {
 
     #[test]
     fn it_fully_parses_optional_whitespace() {
-        let template_map = {
+        let (template_map, all_template) = {
             let mut token_match_templates_map = HashMap::new();
             token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
                 TokenMatchTemplateMatcher::repeat_zero_to_forever(Box::new(
@@ -1029,11 +1060,10 @@ mod test_parsing {
                 ),
             ]));
 
-            token_match_templates_map
+            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
         };
-        let all_template = template_map.get("All").unwrap();
 
-        let result = all_template.consume_from_start("A ABB", false, &template_map).unwrap();
+        let result = all_template.consume_from_start("A ABB", false, Rc::new(template_map)).unwrap();
         assert_eq!(result.0, TokenParseStatus::FullParse); // status
         assert_eq!(result.1, 5); // offset
         assert_eq!(result.3.len(), 2); // child_ids

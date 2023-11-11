@@ -2230,9 +2230,6 @@ impl Buffer {
                         deleted_selection.prepend_text(
                             &mut self.document,
                             popped_char_as_string,
-                            // FIXME: add in token template map below so text is parsed as it is
-                            // inserted!
-                            &HashMap::new(),
                         )?;
                     }
                     // If neither of the above cases ran, then we must be before the replace
@@ -2282,10 +2279,8 @@ impl Buffer {
                             }
                         }
 
-                        // FIXME: add in token template map below so text is parsed as it is
-                        // inserted!
                         let _inserted_indent_text = text.clone();
-                        selection.prepend_text(&mut self.document, text, &HashMap::new())?;
+                        selection.prepend_text(&mut self.document, text)?;
                         self.document.clear_newline_cache_at(initial_offset);
                         let final_offset = self.document.get_offset() + text_char_count;
                         self.document.seek(final_offset);
@@ -2323,9 +2318,7 @@ impl Buffer {
                         selection
                     };
 
-                    // FIXME: add in token template map below so text is parsed as it is
-                    // inserted!
-                    deleted_selection.prepend_text(&mut self.document, String::from(c), &HashMap::new())?;
+                    deleted_selection.prepend_text(&mut self.document, String::from(c))?;
                     self.document.clear_newline_cache_at(offset);
 
                     let final_offset = self.document.get_offset() + 1;
@@ -2353,9 +2346,7 @@ impl Buffer {
                     selection
                         .remove_deep(&mut self.document, false)
                         .unwrap()
-                        // FIXME: add in token template map below so text is parsed as it is
-                        // inserted!
-                        .prepend_text(&mut self.document, replaced_chars, &HashMap::new())?;
+                        .prepend_text(&mut self.document, replaced_chars)?;
 
                     // NOTE: no need to clear the newline cache because the length of the input
                     // does not change!
@@ -2629,9 +2620,7 @@ impl Buffer {
                                 }
                             }
 
-                            // FIXME: add in token template map below so text is parsed as it is
-                            // inserted!
-                            selection.prepend_text(&mut self.document, text, &HashMap::new())?;
+                            selection.prepend_text(&mut self.document, text)?;
                             self.document.clear_newline_cache_at(offset);
 
                             self.document.seek(offset + text_char_count);
@@ -2679,9 +2668,7 @@ impl Buffer {
                                 }
                             }
 
-                            // FIXME: add in token template map below so text is parsed as it is
-                            // inserted!
-                            if let Err(e) = selection.prepend_text(&mut self.document, text, &HashMap::new()) {
+                            if let Err(e) = selection.prepend_text(&mut self.document, text) {
                                 return Err(format!("Error prepending text via O: {e}"));
                             };
                             self.document.clear_newline_cache_at(offset);
@@ -3464,9 +3451,10 @@ impl Buffer {
 
 #[cfg(test)]
 mod test_engine {
-    use crate::TokenMatchTemplate;
+    use crate::{TokenMatchTemplate, TokenMatchTemplateMap};
     use crate::TokenParseStatus;
     use regex::Regex;
+    use std::rc::Rc; 
     use super::*;
 
     fn remove_sequentialtokenrange(v: Result<Option<(
@@ -3496,7 +3484,7 @@ mod test_engine {
         // This mini language is either:
         // - A single `1`
         // - Between 1 to 3 `1`s, followed by a `2`
-        fn initialize_mini_language_twelve() -> HashMap<&'static str, TokenMatchTemplate> {
+        fn initialize_mini_language_twelve() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
             let mut token_match_templates_map = HashMap::new();
             token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
                 TokenMatchTemplateMatcher::any(vec![
@@ -3517,31 +3505,31 @@ mod test_engine {
                 ),
             ]));
 
-            token_match_templates_map
+            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
         }
 
         #[test]
         fn it_is_able_to_read_from_document_one_at_a_time() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_twelve();
+            let template_map_rc = Rc::new(template_map);
 
             // Get a few subranges to make sure they generate the right data
             let mut document = {
-                let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1112", false, template_map_rc.clone()).unwrap();
                 Document::new_from_tokenscollection(Box::new(result.4))
             };
             document.seek(0);
             assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((0..3, String::from("111")))));
 
             let mut document = {
-                let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1112", false, template_map_rc.clone()).unwrap();
                 Document::new_from_tokenscollection(Box::new(result.4))
             };
             document.seek(1);
             assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((1..4, String::from("112")))));
 
             let mut document = {
-                let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1112", false, template_map_rc.clone()).unwrap();
                 Document::new_from_tokenscollection(Box::new(result.4))
             };
             document.seek(2);
@@ -3549,7 +3537,7 @@ mod test_engine {
 
             // Make sure that if at the end, as much data is returned as possible
             let mut document = {
-                let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+                let result = all_template.consume_from_start("1112", false, template_map_rc.clone()).unwrap();
                 Document::new_from_tokenscollection(Box::new(result.4))
             };
             document.seek(3);
@@ -3558,10 +3546,9 @@ mod test_engine {
 
         #[test]
         fn it_is_able_to_read_from_document_repeatedly() {
-            let template_map = initialize_mini_language_twelve();
-            let all_template = template_map.get("All").unwrap();
+            let (template_map, all_template) = initialize_mini_language_twelve();
 
-            let result = all_template.consume_from_start("1112", false, &template_map).unwrap();
+            let result = all_template.consume_from_start("1112", false, Rc::new(template_map)).unwrap();
             assert_eq!(result.0, TokenParseStatus::FullParse); // status
 
             // Make sure the parser parsed the input that was expected
@@ -3766,7 +3753,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
@@ -3799,7 +3786,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), ".foo bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TEST.foo bar baz");
                 }
 
@@ -3825,7 +3812,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST   baz");
                 }
 
@@ -3859,7 +3846,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
 
@@ -3885,7 +3872,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST");
                 }
 
@@ -3921,7 +3908,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST");
                 }
 
@@ -3947,7 +3934,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST quux");
                 }
 
@@ -3973,7 +3960,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar      ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TEST     ");
                 }
             }
@@ -4008,7 +3995,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
@@ -4039,7 +4026,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new()).unwrap();
+                    deleted_selection.prepend_text(&mut document, String::from("TEST")).unwrap();
                     assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
@@ -4071,7 +4058,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST   baz");
                 }
 
@@ -4105,7 +4092,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
 
@@ -4139,7 +4126,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST quux");
                 }
 
@@ -4175,7 +4162,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST");
                 }
 
@@ -4207,7 +4194,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo TEST quux");
                 }
             }
@@ -4239,7 +4226,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
@@ -4266,7 +4253,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.TESTbar baz");
                 }
 
@@ -4293,7 +4280,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.TESTbar baz");
                 }
 
@@ -4320,7 +4307,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar z");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TESTz");
                 }
 
@@ -4347,7 +4334,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), " bar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "TEST bar.baaaaar baz");
                     }
 
@@ -4372,7 +4359,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "bar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "TESTbar.baaaaar baz");
                     }
 
@@ -4396,7 +4383,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo ar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo TESTar.baaaaar baz");
                     }
 
@@ -4421,7 +4408,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo r.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo TESTr.baaaaar baz");
                     }
 
@@ -4446,7 +4433,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo .baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo TEST.baaaaar baz");
                     }
 
@@ -4470,7 +4457,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo barbaaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo barTESTbaaaaar baz");
                     }
 
@@ -4494,7 +4481,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar.aaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bar.TESTaaaaar baz");
                     }
 
@@ -4519,7 +4506,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar.aaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bar.TESTaaaar baz");
                     }
 
@@ -4544,7 +4531,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar. baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bar.TEST baz");
                     }
                 }
@@ -4577,7 +4564,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
@@ -4604,7 +4591,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
@@ -4631,7 +4618,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo TESTbar baz");
                 }
 
@@ -4658,7 +4645,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar z");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TESTz");
                 }
             }
@@ -4688,7 +4675,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
@@ -4714,7 +4701,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo .bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo TEST.bar baz");
                 }
 
@@ -4740,7 +4727,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
 
@@ -4766,7 +4753,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "fooTEST.baaaaar baz");
                     }
 
@@ -4790,7 +4777,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo .baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo TEST.baaaaar baz");
                     }
 
@@ -4814,7 +4801,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo b.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bTEST.baaaaar baz");
                     }
 
@@ -4838,7 +4825,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo babaaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo baTESTbaaaaar baz");
                     }
 
@@ -4862,7 +4849,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo barTEST baz");
                     }
 
@@ -4886,7 +4873,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar. baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bar.TEST baz");
                     }
 
@@ -4910,7 +4897,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar.b baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bar.bTEST baz");
                     }
 
@@ -4934,7 +4921,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo bar.baaaaar");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo bar.baaaaarTEST");
                     }
                 }
@@ -4965,7 +4952,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
@@ -4991,7 +4978,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo  baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo TEST baz");
                 }
 
@@ -5017,7 +5004,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
             }
@@ -5047,7 +5034,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foar.bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foTESTar.bar baz");
                 }
 
@@ -5073,7 +5060,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foo.foo baaz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foo.foo baTESTaz");
                 }
 
@@ -5099,7 +5086,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "fobar.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foTESTbar.baaaaar baz");
                     }
 
@@ -5123,7 +5110,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "for.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foTESTr.baaaaar baz");
                     }
 
@@ -5147,7 +5134,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "fo.baaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foTEST.baaaaar baz");
                     }
 
@@ -5171,7 +5158,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo babaaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo baTESTbaaaaar baz");
                     }
 
@@ -5195,7 +5182,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo baraaaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo barTESTaaaaar baz");
                     }
 
@@ -5219,7 +5206,7 @@ mod test_engine {
                         assert_eq!(document.tokens().stringify(), "foo baraaaar baz");
 
                         // Replace it with TEST
-                        deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                        deleted_selection.prepend_text(&mut document, String::from("TEST"));
                         assert_eq!(document.tokens().stringify(), "foo barTESTaaaar baz");
                     }
                 }
@@ -5250,7 +5237,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
@@ -5278,7 +5265,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "foor baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "fooTESTr baz");
                 }
 
@@ -5304,7 +5291,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "ar baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "TESTar baz");
                 }
 
@@ -5332,7 +5319,7 @@ mod test_engine {
                     assert_eq!(document.tokens().stringify(), "for baz");
 
                     // Replace it with TEST
-                    deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                    deleted_selection.prepend_text(&mut document, String::from("TEST"));
                     assert_eq!(document.tokens().stringify(), "foTESTr baz");
                 }
 
@@ -5368,7 +5355,7 @@ mod test_engine {
                 //     assert_eq!(document.tokens().stringify(), "foo az");
                 //
                 //     // Replace it with TEST
-                //     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
+                //     deleted_selection.prepend_text(&mut document, String::from("TEST"));
                 //     assert_eq!(document.tokens().stringify(), "foTESTaz");
                 // }
             }

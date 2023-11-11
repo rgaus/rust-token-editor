@@ -1,8 +1,8 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 use uuid::Uuid;
 
 use crate::token::*;
-
 
 // The max number of times that a "forever" type token can ever repeat
 //
@@ -25,6 +25,7 @@ pub struct TokenMatchTemplate {
     matcher: Vec<TokenMatchTemplateMatcher>,
     events: Option<TokenEvents>,
 }
+pub type TokenMatchTemplateMap = HashMap<&'static str, TokenMatchTemplate>;
 
 impl TokenMatchTemplate {
     pub fn new(matcher: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplate {
@@ -38,7 +39,7 @@ impl TokenMatchTemplate {
         &self,
         input: &str,
         store_non_parsable_chars: bool,
-        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
+        token_match_templates_map: Rc<TokenMatchTemplateMap>,
     ) -> Result<(TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
         self.consume_from_offset(input, 0, None, store_non_parsable_chars, 0, token_match_templates_map)
     }
@@ -50,7 +51,7 @@ impl TokenMatchTemplate {
         initial_last_token_id: Option<uuid::Uuid>,
         store_non_parsable_chars: bool,
         depth: usize,
-        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
+        token_match_templates_map: Rc<TokenMatchTemplateMap>,
     ) -> Result<(TokenParseStatus, usize, Option<uuid::Uuid>, Vec<uuid::Uuid>, TokensCollection), String> {
         let mut tokens = TokensCollection::new_empty();
         let mut offset = initial_offset;
@@ -236,7 +237,7 @@ impl TokenMatchTemplate {
                         last_token_id,
                         store_non_parsable_chars,
                         depth + 1,
-                        token_match_templates_map,
+                        token_match_templates_map.clone(),
                     ) else {
                         break;
                     };
@@ -532,7 +533,7 @@ impl TokenMatchTemplate {
                             Some(new_token.id),
                             store_non_parsable_chars,
                             depth + 1,
-                            token_match_templates_map,
+                            token_match_templates_map.clone(),
                         ) else {
                             continue;
                         };
@@ -759,7 +760,7 @@ impl TokenMatchTemplate {
                             Some(new_token.id),
                             store_non_parsable_chars,
                             depth + 1,
-                            token_match_templates_map,
+                            token_match_templates_map.clone(),
                         ) else {
                             match_failed = true;
                             break;
@@ -905,7 +906,7 @@ impl TokenMatchTemplate {
                             Some(new_token.id),
                             store_non_parsable_chars,
                             depth + 1,
-                            token_match_templates_map,
+                            token_match_templates_map.clone(),
                         ) else {
                             break;
                         };
@@ -1078,7 +1079,7 @@ impl TokenMatchTemplate {
                             Some(new_token.id),
                             store_non_parsable_chars,
                             depth + 1,
-                            token_match_templates_map,
+                            token_match_templates_map.clone(),
                         ) else {
                             break;
                         };
@@ -1286,6 +1287,6 @@ impl TokenMatchTemplate {
             TokenParseStatus::Failed
         };
         println!("{}`-- matched_all_tokens={} matched_partial={} status={:?}", depth_spaces, matched_all_tokens, matched_partial, status);
-        Ok((status, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens)))
+        Ok((status, offset, last_token_id, child_ids, TokensCollection::new(parented_tokens, token_match_templates_map.clone())))
     }
 }

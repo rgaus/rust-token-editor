@@ -193,7 +193,6 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
         new_text: String,
-        token_match_templates_map: &HashMap<&str, TokenMatchTemplate>,
     ) -> Result<Option<uuid::Uuid>, String> {
         let tokens_collection = document.tokens_mut();
 
@@ -220,7 +219,6 @@ impl SequentialTokenSelection {
         tokens_collection.change_token_literal_text(
             self.starting_token_id,
             complete_new_text,
-            token_match_templates_map,
         )
     }
 
