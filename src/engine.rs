@@ -269,7 +269,7 @@ impl Document {
                     result = format!("{}{}", result, character);
                     if needle_func(character, initial_offset + result.len()) {
                         is_done = true;
-                        println!("DONE!");
+                        // println!("DONE!");
                         break;
                     }
                 }
@@ -405,7 +405,7 @@ impl Document {
         println!("BACK: '{}' {} - ({}-1)", result, initial_offset, result_length);
 
         if !is_done {
-            println!("DONE!");
+            // println!("DONE!");
             // final_offset -= 1;
 
             // No character ever matched!
