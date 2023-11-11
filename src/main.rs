@@ -455,11 +455,11 @@ fn main() {
         _offset,
         _last_token_id,
         _child_ids,
-        mut tokens_collection
+        tokens_collection
     )) = all_template.consume_from_start(input, true, Rc::new(token_match_templates_map)) else {
         panic!("Error parsing initial tokens!");
     };
-    let mut document = Document::new_from_tokenscollection(Box::new(tokens_collection));
+    let document = Document::new_from_tokenscollection(Box::new(tokens_collection));
 
 
     let mut buffer = document.create_buffer();

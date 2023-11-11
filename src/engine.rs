@@ -2253,7 +2253,7 @@ impl Buffer {
                         let updated_c = if c == 'N' { '\n' } else { c };
                         let mut text = String::from(updated_c);
                         let mut text_char_count = 1;
-                        let mut indentation_text;
+                        let indentation_text;
 
 
                         // Autoindent newlines if there is leading whitespace and the option is
@@ -4172,7 +4172,7 @@ mod test_engine {
                     document.seek(8); // Move to the start of "bar"
 
                     // Get a upper word
-                    let (range, matched_chars, selection) = document.read_to_pattern(
+                    let (_range, matched_chars, selection) = document.read_to_pattern(
                         TraversalPattern::UpperWord,
                         &Some(Verb::Change),
                         &BufferOptions::new_with_defaults(),
@@ -5367,7 +5367,7 @@ mod test_engine {
 
         #[test]
         fn it_should_parse_many_different_sequences() {
-            let mut document = Document::new_from_literal("foo.foo bar baz");
+            let document = Document::new_from_literal("foo.foo bar baz");
             let mut buffer = document.create_buffer();
 
             for (input_text, dumped_data) in vec![
@@ -5586,7 +5586,7 @@ mod test_engine {
 
             #[test]
             fn it_should_navigate_around() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("lljjhkdl");
@@ -5595,7 +5595,7 @@ mod test_engine {
 
             #[test]
             fn it_should_navigate_right_and_stay_on_same_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the end of the line
@@ -5612,7 +5612,7 @@ mod test_engine {
 
             #[test]
             fn it_should_navigate_left_and_stay_on_same_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
                 // Go to the end of the second line
                 buffer.process_input("j$");
@@ -5631,7 +5631,7 @@ mod test_engine {
 
             #[test]
             fn it_should_navigate_down_through_empty_lines() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\n\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\n\nbazbaz");
                 let mut buffer = document.create_buffer();
                 // Go to the end of the second line
                 buffer.process_input("j$");
@@ -5654,7 +5654,7 @@ mod test_engine {
 
             #[test]
             fn it_should_preserve_the_active_column_when_moving_through_a_shorter_row() {
-                let mut document = Document::new_from_literal("oneone\ntwo\nthreethree");
+                let document = Document::new_from_literal("oneone\ntwo\nthreethree");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("$");
@@ -5665,7 +5665,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_left() {
-                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("edh");
@@ -5674,7 +5674,7 @@ mod test_engine {
 
             #[test]
             fn it_be_unable_to_delete_left_at_start() {
-                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dh");
@@ -5683,7 +5683,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_right() {
-                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dl");
@@ -5692,7 +5692,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_right_at_end() {
-                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("$dl");
@@ -5701,7 +5701,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_up() {
-                let mut document = Document::new_from_literal("foo\nbar\nbaz");
+                let document = Document::new_from_literal("foo\nbar\nbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jdk");
@@ -5710,7 +5710,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_3_up() {
-                let mut document = Document::new_from_literal("one\ntwo\nthree\nfour\nfive");
+                let document = Document::new_from_literal("one\ntwo\nthree\nfour\nfive");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jjjd3k");
@@ -5719,7 +5719,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_down() {
-                let mut document = Document::new_from_literal("foo\nbar\nbaz");
+                let document = Document::new_from_literal("foo\nbar\nbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dj");
@@ -5728,7 +5728,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_2_down() {
-                let mut document = Document::new_from_literal("foo\nbar\nbaz\nquux");
+                let document = Document::new_from_literal("foo\nbar\nbaz\nquux");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("d2j");
@@ -5737,7 +5737,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_all_lines() {
-                let mut document = Document::new_from_literal("foo\nbar");
+                let document = Document::new_from_literal("foo\nbar");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dj");
@@ -5750,7 +5750,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_to_start_of_line() {
-                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("lld0");
@@ -5759,7 +5759,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_to_end_of_line() {
-                let mut document = Document::new_from_literal("foo.foo bar baz");
+                let document = Document::new_from_literal("foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("lld$");
@@ -5768,7 +5768,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_to_whitespace_sensitive_start_of_line() {
-                let mut document = Document::new_from_literal("    foo.foo bar baz");
+                let document = Document::new_from_literal("    foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("d^");
@@ -5777,7 +5777,7 @@ mod test_engine {
 
             #[test]
             fn it_should_delete_to_whitespace_sensitive_start_of_line_starting_in_middle() {
-                let mut document = Document::new_from_literal("    foo.foo bar baz");
+                let document = Document::new_from_literal("    foo.foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("fbd^");
@@ -5790,7 +5790,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_linewise_delete() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dd");
@@ -5799,7 +5799,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_linewise_delete_in_middle() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jdd");
@@ -5808,7 +5808,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_linewise_delete_multi_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("2dd");
@@ -5817,7 +5817,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_linewise_delete_all_lines() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3dd");
@@ -5830,7 +5830,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_delete_to_end_of_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3lD");
@@ -5839,7 +5839,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_delete_to_end_of_line_and_next_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3l2D");
@@ -5848,7 +5848,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_delete_to_end_of_line_on_last_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jj3lD");
@@ -5861,7 +5861,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_line_1() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 // Go to not the first character of the line
@@ -5874,7 +5874,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_line_2() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("2Gdl");
@@ -5883,7 +5883,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_line_2_with_starting_whitespace() {
-                let mut document = Document::new_from_literal("foofoo\n  barbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\n  barbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("2Gdl");
@@ -5892,7 +5892,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_line_999() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("999Gdl");
@@ -5902,7 +5902,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_first_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 // Go to not the first character of the line
@@ -5915,7 +5915,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_last_line() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("GGdl");
@@ -5928,7 +5928,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_column_3() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3|dl");
@@ -5937,7 +5937,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_column_999() {
-                let mut document = Document::new_from_literal("foofao\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofao\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("999|dl");
@@ -5951,7 +5951,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_50_percent() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("50%dl");
@@ -5960,7 +5960,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_100_percent() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("100%dl");
@@ -5969,7 +5969,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_1_percent() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("1%dl");
@@ -5978,7 +5978,7 @@ mod test_engine {
 
             #[test]
             fn it_should_be_unable_to_go_to_0_percent() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 // Go to NOT the first line and not the first char
@@ -5999,7 +5999,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_byte_offset_4() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("4godl");
@@ -6008,7 +6008,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_byte_offset_999() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("999godl");
@@ -6019,7 +6019,7 @@ mod test_engine {
             #[ignore]
             fn it_should_go_to_byte_offset_0() {
                 // FIXME: this test doesn't pass yet
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 // Go to NOT the first line and not the first char
@@ -6033,7 +6033,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_byte_offset_1() {
-                let mut document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
+                let document = Document::new_from_literal("foofoo\nbarbar\nbazbaz");
                 let mut buffer = document.create_buffer();
 
                 // Go to NOT the first line and not the first char
@@ -6050,7 +6050,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_parenthesis() {
-                let mut document = Document::new_from_literal("(foo bar) baz");
+                let document = Document::new_from_literal("(foo bar) baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6059,7 +6059,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_nested_parenthesis() {
-                let mut document = Document::new_from_literal("(foo (bar) baz)");
+                let document = Document::new_from_literal("(foo (bar) baz)");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6068,7 +6068,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_later_parenthesis() {
-                let mut document = Document::new_from_literal("foo (bar) baz");
+                let document = Document::new_from_literal("foo (bar) baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6077,7 +6077,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_escaped_parenthesis() {
-                let mut document = Document::new_from_literal("\\(foo (bar\\) baz)");
+                let document = Document::new_from_literal("\\(foo (bar\\) baz)");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "backslash escape support" is enabled
@@ -6090,7 +6090,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_curly_brace() {
-                let mut document = Document::new_from_literal("{foo bar} baz");
+                let document = Document::new_from_literal("{foo bar} baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6099,7 +6099,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_nested_curly_brace() {
-                let mut document = Document::new_from_literal("{foo {bar} baz}");
+                let document = Document::new_from_literal("{foo {bar} baz}");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6108,7 +6108,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_later_curly_brace() {
-                let mut document = Document::new_from_literal("foo {bar} baz");
+                let document = Document::new_from_literal("foo {bar} baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6117,7 +6117,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_escaped_curly_brace() {
-                let mut document = Document::new_from_literal("\\{foo {bar\\} baz}");
+                let document = Document::new_from_literal("\\{foo {bar\\} baz}");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "backslash escape support" is enabled
@@ -6130,7 +6130,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_square_bracket() {
-                let mut document = Document::new_from_literal("[foo bar] baz");
+                let document = Document::new_from_literal("[foo bar] baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6139,7 +6139,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_nested_square_bracket() {
-                let mut document = Document::new_from_literal("[foo [bar] baz]");
+                let document = Document::new_from_literal("[foo [bar] baz]");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6148,7 +6148,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_later_square_bracket() {
-                let mut document = Document::new_from_literal("foo [bar] baz");
+                let document = Document::new_from_literal("foo [bar] baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6157,7 +6157,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_escaped_square_bracket() {
-                let mut document = Document::new_from_literal("\\[foo [bar\\] baz]");
+                let document = Document::new_from_literal("\\[foo [bar\\] baz]");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "backslash escape support" is enabled
@@ -6170,7 +6170,7 @@ mod test_engine {
 
             #[test]
             fn it_should_navigate_with_many_types_of_brackets() {
-                let mut document = Document::new_from_literal("[foo (b[ar] {baz])}");
+                let document = Document::new_from_literal("[foo (b[ar] {baz])}");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6179,7 +6179,7 @@ mod test_engine {
 
             #[test]
             fn it_should_not_navigate_with_unmatched_brackets() {
-                let mut document = Document::new_from_literal("[foo (bar) baz}");
+                let document = Document::new_from_literal("[foo (bar) baz}");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6188,7 +6188,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_other_c_multiline_comment() {
-                let mut document = Document::new_from_literal("/*foo bar*/ baz");
+                let document = Document::new_from_literal("/*foo bar*/ baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6198,7 +6198,7 @@ mod test_engine {
 
             #[test]
             fn it_should_go_to_later_c_multiline_comment() {
-                let mut document = Document::new_from_literal("foo /*bar*/ baz");
+                let document = Document::new_from_literal("foo /*bar*/ baz");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
@@ -6212,7 +6212,7 @@ mod test_engine {
 
                 // Part one: #if -> #elif
                 {
-                    let mut document = Document::new_from_literal(raw_document);
+                    let document = Document::new_from_literal(raw_document);
                     let mut buffer = document.create_buffer();
 
                     buffer.process_input("%dl");
@@ -6224,7 +6224,7 @@ mod test_engine {
 
                 // Part two: #if -> #elif -> #else
                 {
-                    let mut document = Document::new_from_literal(raw_document);
+                    let document = Document::new_from_literal(raw_document);
                     let mut buffer = document.create_buffer();
                     buffer.process_input("%");
                     buffer.process_input("%dl");
@@ -6236,7 +6236,7 @@ mod test_engine {
 
                 // Part three: #if -> #elif -> #else -> #endif
                 {
-                    let mut document = Document::new_from_literal(raw_document);
+                    let document = Document::new_from_literal(raw_document);
                     let mut buffer = document.create_buffer();
                     buffer.process_input("%");
                     buffer.process_input("%");
@@ -6249,7 +6249,7 @@ mod test_engine {
 
                 // Part four: #if -> #elif -> #else -> #endif -> #if
                 {
-                    let mut document = Document::new_from_literal(raw_document);
+                    let document = Document::new_from_literal(raw_document);
                     let mut buffer = document.create_buffer();
                     buffer.process_input("%");
                     buffer.process_input("%");
@@ -6264,7 +6264,7 @@ mod test_engine {
 
             #[test]
             fn it_should_respect_nested_c_preprocessor_ifs() {
-                let mut document = Document::new_from_literal("#if foo\n  one\n#else\n  #if bar\n  two\n  #endif\n#endif");
+                let document = Document::new_from_literal("#if foo\n  one\n#else\n  #if bar\n  two\n  #endif\n#endif");
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%"); // #if -> #else
@@ -6281,7 +6281,7 @@ mod test_engine {
 
             #[test]
             fn it_should_insert_at_start() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let document = Document::new_from_literal("foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the document
@@ -6308,7 +6308,7 @@ mod test_engine {
 
             #[test]
             fn it_should_insert_in_middle() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let document = Document::new_from_literal("foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the space after "foo"
@@ -6335,7 +6335,7 @@ mod test_engine {
 
             #[test]
             fn it_should_insert_at_end() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let document = Document::new_from_literal("foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the end of the document
@@ -6362,7 +6362,7 @@ mod test_engine {
 
             #[test]
             fn it_should_insert_in_middle_of_multiline_document() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of line 2
@@ -6389,7 +6389,7 @@ mod test_engine {
 
             #[test]
             fn it_should_append_at_start() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let document = Document::new_from_literal("foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the document
@@ -6416,7 +6416,7 @@ mod test_engine {
 
             #[test]
             fn it_should_append_at_end() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let document = Document::new_from_literal("foo bar baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the end of the document
@@ -6443,7 +6443,7 @@ mod test_engine {
 
             #[test]
             fn it_should_append_at_end_of_line_and_autoindent() {
-                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "autoindent" is enabled
@@ -6468,7 +6468,7 @@ mod test_engine {
 
             #[test]
             fn it_should_get_rid_of_empty_autoindents_when_pressing_escape() {
-                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "autoindent" is enabled
@@ -6499,7 +6499,7 @@ mod test_engine {
 
             #[test]
             fn it_should_uppercase_insert_at_start_of_document() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the middle of the first line
@@ -6526,7 +6526,7 @@ mod test_engine {
 
             #[test]
             fn it_should_uppercase_insert_in_middle_of_document() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the middle of the second line
@@ -6553,7 +6553,7 @@ mod test_engine {
 
             #[test]
             fn it_should_uppercase_insert_in_middle_of_document_skipping_leading_space() {
-                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "start at beginning without whitespace" is enabled
@@ -6584,7 +6584,7 @@ mod test_engine {
 
             #[test]
             fn it_should_uppercase_insert_in_middle_of_document_including_leading_space() {
-                let mut document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\n  bar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "start at beginning without whitespace" is disabled
@@ -6619,7 +6619,7 @@ mod test_engine {
 
             #[test]
             fn it_should_uppercase_append_in_middle_of_document() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the middle of the second line
@@ -6646,7 +6646,7 @@ mod test_engine {
 
             #[test]
             fn it_should_uppercase_append_at_end_of_document() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the last line
@@ -6677,7 +6677,7 @@ mod test_engine {
 
             #[test]
             fn it_should_open_line_above_and_insert_at_start() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the first line
@@ -6707,7 +6707,7 @@ mod test_engine {
 
             #[test]
             fn it_should_open_line_above_and_insert_in_middle() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the second line
@@ -6737,7 +6737,7 @@ mod test_engine {
 
             #[test]
             fn it_should_open_line_above_and_insert_in_middle_with_leading_space_and_autoindent() {
-                let mut document = Document::new_from_literal("foo foo\n    bar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\n    bar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "autoindent" is enabled
@@ -6761,7 +6761,7 @@ mod test_engine {
 
             #[test]
             fn it_should_open_line_below_and_insert_at_end() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the last line
@@ -6791,7 +6791,7 @@ mod test_engine {
 
             #[test]
             fn it_should_open_line_below_and_insert_in_middle() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the second line
@@ -6821,7 +6821,7 @@ mod test_engine {
 
             #[test]
             fn it_should_open_line_below_and_insert_in_middle_with_leading_space_and_autoindent() {
-                let mut document = Document::new_from_literal("foo foo\n    bar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\n    bar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // NOTE: Make sure that "autoindent" is enabled
@@ -6849,7 +6849,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_lowercase_s_at_start() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the first line
@@ -6879,7 +6879,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_lowercase_s_in_middle() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the space in the middle of the second line
@@ -6913,7 +6913,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_uppercase_s() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the space in the middle of the second line
@@ -6946,7 +6946,7 @@ mod test_engine {
 
             #[test]
             fn it_should_run_2_uppercase_s() {
-                let mut document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
+                let document = Document::new_from_literal("foo foo\nbar bar\nbaz baz");
                 let mut buffer = document.create_buffer();
 
                 // Go to the space in the middle of the second line
@@ -6983,7 +6983,7 @@ mod test_engine {
 
             #[test]
             fn it_should_be_a_noop_to_enter_and_leave_replace() {
-                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let document = Document::new_from_literal("foo bar baz quux orange");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the line
@@ -7009,7 +7009,7 @@ mod test_engine {
 
             #[test]
             fn it_should_replace_chars_at_start() {
-                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let document = Document::new_from_literal("foo bar baz quux orange");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the line
@@ -7036,7 +7036,7 @@ mod test_engine {
 
             #[test]
             fn it_should_replace_chars_in_middle() {
-                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let document = Document::new_from_literal("foo bar baz quux orange");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of quux
@@ -7064,7 +7064,7 @@ mod test_engine {
 
             #[test]
             fn it_should_unreplace_chars_by_pressing_backspace() {
-                let mut document = Document::new_from_literal("foo bar baz quux orange");
+                let document = Document::new_from_literal("foo bar baz quux orange");
                 let mut buffer = document.create_buffer();
 
                 // Go to the start of the line
