@@ -284,7 +284,9 @@ impl TokensCollection {
         let offset = previous_offset + previous_length;
 
         self.offset_cache.borrow_mut().insert(id, (offset, offset + token_length));
-        self.tokens_by_start_offset_cache.borrow_mut().insert(offset..offset + token_length, id);
+        if token_length > 0 {
+            self.tokens_by_start_offset_cache.borrow_mut().insert(offset..offset + token_length, id);
+        }
         offset
     }
 

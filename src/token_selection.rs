@@ -89,7 +89,7 @@ impl SequentialTokenSelection {
         document: &mut Document,
         keep_first_token: bool,
     ) -> Result<Self, String> {
-        let forwards_range = self.as_forwards_selection(document)?;
+        let forwards_range = self.as_normalized_forwards_selection(document)?;
 
         let mut chars_removed = 0;
         let mut is_first = true;
@@ -261,6 +261,45 @@ impl SequentialTokenSelection {
         ))
     }
 
+    // When called, normalizes the selection into a form that is easy to operate on:
+    // 1. Converts the selection into forwards form
+    // 2. Ensures that the starting token in the selection contains the `starting_token_offset`
+    //    value (ie, the largest possible starting_token_offset is at the end of the starting_token)
+    pub fn as_normalized_forwards_selection(
+        &self,
+        document: &mut Document,
+    ) -> Result<Self, String> {
+        let forwards_selection = self.as_forwards_selection(document)?;
+        let tokens_collection = document.tokens_mut();
+
+        let mut starting_token_id = forwards_selection.starting_token_id;
+        let mut starting_token_offset = forwards_selection.starting_token_offset;
+        loop {
+            let Some(starting_token) = tokens_collection.get_by_id(starting_token_id) else {
+                return Err(format!("Error in SequentialTokenSelection.as_normalized_forwards_selection: unable to find token with id {starting_token_id}"));
+            };
+
+            let literal_text_length = if let Some(literal_text) = &starting_token.literal {
+                literal_text.len()
+            } else {
+                0
+            };
+
+            if starting_token_offset < literal_text_length {
+                break;
+            }
+
+            let Some(starting_token_next_id) = starting_token.next_id else {
+                return Err(format!("Error in SequentialTokenSelection.as_normalized_forwards_selection: cannot find next token after {starting_token_id}!"));
+            };
+
+            starting_token_id = starting_token_next_id;
+            starting_token_offset -= literal_text_length;
+        }
+
+        Ok(Self::new(starting_token_id, starting_token_offset, self.char_count))
+    }
+
     // Given a second SequentialTokenSelection, returns a copy of `self` expanded to fit the new
     // specified range. If the ranges do not form a continuous range, the gap between the ranges is
     // added to the resulting range.
@@ -327,7 +366,7 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
-        let range = self.as_forwards_selection(document)?;
+        let range = self.as_normalized_forwards_selection(document)?;
         println!("REMOVING SELECTION: {:?}", range);
         let tokens_collection = document.tokens_mut();
 
@@ -368,7 +407,7 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
-        let range = self.as_forwards_selection(document)?;
+        let range = self.as_normalized_forwards_selection(document)?;
         let tokens_collection = document.tokens_mut();
 
         // Start seeking from the start of the token backwards, looking for whitespace
@@ -474,7 +513,7 @@ impl SequentialTokenSelection {
         &self,
         document: &mut Document,
     ) -> Result<Self, String> {
-        let range = self.as_forwards_selection(document)?;
+        let range = self.as_normalized_forwards_selection(document)?;
         let tokens_collection = document.tokens_mut();
 
         // Start seeking from the end of the token forwards, looking for whitespace
