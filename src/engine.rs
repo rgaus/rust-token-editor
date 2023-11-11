@@ -1901,7 +1901,7 @@ impl Buffer {
 
     pub fn dump_string(&mut self) {
         let offset = self.document.convert_rows_cols_to_offset(self.position);
-        let tokens_collection = self.document.tokens_mut();
+        let tokens_collection = self.document.tokens();
         println!("---\n{}\n--- mode={:?} position={:?} offset={:?}", tokens_collection.debug_stringify_highlight(offset, offset+1), self.mode, self.position, offset);
     }
 
@@ -3311,7 +3311,6 @@ impl Buffer {
                 let deleted_selection = selection.remove_deep(&mut self.document, false).unwrap();
 
                 // After the delete, reset the offset to the start of the deletion operation
-                let _tokens_collection = self.document.tokens_mut();
                 let new_offset = deleted_selection.compute_start_offset(&mut self.document);
 
                 // If the character this offset is supposed to be on is greater than the number of
@@ -3365,7 +3364,6 @@ impl Buffer {
                 self.state = ViewState::Complete;
 
                 // After the delete, reset the offset to the start of the deletion operation
-                let _tokens_collection = self.document.tokens_mut();
                 let new_offset = deleted_selection.compute_start_offset(&mut self.document);
 
                 // If the character this offset is supposed to be on is greater than the number of
@@ -3758,11 +3756,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
+                    assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
+                    assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
                 #[test]
@@ -3791,11 +3789,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), ".foo bar baz");
+                    assert_eq!(document.tokens().stringify(), ".foo bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TEST.foo bar baz");
+                    assert_eq!(document.tokens().stringify(), "TEST.foo bar baz");
                 }
 
                 #[test]
@@ -3817,11 +3815,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo    baz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST   baz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST   baz");
                 }
 
                 #[test]
@@ -3851,11 +3849,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
 
                 #[test]
@@ -3877,11 +3875,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST");
                 }
 
                 #[test]
@@ -3913,11 +3911,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST");
                 }
 
                 #[test]
@@ -3939,11 +3937,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo  quux");
+                    assert_eq!(document.tokens().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST quux");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST quux");
                 }
 
                 #[test]
@@ -3965,11 +3963,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar      ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar      ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST     ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TEST     ");
                 }
             }
 
@@ -4000,11 +3998,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
+                    assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
+                    assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
                 #[test]
@@ -4031,11 +4029,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
+                    assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new()).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
+                    assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
                 #[test]
@@ -4063,11 +4061,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo    baz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo    baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST   baz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST   baz");
                 }
 
                 #[test]
@@ -4097,11 +4095,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
 
                 #[test]
@@ -4131,11 +4129,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo  quux");
+                    assert_eq!(document.tokens().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST quux");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST quux");
                 }
 
                 #[test]
@@ -4167,11 +4165,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST");
                 }
 
                 #[test]
@@ -4199,11 +4197,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = modified_selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo  quux");
+                    assert_eq!(document.tokens().stringify(), "foo.foo  quux");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo TEST quux");
+                    assert_eq!(document.tokens().stringify(), "foo.foo TEST quux");
                 }
             }
 
@@ -4231,11 +4229,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
+                    assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
                 #[test]
@@ -4258,11 +4256,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.bar baz");
+                    assert_eq!(document.tokens().stringify(), "foo.bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "foo.TESTbar baz");
                 }
 
                 #[test]
@@ -4285,11 +4283,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.bar baz");
+                    assert_eq!(document.tokens().stringify(), "foo.bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "foo.TESTbar baz");
                 }
 
                 #[test]
@@ -4312,11 +4310,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar z");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar z");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TESTz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TESTz");
                 }
 
                 #[test]
@@ -4339,11 +4337,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), " bar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), " bar.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "TEST bar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "TEST bar.baaaaar baz");
                     }
 
                     // First char of "bar"  ----> "TESTbar.baaaaar baz"
@@ -4364,11 +4362,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "bar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "bar.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "TESTbar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "TESTbar.baaaaar baz");
                     }
 
                     // Second char of "bar"  ----> "foo TESTar.baaaaar baz"
@@ -4388,11 +4386,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo ar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo ar.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo TESTar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo TESTar.baaaaar baz");
                     }
 
                     // Third char of "bar"  -> "foo TESTr.baaaaar baz"
@@ -4413,11 +4411,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo r.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo r.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo TESTr.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo TESTr.baaaaar baz");
                     }
 
                     // Period               -> "foo TEST.baaaaar baz"
@@ -4438,11 +4436,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo .baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo .baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo TEST.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo TEST.baaaaar baz");
                     }
 
                     // First char of "baaa" -> "foo barTESTbaaaaar baz"
@@ -4462,11 +4460,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo barbaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo barbaaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo barTESTbaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo barTESTbaaaaar baz");
                     }
 
                     // Second char of "baaa" > "foo bar.TESTaaaaar baz"
@@ -4486,11 +4484,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.aaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.aaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TESTaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.TESTaaaaar baz");
                     }
 
                     // Third char of "baaa" > "foo bar.TESTaaaar baz"
@@ -4511,11 +4509,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.aaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.aaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TESTaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.TESTaaaar baz");
                     }
 
                     // Space after "baaaar" > "foo bar.TEST baz"
@@ -4536,11 +4534,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar. baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar. baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TEST baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.TEST baz");
                     }
                 }
             }
@@ -4569,11 +4567,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
+                    assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
                 #[test]
@@ -4596,11 +4594,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
+                    assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
                 #[test]
@@ -4623,11 +4621,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo bar baz");
+                    assert_eq!(document.tokens().stringify(), "foo bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "foo TESTbar baz");
                 }
 
                 #[test]
@@ -4650,11 +4648,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar z");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar z");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TESTz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TESTz");
                 }
             }
 
@@ -4680,11 +4678,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
+                    assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
+                    assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
                 #[test]
@@ -4706,11 +4704,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo .bar baz");
+                    assert_eq!(document.tokens().stringify(), "foo .bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo TEST.bar baz");
+                    assert_eq!(document.tokens().stringify(), "foo TEST.bar baz");
                 }
 
                 #[test]
@@ -4732,11 +4730,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
 
                 #[test]
@@ -4758,11 +4756,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "fooTEST.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "fooTEST.baaaaar baz");
                     }
 
                     // First char of "bar"  ----> "foo TEST.baaaaar baz"
@@ -4782,11 +4780,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo .baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo .baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo TEST.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo TEST.baaaaar baz");
                     }
 
                     // Second char of "bar"  ----> "foo TESTar.baaaaar baz"
@@ -4806,11 +4804,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo b.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo b.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bTEST.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo bTEST.baaaaar baz");
                     }
 
                     // Third char of "bar"  -> "foo baTESTbaaaaar baz"
@@ -4830,11 +4828,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo babaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo babaaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo baTESTbaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo baTESTbaaaaar baz");
                     }
 
                     // Period               -> "foo TEST.baaaaar baz"
@@ -4854,11 +4852,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo barTEST baz");
+                        assert_eq!(document.tokens().stringify(), "foo barTEST baz");
                     }
 
                     // First char of "baaa" -> "foo barTESTbaaaaar baz"
@@ -4878,11 +4876,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar. baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar. baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.TEST baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.TEST baz");
                     }
 
                     // Second char of "baaa" > "foo bar.TESTaaaaar baz"
@@ -4902,11 +4900,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.b baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.b baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.bTEST baz");
+                        assert_eq!(document.tokens().stringify(), "foo bar.bTEST baz");
                     }
 
                     // Space after "baaaar" > "foo bar.baaaaarTEST"
@@ -4926,11 +4924,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.baaaaar");
+                        assert_eq!(document.tokens().stringify(), "foo bar.baaaaar");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo bar.baaaaarTEST");
+                        assert_eq!(document.tokens().stringify(), "foo bar.baaaaarTEST");
                     }
                 }
             }
@@ -4957,11 +4955,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), " bar baz");
+                    assert_eq!(document.tokens().stringify(), " bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TEST bar baz");
+                    assert_eq!(document.tokens().stringify(), "TEST bar baz");
                 }
 
                 #[test]
@@ -4983,11 +4981,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo  baz");
+                    assert_eq!(document.tokens().stringify(), "foo  baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo TEST baz");
+                    assert_eq!(document.tokens().stringify(), "foo TEST baz");
                 }
 
                 #[test]
@@ -5009,11 +5007,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar ");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar ");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo bar TEST");
+                    assert_eq!(document.tokens().stringify(), "foo.foo bar TEST");
                 }
             }
 
@@ -5039,11 +5037,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foar.bar baz");
+                    assert_eq!(document.tokens().stringify(), "foar.bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foTESTar.bar baz");
+                    assert_eq!(document.tokens().stringify(), "foTESTar.bar baz");
                 }
 
                 #[test]
@@ -5065,11 +5063,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo baaz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo baaz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foo.foo baTESTaz");
+                    assert_eq!(document.tokens().stringify(), "foo.foo baTESTaz");
                 }
 
                 #[test]
@@ -5091,11 +5089,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "fobar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "fobar.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foTESTbar.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foTESTbar.baaaaar baz");
                     }
 
                     // Second char of "bar"  ----> "for.baaaaar baz"
@@ -5115,11 +5113,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "for.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "for.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foTESTr.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foTESTr.baaaaar baz");
                     }
 
                     // Third char of "bar"  -> "fo.baaaaar baz"
@@ -5139,11 +5137,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "fo.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "fo.baaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foTEST.baaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foTEST.baaaaar baz");
                     }
 
                     // Period               -> "foo babaaaaar baz"
@@ -5163,11 +5161,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo babaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo babaaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo baTESTbaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo baTESTbaaaaar baz");
                     }
 
                     // First char of "baaa" -> "foo baraaaaar baz"
@@ -5187,11 +5185,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo baraaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo baraaaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo barTESTaaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo barTESTaaaaar baz");
                     }
 
                     // Second char of "baaa" > "foo baraaaar baz"
@@ -5211,11 +5209,11 @@ mod test_engine {
 
                         // Delete it
                         let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                        assert_eq!(document.tokens_mut().stringify(), "foo baraaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo baraaaar baz");
 
                         // Replace it with TEST
                         deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                        assert_eq!(document.tokens_mut().stringify(), "foo barTESTaaaar baz");
+                        assert_eq!(document.tokens().stringify(), "foo barTESTaaaar baz");
                     }
                 }
             }
@@ -5242,11 +5240,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "bar baz");
+                    assert_eq!(document.tokens().stringify(), "bar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TESTbar baz");
+                    assert_eq!(document.tokens().stringify(), "TESTbar baz");
                 }
 
                 #[test]
@@ -5270,11 +5268,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "foor baz");
+                    assert_eq!(document.tokens().stringify(), "foor baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "fooTESTr baz");
+                    assert_eq!(document.tokens().stringify(), "fooTESTr baz");
                 }
 
                 #[test]
@@ -5296,11 +5294,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "ar baz");
+                    assert_eq!(document.tokens().stringify(), "ar baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "TESTar baz");
+                    assert_eq!(document.tokens().stringify(), "TESTar baz");
                 }
 
                 #[test]
@@ -5324,11 +5322,11 @@ mod test_engine {
 
                     // Delete it
                     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                    assert_eq!(document.tokens_mut().stringify(), "for baz");
+                    assert_eq!(document.tokens().stringify(), "for baz");
 
                     // Replace it with TEST
                     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                    assert_eq!(document.tokens_mut().stringify(), "foTESTr baz");
+                    assert_eq!(document.tokens().stringify(), "foTESTr baz");
                 }
 
                 // #[test]
@@ -5360,11 +5358,11 @@ mod test_engine {
                 //
                 //     // Delete it
                 //     let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-                //     assert_eq!(document.tokens_mut().stringify(), "foo az");
+                //     assert_eq!(document.tokens().stringify(), "foo az");
                 //
                 //     // Replace it with TEST
                 //     deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-                //     assert_eq!(document.tokens_mut().stringify(), "foTESTaz");
+                //     assert_eq!(document.tokens().stringify(), "foTESTaz");
                 // }
             }
         }
@@ -5598,7 +5596,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("lljjhkdl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbrbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbrbar\nbazbaz");
             }
 
             #[test]
@@ -5615,7 +5613,7 @@ mod test_engine {
                 // Delete a character
                 buffer.process_input("dl");
 
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -5634,7 +5632,7 @@ mod test_engine {
                 // Delete a character
                 buffer.process_input("dl");
 
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\narbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\narbar\nbazbaz");
             }
 
             #[test]
@@ -5657,7 +5655,7 @@ mod test_engine {
                 buffer.process_input("dl");
 
                 // The last char should be deleted because that was the previously active column
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\n\nbazba");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\n\nbazba");
             }
 
             #[test]
@@ -5668,7 +5666,7 @@ mod test_engine {
                 buffer.process_input("$");
                 buffer.process_input("jj");
                 buffer.process_input("x");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oneone\ntwo\nthreehree");
+                assert_eq!(buffer.document.tokens().stringify(), "oneone\ntwo\nthreehree");
             }
 
             #[test]
@@ -5677,7 +5675,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("edh");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "fo.foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "fo.foo bar baz");
             }
 
             #[test]
@@ -5686,7 +5684,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dh");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo.foo bar baz");
             }
 
             #[test]
@@ -5695,7 +5693,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oo.foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "oo.foo bar baz");
             }
 
             #[test]
@@ -5704,7 +5702,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("$dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar ba");
+                assert_eq!(buffer.document.tokens().stringify(), "foo.foo bar ba");
             }
 
             #[test]
@@ -5713,7 +5711,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jdk");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "baz");
+                assert_eq!(buffer.document.tokens().stringify(), "baz");
             }
 
             #[test]
@@ -5722,7 +5720,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jjjd3k");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "five");
+                assert_eq!(buffer.document.tokens().stringify(), "five");
             }
 
             #[test]
@@ -5731,7 +5729,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dj");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "baz");
+                assert_eq!(buffer.document.tokens().stringify(), "baz");
             }
 
             #[test]
@@ -5740,7 +5738,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("d2j");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "quux");
+                assert_eq!(buffer.document.tokens().stringify(), "quux");
             }
 
             #[test]
@@ -5749,7 +5747,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dj");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "");
+                assert_eq!(buffer.document.tokens().stringify(), "");
             }
         }
 
@@ -5762,7 +5760,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("lld0");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "o.foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "o.foo bar baz");
             }
 
             #[test]
@@ -5771,7 +5769,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("lld$");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "fo");
+                assert_eq!(buffer.document.tokens().stringify(), "fo");
             }
 
             #[test]
@@ -5780,7 +5778,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("d^");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo.foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo.foo bar baz");
             }
 
             #[test]
@@ -5789,7 +5787,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("fbd^");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "    bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "    bar baz");
             }
         }
 
@@ -5802,7 +5800,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("dd");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "barbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "barbar\nbazbaz");
             }
 
             #[test]
@@ -5811,7 +5809,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jdd");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbazbaz");
             }
 
             #[test]
@@ -5820,7 +5818,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("2dd");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "bazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "bazbaz");
             }
 
             #[test]
@@ -5829,7 +5827,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3dd");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "");
+                assert_eq!(buffer.document.tokens().stringify(), "");
             }
         }
 
@@ -5842,7 +5840,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3lD");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -5851,7 +5849,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3l2D");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo\nbazbaz");
             }
 
             #[test]
@@ -5860,7 +5858,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("jj3lD");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\nbaz");
             }
         }
 
@@ -5877,7 +5875,7 @@ mod test_engine {
                 // Go to line 1, delete a char
                 buffer.process_input("1Gdl");
                 // Make sure the first character of line 1 is deleted
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "oofoo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -5886,7 +5884,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("2Gdl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\narbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\narbar\nbazbaz");
             }
 
             #[test]
@@ -5895,7 +5893,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("2Gdl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\n  arbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\n  arbar\nbazbaz");
             }
 
             #[test]
@@ -5905,7 +5903,7 @@ mod test_engine {
 
                 buffer.process_input("999Gdl");
                 // Going to line after the end of the document should go to the last line
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\nazbaz");
             }
 
             #[test]
@@ -5918,7 +5916,7 @@ mod test_engine {
                 // Go to first line, delete a char
                 buffer.process_input("ggdl");
                 // Make sure the first character of the first line is deleted
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "oofoo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -5927,7 +5925,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("GGdl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\nazbaz");
             }
         }
 
@@ -5940,7 +5938,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("3|dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "fofoo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "fofoo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -5950,7 +5948,7 @@ mod test_engine {
 
                 buffer.process_input("999|dl");
                 // Since 999 is beyond the length of the row, delete the last char in the row
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofa\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofa\nbarbar\nbazbaz");
             }
         }
 
@@ -5963,7 +5961,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("50%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarar\nbazbaz");
             }
 
             #[test]
@@ -5972,7 +5970,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("100%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbazba");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\nbazba");
             }
 
             #[test]
@@ -5981,7 +5979,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("1%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "fofoo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "fofoo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -5998,7 +5996,7 @@ mod test_engine {
                 buffer.process_input("0%dl");
 
                 // Make sure that going to 0% did not go to the start of the document
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\nazbaz");
             }
         }
 
@@ -6011,7 +6009,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("4godl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foooo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "foooo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -6020,7 +6018,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("999godl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foofoo\nbarbar\nbazba");
+                assert_eq!(buffer.document.tokens().stringify(), "foofoo\nbarbar\nbazba");
             }
 
             #[test]
@@ -6036,7 +6034,7 @@ mod test_engine {
                 buffer.process_input("0godl");
                 // Make sure that the first character was removed
                 // NOTE: 0 and 1 should do the same thing
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "oofoo\nbarbar\nbazbaz");
             }
 
             #[test]
@@ -6049,7 +6047,7 @@ mod test_engine {
 
                 buffer.process_input("1godl");
                 // Make sure that the first character was removed
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oofoo\nbarbar\nbazbaz");
+                assert_eq!(buffer.document.tokens().stringify(), "oofoo\nbarbar\nbazbaz");
             }
         }
 
@@ -6062,7 +6060,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "(foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "(foo bar baz");
             }
 
             #[test]
@@ -6071,7 +6069,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "(foo (bar) baz");
+                assert_eq!(buffer.document.tokens().stringify(), "(foo (bar) baz");
             }
 
             #[test]
@@ -6080,7 +6078,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo (bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo (bar baz");
             }
 
             #[test]
@@ -6093,7 +6091,7 @@ mod test_engine {
                 buffer.options.append("cpoptions", "M");
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "\\(foo (bar\\ baz)");
+                assert_eq!(buffer.document.tokens().stringify(), "\\(foo (bar\\ baz)");
             }
 
             #[test]
@@ -6102,7 +6100,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "{foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "{foo bar baz");
             }
 
             #[test]
@@ -6111,7 +6109,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "{foo {bar} baz");
+                assert_eq!(buffer.document.tokens().stringify(), "{foo {bar} baz");
             }
 
             #[test]
@@ -6120,7 +6118,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo {bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo {bar baz");
             }
 
             #[test]
@@ -6133,7 +6131,7 @@ mod test_engine {
                 buffer.options.append("cpoptions", "M");
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "\\{foo {bar\\ baz}");
+                assert_eq!(buffer.document.tokens().stringify(), "\\{foo {bar\\ baz}");
             }
 
             #[test]
@@ -6142,7 +6140,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "[foo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "[foo bar baz");
             }
 
             #[test]
@@ -6151,7 +6149,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "[foo [bar] baz");
+                assert_eq!(buffer.document.tokens().stringify(), "[foo [bar] baz");
             }
 
             #[test]
@@ -6160,7 +6158,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo [bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo [bar baz");
             }
 
             #[test]
@@ -6173,7 +6171,7 @@ mod test_engine {
                 buffer.options.append("cpoptions", "M");
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "\\[foo [bar\\ baz]");
+                assert_eq!(buffer.document.tokens().stringify(), "\\[foo [bar\\ baz]");
             }
 
             #[test]
@@ -6182,7 +6180,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "[foo (b[ar] {baz)}");
+                assert_eq!(buffer.document.tokens().stringify(), "[foo (b[ar] {baz)}");
             }
 
             #[test]
@@ -6191,7 +6189,7 @@ mod test_engine {
                 let mut buffer = document.create_buffer();
 
                 buffer.process_input("%dl");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo (bar) baz}");
+                assert_eq!(buffer.document.tokens().stringify(), "foo (bar) baz}");
             }
 
             #[test]
@@ -6201,7 +6199,7 @@ mod test_engine {
 
                 buffer.process_input("%dl");
                 // FIXME: this test isn't quite right, the expected output is `/*foo bar* baz`
-                assert_eq!(buffer.document.tokens_mut().stringify(), "/*foo bar/ baz");
+                assert_eq!(buffer.document.tokens().stringify(), "/*foo bar/ baz");
             }
 
             #[test]
@@ -6211,7 +6209,7 @@ mod test_engine {
 
                 buffer.process_input("%dl");
                 // FIXME: this test isn't quite right, the expected output is `foo /*bar* baz`
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo /*bar/ baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo /*bar/ baz");
             }
 
             #[test]
@@ -6225,7 +6223,7 @@ mod test_engine {
 
                     buffer.process_input("%dl");
                     assert_eq!(
-                        buffer.document.tokens_mut().stringify(),
+                        buffer.document.tokens().stringify(),
                         "#if foo\n  one\nelif bar\n  two\n#else\n  three\n#endif"
                     );
                 }
@@ -6237,7 +6235,7 @@ mod test_engine {
                     buffer.process_input("%");
                     buffer.process_input("%dl");
                     assert_eq!(
-                        buffer.document.tokens_mut().stringify(),
+                        buffer.document.tokens().stringify(),
                         "#if foo\n  one\n#elif bar\n  two\nelse\n  three\n#endif"
                     );
                 }
@@ -6250,7 +6248,7 @@ mod test_engine {
                     buffer.process_input("%");
                     buffer.process_input("%dl");
                     assert_eq!(
-                        buffer.document.tokens_mut().stringify(),
+                        buffer.document.tokens().stringify(),
                         "#if foo\n  one\n#elif bar\n  two\n#else\n  three\nendif"
                     );
                 }
@@ -6264,7 +6262,7 @@ mod test_engine {
                     buffer.process_input("%");
                     buffer.process_input("%dl");
                     assert_eq!(
-                        buffer.document.tokens_mut().stringify(),
+                        buffer.document.tokens().stringify(),
                         "if foo\n  one\n#elif bar\n  two\n#else\n  three\n#endif"
                     );
                 }
@@ -6278,7 +6276,7 @@ mod test_engine {
                 buffer.process_input("%"); // #if -> #else
                 buffer.process_input("%dl"); // #else -> second #endif
                 assert_eq!(
-                    buffer.document.tokens_mut().stringify(),
+                    buffer.document.tokens().stringify(),
                     "#if foo\n  one\n#else\n  #if bar\n  two\n  #endif\nendif"
                 );
             }
@@ -6301,7 +6299,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREfoo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "HEREfoo bar baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 5));
@@ -6328,7 +6326,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "fooHERE bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "fooHERE bar baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 8));
@@ -6355,7 +6353,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar baHEREz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo bar baHEREz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 15));
@@ -6382,7 +6380,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHEREbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nHEREbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));
@@ -6409,7 +6407,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "fHEREoo bar baz");
+                assert_eq!(buffer.document.tokens().stringify(), "fHEREoo bar baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 6));
@@ -6436,7 +6434,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar bazHERE");
+                assert_eq!(buffer.document.tokens().stringify(), "foo bar bazHERE");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 16));
@@ -6467,11 +6465,11 @@ mod test_engine {
 
                 // Press enter, and make sure leading whitespace is added
                 buffer.process_input("\n");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n  \nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n  bar bar\n  \nbaz baz");
 
                 // Type a few more chars and make sure they show up
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n  HERE\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n  bar bar\n  HERE\nbaz baz");
             }
 
             #[test]
@@ -6492,13 +6490,13 @@ mod test_engine {
 
                 // Press enter, and make sure leading whitespace is added
                 buffer.process_input("\n");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n  \nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n  bar bar\n  \nbaz baz");
 
                 // Press escape
                 buffer.process_input(ESCAPE);
 
                 // And make sure the leading whitespace went away
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  bar bar\n\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n  bar bar\n\nbaz baz");
             }
         }
 
@@ -6519,7 +6517,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREfoo foo\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "HEREfoo foo\nbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 5));
@@ -6546,7 +6544,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHEREbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nHEREbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));
@@ -6577,7 +6575,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n  HEREbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n  HEREbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 7));
@@ -6608,7 +6606,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE  bar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nHERE  bar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));
@@ -6639,7 +6637,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar barHERE\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbar barHERE\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 12));
@@ -6666,7 +6664,7 @@ mod test_engine {
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nbaz bazHERE");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbar bar\nbaz bazHERE");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (3, 12));
@@ -6696,11 +6694,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure that an empty line showed up at the start of the document
-                assert_eq!(buffer.document.tokens_mut().stringify(), "\nfoo foo\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "\nfoo foo\nbar bar\nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HERE\nfoo foo\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "HERE\nfoo foo\nbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 5));
@@ -6726,11 +6724,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure that an empty line showed up at the start of the document
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n\nbar bar\nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nHERE\nbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));
@@ -6760,11 +6758,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure that an empty line showed up WITH LEADING SPACE
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    \n    bar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n    \n    bar bar\nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    HERE\n    bar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n    HERE\n    bar bar\nbaz baz");
             }
 
             #[test]
@@ -6780,11 +6778,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure that an empty line showed up at the end of the document
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nbaz baz\n");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbar bar\nbaz baz\n");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nbaz baz\nHERE");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbar bar\nbaz baz\nHERE");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (4, 5));
@@ -6810,11 +6808,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure that an empty line showed up
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\n\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbar bar\n\nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbar bar\nHERE\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbar bar\nHERE\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (3, 5));
@@ -6844,11 +6842,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure that an empty line showed up WITH LEADING SPACE
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    bar bar\n    \nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n    bar bar\n    \nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n    bar bar\n    HERE\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n    bar bar\n    HERE\nbaz baz");
             }
         }
 
@@ -6868,11 +6866,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure the char the cursor was on was deleted
-                assert_eq!(buffer.document.tokens_mut().stringify(), "oo foo\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "oo foo\nbar bar\nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREoo foo\nbar bar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "HEREoo foo\nbar bar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 5));
@@ -6898,11 +6896,11 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure the char the cursor was on was deleted
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbarbar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbarbar\nbaz baz");
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nbarHEREbar\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nbarHEREbar\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 8));
@@ -6932,14 +6930,14 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure the line is now empty
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n\nbaz baz");
 
                 // And that the cursor is at the start of the line
                 assert_eq!(buffer.position, (2, 1));
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE\nbaz baz");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nHERE\nbaz baz");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));
@@ -6965,14 +6963,14 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Insert);
 
                 // Make sure the line and following line are now empty
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\n");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\n");
 
                 // And that the cursor is at the start of the line
                 assert_eq!(buffer.position, (2, 1));
 
                 // Make sure new text shows up in the right spot
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo foo\nHERE");
+                assert_eq!(buffer.document.tokens().stringify(), "foo foo\nHERE");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (2, 5));
@@ -7009,7 +7007,7 @@ mod test_engine {
                 assert_eq!(buffer.mode, Mode::Normal);
                 
                 // Make sure the text didn't change
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar baz quux orange");
+                assert_eq!(buffer.document.tokens().stringify(), "foo bar baz quux orange");
 
                 // Make sure the cursor is still at the start
                 assert_eq!(buffer.position, (1, 1));
@@ -7029,7 +7027,7 @@ mod test_engine {
 
                 // Make sure new text shows up overtop of existing text
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREbar baz quux orange");
+                assert_eq!(buffer.document.tokens().stringify(), "HEREbar baz quux orange");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 5));
@@ -7057,7 +7055,7 @@ mod test_engine {
 
                 // Make sure new text shows up overtop of existing text
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "foo bar baz HERE orange");
+                assert_eq!(buffer.document.tokens().stringify(), "foo bar baz HERE orange");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 17));
@@ -7084,7 +7082,7 @@ mod test_engine {
 
                 // Make sure new text shows up overtop of existing text
                 buffer.process_input("HERE");
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HEREbar baz quux orange");
+                assert_eq!(buffer.document.tokens().stringify(), "HEREbar baz quux orange");
 
                 // Make sure the cursor is AFTER the end of the input
                 assert_eq!(buffer.position, (1, 5));
@@ -7093,7 +7091,7 @@ mod test_engine {
                 buffer.process_input(BACKSPACE);
 
                 // Make sure that the character that was there was "undeleted"
-                assert_eq!(buffer.document.tokens_mut().stringify(), "HER bar baz quux orange");
+                assert_eq!(buffer.document.tokens().stringify(), "HER bar baz quux orange");
                 assert_eq!(buffer.position, (1, 4));
 
                 // Press backspace twice more
@@ -7101,7 +7099,7 @@ mod test_engine {
                 buffer.process_input(BACKSPACE);
 
                 // Make sure that additional characters were "undeleted"
-                assert_eq!(buffer.document.tokens_mut().stringify(), "Hoo bar baz quux orange");
+                assert_eq!(buffer.document.tokens().stringify(), "Hoo bar baz quux orange");
                 assert_eq!(buffer.position, (1, 2));
 
                 // Exit replace mode
