@@ -1,4 +1,4 @@
-use colored::Colorize;
+use colored::{Color, Colorize};
 use rangemap::RangeMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -770,10 +770,12 @@ impl TokensCollection {
         };
         let starting_token_id = first_root_node.id;
 
+        let mut count = 0;
         let mut index = 0;
         let mut result = String::from("");
         let mut pointer_id = starting_token_id;
         loop {
+            let color = if count % 2 == 0 { Color::BrightCyan } else { Color::BrightYellow };
             let Some(pointer) = self.get_by_id(pointer_id) else {
                 break;
             };
@@ -787,7 +789,8 @@ impl TokensCollection {
                     let colored_character = if index >= offset_start && index < offset_end {
                         character_as_string.red().on_white()
                     } else {
-                        character_as_string.normal()
+                        // character_as_string.normal()
+                        character_as_string.color(color)
                     };
                     result = format!("{}{}", result, colored_character);
                     if character == '\n' {
@@ -802,6 +805,7 @@ impl TokensCollection {
             } else {
                 break;
             }
+            count += 1;
         }
 
         result
