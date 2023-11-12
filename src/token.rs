@@ -775,11 +775,14 @@ impl TokensCollection {
         let mut result = String::from("");
         let mut pointer_id = starting_token_id;
         loop {
-            let color = if count % 2 == 0 { Color::BrightCyan } else { Color::BrightYellow };
+            let color = if count % 2 == 0 {
+                Color::TrueColor { r: 70, g: 70, b: 0 }
+            } else { Color::TrueColor { r: 0, g: 70, b: 70 } };
             let Some(pointer) = self.get_by_id(pointer_id) else {
                 break;
             };
             if let Some(literal_text) = &pointer.literal {
+                count += 1;
                 for character in literal_text.chars() {
                     let character_as_string = if character == '\n' {
                         String::from(" ")
@@ -790,7 +793,7 @@ impl TokensCollection {
                         character_as_string.red().on_white()
                     } else {
                         // character_as_string.normal()
-                        character_as_string.color(color)
+                        character_as_string.on_color(color)
                     };
                     result = format!("{}{}", result, colored_character);
                     if character == '\n' {
@@ -805,7 +808,6 @@ impl TokensCollection {
             } else {
                 break;
             }
-            count += 1;
         }
 
         result
