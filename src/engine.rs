@@ -50,6 +50,65 @@ impl Document {
         )
     }
 
+    // Generates a document containing a token stream where the literal text is parsed in such a
+    // way where every element in `token_lengths` represents the length in chars of a token. If a
+    // value in `token_lengths` is 0, a token with a literal of `None` is inserted.
+    //
+    // new_from_literal_with_token_lengths("...", vec![]) should always generate a single token
+    // with all text inside.
+    pub fn new_from_literal_with_token_lengths(literal: &str, token_lengths: Vec<usize>) -> Self {
+        let mut tokens_collection = TokensCollection::new_empty();
+        let mut token_lengths_reversed: Vec<&usize> = token_lengths.iter().rev().collect();
+
+        let mut next_id: Option<uuid::Uuid> = Some(uuid::Uuid::new_v4());
+        let mut current_id = uuid::Uuid::new_v4();
+        let mut previous_id: Option<uuid::Uuid> = None;
+
+        let mut index = 0;
+        while index < literal.len() {
+            let Some(token_length) = token_lengths_reversed.pop() else {
+                break;
+            };
+
+            tokens_collection.push(Box::new(Token {
+                id: current_id,
+                template: TokenMatchTemplateMatcher::Skipped,
+                literal: if *token_length > 0 {
+                    Some(String::from(&literal[index..index+*token_length]))
+                } else { None },
+                matches: HashMap::new(),
+                effects: vec![],
+                events: TokenEvents::new_empty(),
+                next_id: next_id,
+                previous_id: previous_id,
+                parent_id: None,
+                children_ids: vec![],
+            }));
+
+            index += *token_length;
+            previous_id = Some(current_id);
+            current_id = next_id.unwrap();
+            next_id = Some(uuid::Uuid::new_v4());
+        }
+
+        tokens_collection.push(Box::new(Token {
+            id: current_id,
+            template: TokenMatchTemplateMatcher::Skipped,
+            literal: if index < literal.len()-1 {
+                Some(String::from(&literal[index..]))
+            } else { None },
+            matches: HashMap::new(),
+            effects: vec![],
+            events: TokenEvents::new_empty(),
+            next_id: None,
+            previous_id: previous_id,
+            parent_id: None,
+            children_ids: vec![],
+        }));
+
+        Self::new_from_tokenscollection(Box::new(tokens_collection))
+    }
+
     pub fn create_buffer(self) -> Buffer {
         Buffer::new(Box::new(self))
     }
@@ -3571,7 +3630,8 @@ mod test_engine {
         #[test]
         fn it_is_able_to_read_from_plain_text_document_repeatedly() {
             // Get a few subranges to make sure they generate the right data
-            let mut document = Document::new_from_literal("foo bar baz");
+            let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![]);
+            println!("{:?}", document.tokens_mut().tokens);
             document.seek(0);
             assert_eq!(remove_sequentialtokenrange(document.read(3)), Ok(Some((0..3, String::from("foo")))));
             document.seek(1);
@@ -3591,7 +3651,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_including_matched_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 5]);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'b', true, false)),
                     Ok(Some((0..5, "foo b".to_string())))
@@ -3601,7 +3661,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_not_including_matched_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 5]);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'b', false, false)),
                     Ok(Some((0..4, "foo ".to_string())))
@@ -3611,7 +3671,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_by_index_including_matched_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 8]);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_forwards_until(|_, i| i >= 5, true, false)),
                     Ok(Some((0..5, "foo b".to_string())))
@@ -3621,7 +3681,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_by_index_not_including_matched_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 8]);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_forwards_until(|_, i| i >= 5, false, false)),
                     Ok(Some((0..4, "foo ".to_string())))
@@ -3631,7 +3691,7 @@ mod test_engine {
 
             #[test]
             fn it_should_never_match_a_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 8]);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_forwards_until(|c, _| c == 'X', false, false)),
                     Ok(None)
@@ -3641,7 +3701,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_forward_in_sequence() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 8]);
 
                 // First seek to the first space
                 assert_eq!(
@@ -3671,7 +3731,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_including_matched_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 8]);
                 document.seek(10);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_backwards_until(|c, _| c == 'r', true, false)),
@@ -3682,7 +3742,7 @@ mod test_engine {
 
             #[test]
             fn it_should_seek_not_including_matched_char() {
-                let mut document = Document::new_from_literal("foo bar baz");
+                let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![2, 8]);
                 document.seek(10);
                 assert_eq!(
                     remove_sequentialtokenrange(document.read_backwards_until(|c, _| c == 'r', false, false)),
@@ -3694,7 +3754,7 @@ mod test_engine {
 
         #[test]
         fn it_should_seek_forward_and_backwards_in_sequence() {
-            let mut document = Document::new_from_literal("foo bar baz");
+            let mut document = Document::new_from_literal_with_token_lengths("foo bar baz", vec![1, 1, 2, 3, 1]);
 
             // First seek to the first space
             assert_eq!(
