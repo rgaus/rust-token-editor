@@ -3295,7 +3295,7 @@ impl Buffer {
             _ => self.document.read(0),
         };
 
-        let Some((_, _, selection)) = noun_match.unwrap() else {
+        let Some((_, _, selection)) = noun_match.expect("Parsing noun failed") else {
             // Nothing matched the given noun
             return Ok(false);
         };
