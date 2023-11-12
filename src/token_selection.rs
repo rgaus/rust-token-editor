@@ -86,6 +86,7 @@ impl SequentialTokenSelection {
         keep_first_token: bool,
     ) -> Result<Self, String> {
         let forwards_range = self.as_normalized_forwards_selection(document)?;
+        let forwards_range_start_offset = self.compute_start_offset(document);
 
         let mut chars_removed = 0;
         let mut is_first = true;
@@ -176,6 +177,7 @@ impl SequentialTokenSelection {
         }
 
         document.tokens_mut().reset_caches_for_and_after(forwards_range.starting_token_id);
+        document.clear_newline_cache_at(forwards_range_start_offset);
 
         // Clear out the char count now that all tokens inside have been removed
         let mut new_range = forwards_range.clone();
