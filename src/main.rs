@@ -384,72 +384,17 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
 }
 
 fn main() {
-    // let mut document = Document::new_from_literal("foo.foo bar baz");
-    // let mut document = Document::new_from_literal("foo.foo bar\nbaz\nfinal");
-    // let mut document = Document::new_from_literal("foo   {bar....{}  }baaaaar baz\n  baz\nfinalaaaaaaaa");
-    // let document = Document::new_from_literal("# ab\nif (foo == 1) {\n  \\{#<{(| foo |)}>#\\}\n  println!(123)\n}\n#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
-    // let mut document = Document::new_from_literal("#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif");
-    // document.seek(3); // First space          ----> "TEST bar.baaaaar baz"
-    // document.seek(4); // First char of "bar"  ----> "TESTbar.baaaaar baz"
-    // document.seek(5); // Second char of "bar" -> "foo TESTar.baaaaar baz"
-    // document.seek(6); // Third char of "bar"  -> "foo TESTr.baaaaar baz"
-    // document.seek(7); // Period               -> "foo TEST.baaaaar baz"
-    // document.seek(8); // First char of "baaa" -> "foo barTESTbaaaaar baz"
-    // document.seek(9); // Second char of "baaa" > "foo bar.TESTaaaaar baz"
-    // document.seek(10); // Third char of "baaa" > "foo bar.TESTaaaar baz"
-    // document.seek(15); // Space after "baaaar" > "foo bar.TEST baz"
-    // document.seek(14); // Move to the last "a" in "baaaaar"
-    // document.seek(12); // Move to the start of "baz"
-    // let (_, _, selection) = document.read_to_pattern(TraversalPattern::To('.'), 1).unwrap().unwrap();
-    // println!("READ: {:?}", selection);
-    // {
-    //     let tokens_collection = document.tokens_mut();
-    //     println!("PRE: {}", tokens_collection.stringify());
-    // }
-    // let deleted_selection = selection.remove_deep(&mut document, true).unwrap();
-    // println!("DELETED: {:?}", deleted_selection);
-    // let result = deleted_selection.prepend_text(&mut document, String::from("TEST"), &HashMap::new());
-    // {
-    //     let tokens_collection = document.tokens_mut();
-    //     println!("POST: {}", tokens_collection.stringify());
-    // }
-
-
-
+    // let mut document = Document::new_from_literal(
+    //     // "#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif"
+    //     "{\n  let a = ['a', ['cc', 'bbb']]\n}"
+    // );
 
     let token_match_templates_map = make_token_template_map();
     let token_match_templates_map_cloned = token_match_templates_map.clone();
     let Some(all_template) = token_match_templates_map_cloned.get("All") else {
         panic!("No 'All' template found!");
     };
-
-//     let input = "
-// let b = {
-//     'foo': 2,
-//     'nested': {
-//         'again': [5, 6]
-//     }
-// }
-// {
-//     {
-//         let a = 'aaa'
-//     }
-// }";
-
-    // let input = "{let a = ['aaa', ['cc', 'bbb']]}";
-    let input = "{
-        let a = [
-            'aaa', ['cc', 'bbb']
-        ]
-    }";
-    // foo.bar bar baz
-    // let input = "let a = ['aaa'@, 1]";
-    // let input = "let @a = 'fo'@@";
-    // let input = "456";
-
-    // let input = "1aa1bb";
-
-    // match all_template.consume_from_start(input, false, &token_match_templates_map) {
+    let input = "{ 'foo' let abc = ['a', ['cc', 'bbb']]}";
     let Ok((
         _match_status,
         _offset,
@@ -460,7 +405,6 @@ fn main() {
         panic!("Error parsing initial tokens!");
     };
     let document = Document::new_from_tokenscollection(Box::new(tokens_collection));
-
 
     let mut buffer = document.create_buffer();
     buffer.dump_string();
