@@ -375,15 +375,11 @@ impl TokensCollection {
             vec![working_token.template.clone()],
         );
 
-        let mut regular_parse_max_upward_traverals = Some(5);
-        // Start by doing the more technically correct (but also more computationally expensive)
-        // "regular" parse method:
-        //
-        //  Regular parse:
         //  1. attempt to parse
-        //  2. If it fails, go up a level, and parse again
-        //  3. If after going up a set number of levels things still fail, then do a
-        //     quick parse
+        //  2. If it won't fully parse, go up a level, and parse again
+        //  3. If after going up a `regular_parse_max_upward_traverals` levels things still fail,
+        //     then go up a level / reparse and be willing to accept a partial parse from now on
+        let mut regular_parse_max_upward_traverals = Some(5);
 
         let mut match_iterations = 0;
         loop {
@@ -397,7 +393,7 @@ impl TokensCollection {
                 self.token_match_templates_map.clone(),
             ) {
                 Ok((match_status, _offset, last_token_id, child_ids, new_tokens)) => {
-                    println!("MATCHED STATUS: {:?} => {:?}", working_token.template, match_status);
+                    println!("MATCHED STATUS: {:?} => {:?} ({:?})", working_token.template, match_status, last_token_id);
 
                     if match_status != TokenParseStatus::FullParse {
                         if let Some(value) = regular_parse_max_upward_traverals {
@@ -481,18 +477,19 @@ impl TokensCollection {
                     };
 
                     let (
-                        Some(parent_id), // FIXME: it might be wrong to bail if parent_id is None?
                         Some(first_child_id),
                         Some(_last_child_id),
-                    ) = (working_token.parent_id, child_ids.first(), child_ids.last()) else {
+                    ) = (child_ids.first(), child_ids.last()) else {
                         return Ok(None);
                     };
 
-                    self.get_by_id_mut(parent_id, |parent| {
-                        parent.children_ids = child_ids.clone();
-                        parent.next_id = Some(*first_child_id);
-                        println!("PARENT: {:?}", parent);
-                    });
+                    if let Some(parent_id) = working_token.parent_id {
+                        self.get_by_id_mut(parent_id, |parent| {
+                            parent.children_ids = child_ids.clone();
+                            parent.next_id = Some(*first_child_id);
+                            println!("PARENT: {:?}", parent);
+                        });
+                    }
                     self.get_by_id_mut(*first_child_id, |first_child| {
                         first_child.previous_id = working_token.parent_id;
                     });
