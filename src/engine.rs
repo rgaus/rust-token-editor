@@ -438,7 +438,12 @@ impl Document {
                     }
                     result = format!("{}{}", character, result);
                     // println!("FOO {} {} - {}", character, initial_offset, result.len()-1);
-                    if needle_func(character, initial_offset - (result.len() - 1)) {
+                    let index = if initial_offset > result.len()-1 {
+                        initial_offset - (result.len() - 1)
+                    } else {
+                        0
+                    };
+                    if needle_func(character, index) {
                         println!("NEEDLE DONE!");
                         is_done = true;
                         break;
@@ -460,7 +465,11 @@ impl Document {
         }
 
         let result_length = result.len();
-        let final_offset = initial_offset - (result_length-1);
+        let final_offset = if initial_offset > result_length-1 {
+            initial_offset - (result_length - 1)
+        } else {
+            0
+        };
         println!("BACK: '{}' {} - ({}-1)", result, initial_offset, result_length);
 
         if !is_done {
