@@ -293,25 +293,26 @@ impl TokensCollection {
     pub fn reset_caches_for_and_after(&mut self, token_id: uuid::Uuid) -> bool {
         // Walk through the token collection, removing all cached elements at and after `token_id`
         // from `self.offset_cache`
-        self.offset_cache.borrow_mut().clear();
-        // let mut pointer_id = token_id;
-        // loop {
-        //     let Some(pointer) = self.get_by_id(pointer_id) else {
-        //         break;
-        //     };
-        //
-        //     self.offset_cache.borrow_mut().remove(&pointer_id);
-        //
-        //     let mut should_break = true;
-        //     if let Some(next_pointer_id) = pointer.next_id {
-        //         pointer_id = next_pointer_id;
-        //         should_break = false;
-        //     };
-        //
-        //     if should_break {
-        //         break;
-        //     };
-        // };
+        // self.offset_cache.borrow_mut().clear();
+
+        let mut pointer_id = token_id;
+        loop {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
+                break;
+            };
+
+            self.offset_cache.borrow_mut().remove(&pointer_id);
+
+            let mut should_break = true;
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+                should_break = false;
+            };
+
+            if should_break {
+                break;
+            };
+        };
 
         // Delete the whole range of data starting at `offset` and going all the way to the end of
         // `tokens_by_start_offset_cache`.
