@@ -419,34 +419,25 @@ impl TokensCollection {
                         }
                     }
 
-                    // Before doing the token swap, figure out the token that is the final "next" token in the
-                    // token tree
-                    let mut deep_last_referenced_child_id = Some(working_token.id);
-                    loop {
-                        let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
-                            break;
-                        };
-                        let Some(child_token) = self.get_by_id(
-                            deep_last_referenced_child_id_unwrapped
-                        ) else {
-                            break;
-                        };
-                        if let Some(result) = child_token.children_ids.last() {
-                            deep_last_referenced_child_id = Some(*result);
-                        } else {
-                            break;
-                        }
-                    }
-
-                    let next_token_id = if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
-                        if let Some(deep_last_referenced_child) = self.get_by_id(deep_last_referenced_child_id) {
-                            deep_last_referenced_child.next_id
-                        } else {
-                            None
-                        }
+                    let first_child_id = if let Some(first_root_node_id) = child_ids.first() {
+                        Some(*first_root_node_id)
                     } else {
                         None
                     };
+                    println!("FIRST CHILD ID: {first_child_id:?}");
+                    let Some(first_child_id) = first_child_id else {
+                        return Ok(None);
+                    };
+
+                    let deep_last_referenced_child_id = {
+                        if let Some(final_root_node) = new_tokens.get_final_node() {
+                            let final_root_node_id = final_root_node.id.clone();
+                            Some(final_root_node_id)
+                        } else {
+                            None
+                        }
+                    };
+                    println!("DEEP LAST REFERENCED CHILD ID: {deep_last_referenced_child_id:?}");
 
                     // Remove all tokens in the subtree underneath the matching working token
                     let subtree_children_ids = match working_token.deep_children(self, match_iterations) {
@@ -455,14 +446,12 @@ impl TokensCollection {
                         },
                         _ => vec![],
                     };
-                    for child_id in subtree_children_ids {
-                        // println!("-> REMOVE TOKEN! {:?} {}", child_id,
-                        self.remove(child_id);
-                        // );
-                    };
-                    // println!("REMOVE TOKEN! {:?} {}", working_token.id,
+                    // for child_id in subtree_children_ids {
+                    //     println!("-> REMOVE TOKEN! {:?}", child_id);
+                    //     self.remove(child_id);
+                    // };
+                    println!("REMOVE TOKEN! {:?}", working_token.id);
                     self.remove(working_token.id);
-                    // );
 
                     // Substitute in the new subtree into where the old subtree went
                     for new_token in new_tokens.tokens {
@@ -470,12 +459,25 @@ impl TokensCollection {
                         self.push(new_token);
                     };
 
-                    let (
-                        Some(first_child_id),
-                        Some(last_child_id),
-                    ) = (child_ids.first(), child_ids.last()) else {
-                        return Ok(None);
-                    };
+                    // Figure out the token that is the final "next" token in the new token tree
+                    // let mut deep_last_referenced_child_id = if let Some(n) = child_ids.last() {
+                    //     Some(*n)
+                    // } else { None };
+                    // loop {
+                    //     let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
+                    //         break;
+                    //     };
+                    //     let Some(child_token) = self.get_by_id(
+                    //         deep_last_referenced_child_id_unwrapped
+                    //     ) else {
+                    //         break;
+                    //     };
+                    //     if let Some(result) = child_token.children_ids.last() {
+                    //         deep_last_referenced_child_id = Some(*result);
+                    //     } else {
+                    //         break;
+                    //     }
+                    // }
 
                     // Finally, link the new token tree into the pre-existing token tree:
                     //
@@ -484,29 +486,38 @@ impl TokensCollection {
                     //                               F ||   || E
                     //                                 \/   ||
                     //                         |'''''''''''''''''''''''''''|
-                    // (old previous) -- A --> first_child_id..last_child_id -- C --> (old next)
-                    //               <-- B --                               <-- D --
+                    // (old previous) -- A --> first_child_id..last_child_id
+                    //               <-- B --                     / | \
+                    //                                           / / \ \
+                    //                                          1 2  3 /\
+                    //                                                /  \
+                    //                                               4    |
+                    //                                                    |
+                    //                           deep_last_referenced_child_id -- C --> (old next)
+                    //                                                         <-- D --
 
                     // A:
                     if let Some(working_token_previous_id) = working_token.previous_id {
                         self.get_by_id_mut(working_token_previous_id, |working_token_previous| {
-                            working_token_previous.next_id = Some(*first_child_id);
+                            working_token_previous.next_id = Some(first_child_id);
                         });
                     }
                     // B:
-                    self.get_by_id_mut(*first_child_id, |first_child| {
+                    self.get_by_id_mut(first_child_id, |first_child| {
                         first_child.previous_id = working_token.previous_id;
                     });
 
-                    // C:
-                    self.get_by_id_mut(*last_child_id, |last_child| {
-                        last_child.next_id = working_token.next_id;
-                    });
-                    // D:
-                    if let Some(working_token_next_id) = working_token.next_id {
-                        self.get_by_id_mut(working_token_next_id, |working_token_next| {
-                            working_token_next.previous_id = Some(*last_child_id);
+                    if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
+                        // C:
+                        self.get_by_id_mut(deep_last_referenced_child_id, |deep_last_child| {
+                            deep_last_child.next_id = working_token.next_id;
                         });
+                        // D:
+                        if let Some(working_token_next_id) = working_token.next_id {
+                            self.get_by_id_mut(working_token_next_id, |working_token_next| {
+                                working_token_next.previous_id = Some(deep_last_referenced_child_id);
+                            });
+                        }
                     }
 
                     // E:
@@ -524,7 +535,7 @@ impl TokensCollection {
                         });
                     }
 
-                    return Ok(Some(*first_child_id))
+                    return Ok(Some(first_child_id))
                 }
                 Err(e) => {
                     return Err(e);
