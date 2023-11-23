@@ -151,7 +151,7 @@ impl Document {
             panic!("offset_stack vector is empty!")
         };
         let Some((token, token_offset)) = self.tokens_collection.get_by_offset(*offset) else {
-            return Err(format!("Cannot get token at offset {} in tokens collection!", offset));
+            return Err(format!("Error in Document::read: Cannot get token at offset {} in tokens collection!", offset));
         };
         let initial_offset = *offset;
         // println!("TOK: {} -> {:?} {}", offset, token, token_offset);
@@ -305,7 +305,7 @@ impl Document {
             if initial_offset == 0 {
                 return Ok(None)
             }
-            return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
+            return Err(format!("Error in Document::read_forwards_until: Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
         // println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
@@ -415,7 +415,7 @@ impl Document {
             if initial_offset == 0 {
                 return Ok(None)
             }
-            return Err(format!("Cannot get token at offset {} in tokens collection!", initial_offset));
+            return Err(format!("Error in Document::read_backwards_until: Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
         println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
