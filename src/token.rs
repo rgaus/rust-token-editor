@@ -144,6 +144,17 @@ impl TokensCollection {
         None
     }
 
+    // Returns the node at the very end of the token collection.
+    // In a tree representation, this node is the leaf node furthest to the right.
+    pub fn get_final_node(&self) -> Option<&Box<Token>> {
+        for token in &self.tokens {
+            if token.next_id == None {
+                return Some(token);
+            }
+        }
+        None
+    }
+
     // Queries the token collection and returns the Box<Token> that covers the `input_offset` specified,
     // or None. If a token is found, the offset from the start of the token that `input_offset`
     // refers to is also returned.`
