@@ -448,7 +448,7 @@ impl TokensCollection {
                         None
                     };
 
-                    // Third, Remove all tokens in the subtree underneath the matching working token
+                    // Remove all tokens in the subtree underneath the matching working token
                     let subtree_children_ids = match working_token.deep_children(self, match_iterations) {
                         Some(subtree_children) => {
                             subtree_children.iter().map(|t| t.id).collect()
@@ -456,61 +456,74 @@ impl TokensCollection {
                         _ => vec![],
                     };
                     for child_id in subtree_children_ids {
-                        println!("REMOVE TOKEN! {:?} {}", child_id,
-                        self.remove(child_id)
-                        );
+                        // println!("-> REMOVE TOKEN! {:?} {}", child_id,
+                        self.remove(child_id);
+                        // );
                     };
-                    println!("REMOVE TOKEN! {:?} {}", working_token.id,
-                    self.remove(working_token.id)
-                    );
+                    // println!("REMOVE TOKEN! {:?} {}", working_token.id,
+                    self.remove(working_token.id);
+                    // );
 
-                    // Fouth, substitute in the new subtree into where the old subtree went
+                    // Substitute in the new subtree into where the old subtree went
                     for new_token in new_tokens.tokens {
                         println!("ADD NEW TOKEN! {:?}", new_token);
                         self.push(new_token);
                     };
 
-                    // Link the matching working node to the first child
-                    for child_id in &child_ids {
-                        self.get_by_id_mut(*child_id, |child| {
-                            child.parent_id = working_token.parent_id;
-                            println!("CHILD: {:?}", child);
-                        });
-                    };
-
                     let (
                         Some(first_child_id),
-                        Some(_last_child_id),
+                        Some(last_child_id),
                     ) = (child_ids.first(), child_ids.last()) else {
                         return Ok(None);
                     };
 
-                    if let Some(parent_id) = working_token.parent_id {
-                        self.get_by_id_mut(parent_id, |parent| {
-                            parent.children_ids = child_ids.clone();
-                            parent.next_id = Some(*first_child_id);
-                            println!("PARENT: {:?}", parent);
+                    // Finally, link the new token tree into the pre-existing token tree:
+                    //
+                    //                              (old parent)
+                    //                                 ||   /\
+                    //                               F ||   || E
+                    //                                 \/   ||
+                    //                         |'''''''''''''''''''''''''''|
+                    // (old previous) -- A --> first_child_id..last_child_id -- C --> (old next)
+                    //               <-- B --                               <-- D --
+
+                    // A:
+                    if let Some(working_token_previous_id) = working_token.previous_id {
+                        self.get_by_id_mut(working_token_previous_id, |working_token_previous| {
+                            working_token_previous.next_id = Some(*first_child_id);
                         });
                     }
+                    // B:
                     self.get_by_id_mut(*first_child_id, |first_child| {
-                        first_child.previous_id = working_token.parent_id;
+                        first_child.previous_id = working_token.previous_id;
                     });
 
-                    if let Some(last_token_id) = last_token_id {
-                        self.get_by_id_mut(last_token_id, |deep_last_child| {
-                            deep_last_child.next_id = next_token_id;
+                    // C:
+                    self.get_by_id_mut(*last_child_id, |last_child| {
+                        last_child.next_id = working_token.next_id;
+                    });
+                    // D:
+                    if let Some(working_token_next_id) = working_token.next_id {
+                        self.get_by_id_mut(working_token_next_id, |working_token_next| {
+                            working_token_next.previous_id = Some(*last_child_id);
                         });
-                    };
-                    if let Some(next_token_id) = next_token_id {
-                        self.get_by_id_mut(next_token_id, |next_token| {
-                            next_token.previous_id = last_token_id;
-                        });
-                    };
+                    }
 
-                    // Fifth, add in the updated token
-                    println!("TOK: {:?}", working_token);
-                    // let first_child = self.get_by_id(*first_child_id).unwrap();
-                    // return first_child.parent_id;
+                    // E:
+                    for child_id in &child_ids {
+                        self.get_by_id_mut(*child_id, |child| {
+                            child.parent_id = working_token.parent_id;
+                        });
+                    };
+                    // F:
+                    if let Some(working_token_parent_id) = working_token.parent_id {
+                        self.get_by_id_mut(working_token_parent_id, |working_token_parent| {
+                            for child_id in &child_ids {
+                                working_token_parent.children_ids.retain(|parent_child_id| *parent_child_id != *child_id);
+                            }
+                        });
+                    }
+
                     return Ok(Some(*first_child_id))
                 }
                 Err(e) => {
