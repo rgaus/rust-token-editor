@@ -373,14 +373,21 @@ impl TokensCollection {
         token_id: uuid::Uuid,
         new_text: String,
     ) -> Result<Option<uuid::Uuid>, String> {
+        self.get_by_id_mut(token_id, |token| {
+            token.literal = Some(new_text.clone());
+        });
+
         let Some(old_token) = self.get_by_id(token_id) else {
             return Err(format!("Cannot find token with id {}", token_id));
         };
         let token_offset = 0;
 
+        println!("\n\nCHANGE_TOKEN_LITERAL_TEXT({old_token:?}, '{new_text}') : ----\n{}\n-------", self.stringify());
+
         // Create a clone of the token to modify in-memory
         let mut working_token = old_token.clone();
-        working_token.literal = Some(new_text.clone());
+
+        let mut working_new_text = new_text.clone();
 
         // Clear all caches of data at or after this token
         self.reset_caches_for_and_after(working_token.id);
@@ -399,7 +406,7 @@ impl TokensCollection {
         loop {
             println!("offset {}", token_offset);
             match working_template.consume_from_offset(
-                &new_text,
+                &working_new_text,
                 token_offset,
                 working_token.previous_id,
                 true,
@@ -425,6 +432,7 @@ impl TokensCollection {
                                         vec![parent.template.clone()],
                                     );
                                     working_token = parent.clone();
+                                    working_new_text = working_token.stringify(&self);
                                     continue;
                                 };
                             }
