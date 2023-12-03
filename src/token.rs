@@ -892,8 +892,16 @@ impl TokensCollection {
             "{colored_next_indicator} {colored_previous_indicator} {prefix}{colored_star} {}\t(children={}, next={}, prev={})",
             token.abbreviated_id(),
             token.children_ids.len(),
-            token.next(&self).map(|n| n.abbreviated_id().cyan()).unwrap_or("<empty>".red()),
-            token.previous(&self).map(|p| p.abbreviated_id().yellow()).unwrap_or("<empty>".red()),
+            token.next(&self).map(|n| n.abbreviated_id().cyan()).unwrap_or(
+                if let Some(next_id) = token.next_id {
+                    format!( "<missing: {}>", &format!("{next_id}")[..3]).red()
+                } else { "<empty>".red() }
+            ),
+            token.previous(&self).map(|p| p.abbreviated_id().yellow()).unwrap_or(
+                if let Some(prev_id) = token.previous_id {
+                    format!( "<missing: {}>", &format!("{prev_id}")[..3]).red()
+                } else { "<empty>".red() }
+            ),
         );
         *expected_next_token_id = token.next_id;
         *expected_previous_token_id = Some(token.id);
