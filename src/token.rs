@@ -1208,4 +1208,31 @@ impl Token {
             &token_id_str[token_id_str.char_indices().nth_back(3).unwrap().0..],
         )
     }
+
+    // When called, gets the literal text of this token and all of its decendants.
+    pub fn stringify(&self, tokens_collection: &TokensCollection) -> String {
+        let mut result = String::from("");
+        let mut pointer_id = self.id;
+
+        let starting_depth = self.depth(tokens_collection);
+        loop {
+            let Some(pointer) = tokens_collection.get_by_id(pointer_id) else {
+                break;
+            };
+            // Once the depth is back at the start, we're done
+            if pointer.depth(tokens_collection) < starting_depth {
+                break;
+            }
+            if let Some(literal_text) = &pointer.literal {
+                result = format!("{}{}", result, literal_text);
+            };
+            if let Some(next_pointer_id) = pointer.next_id {
+                pointer_id = next_pointer_id;
+            } else {
+                break;
+            }
+        }
+
+        result
+    }
 }
