@@ -404,6 +404,8 @@ fn main() {
     )) = all_template.consume_from_start(input, true, Rc::new(token_match_templates_map)) else {
         panic!("Error parsing initial tokens!");
     };
+    println!("AFTER INSERT: ----\n{}\n-------\n\n", tokens_collection.debug_token_tree_string());
+
     let document = Document::new_from_tokenscollection(Box::new(tokens_collection));
 
     let mut buffer = document.create_buffer();

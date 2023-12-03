@@ -547,6 +547,7 @@ impl TokensCollection {
                         });
                     }
 
+                    println!("AFTER INSERT: ----\n{}\n-------\n\n", self.debug_token_tree_string());
                     return Ok(Some(first_child_id))
                 }
                 Err(e) => {
@@ -846,6 +847,76 @@ impl TokensCollection {
         }
 
         result
+    }
+
+    pub fn debug_token_tree_string(&self) -> String {
+        let mut acc = String::from("Token Tree:\nN P Details\n");
+        let mut expected_next_token_id: Option<uuid::Uuid> = None;
+        let mut expected_previous_token_id: Option<uuid::Uuid> = None;
+        for token in &self.tokens {
+            if token.parent_id.is_none() {
+                // parent_id_count += 1;
+                acc = format!(
+                    "{acc}{}",
+                    self.debug_token_tree_string_recurse_into_level(
+                        &token,
+                        0,
+                        String::from(""),
+                        &mut expected_next_token_id,
+                        &mut expected_previous_token_id,
+                    ),
+                );
+            }
+        }
+        // acc = format!("{acc}\nNumber of top level nodes: {}", parent_id_count);
+        acc
+    }
+    fn debug_token_tree_string_recurse_into_level(
+        &self,
+        token: &Box<Token>,
+        depth: usize,
+        prefix: String,
+        expected_next_token_id: &mut Option<uuid::Uuid>,
+        expected_previous_token_id: &mut Option<uuid::Uuid>,
+    ) -> String {
+        let mut acc = String::from("");
+        let colored_star = if depth % 2 == 0 { "*".red() } else { "*".blue() };
+        let colored_pipe = if depth % 2 == 0 { "|".red() } else { "|".blue() };
+
+        let colored_next_indicator = if *expected_next_token_id == Some(token.id) { "↓".white() } else { "•".red() };
+        let colored_previous_indicator = if *expected_previous_token_id == token.previous_id { "↑".white() } else { "•".red() };
+
+        let row = format!(
+            "{colored_next_indicator} {colored_previous_indicator} {prefix}{colored_star} {}\t(children={}, next={}, prev={})",
+            token.abbreviated_id(),
+            token.children_ids.len(),
+            token.next(&self).map(|n| n.abbreviated_id().cyan()).unwrap_or("<empty>".red()),
+            token.previous(&self).map(|p| p.abbreviated_id().yellow()).unwrap_or("<empty>".red()),
+        );
+        *expected_next_token_id = token.next_id;
+        *expected_previous_token_id = Some(token.id);
+
+        acc = format!("{acc}{row}\t{:?}\n", token.literal);
+
+        let Some(children) = token.children(&self) else {
+            return acc;
+        };
+        for child in children {
+            let next_depth = depth + 1;
+            let next_prefix = format!("{prefix}{} ", colored_pipe);
+            acc = format!(
+                "{acc}{}",
+                self.debug_token_tree_string_recurse_into_level(
+                    child,
+                    next_depth,
+                    next_prefix,
+                    expected_next_token_id,
+                    expected_previous_token_id,
+                ),
+            );
+        }
+
+        acc
     }
 }
 
