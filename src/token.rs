@@ -1199,4 +1199,13 @@ impl Token {
     pub fn compute_offset<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> usize {
         tokens_collection.compute_offset(self.id)
     }
+
+    pub fn abbreviated_id(&self) -> String {
+        let token_id_str = format!("{}", self.id);
+        format!(
+            "{}..{}",
+            &token_id_str[..3],
+            &token_id_str[token_id_str.char_indices().nth_back(3).unwrap().0..],
+        )
+    }
 }
