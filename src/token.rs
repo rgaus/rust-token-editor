@@ -587,29 +587,13 @@ impl TokensCollection {
                 return Err(format!("Cannot find token {}", token_id));
             };
 
-            // Get the deepest last child id in the token subtree
-            let mut deep_last_referenced_child_id = old_token.children_ids.last();
-            loop {
-                let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
-                    break;
-                };
-                let Some(child_token) = self.get_by_id(
-                    *deep_last_referenced_child_id_unwrapped
-                ) else {
-                    break;
-                };
-                if let Some(result) = child_token.children_ids.last() {
-                    deep_last_referenced_child_id = Some(result);
-                } else {
-                    break;
-                }
-            }
+            let last_deep_child = old_token.deep_last_child(self);
 
             Ok((
                 old_token.next_id,
                 old_token.previous_id,
                 old_token.parent_id,
-                deep_last_referenced_child_id,
+                last_deep_child,
             ))
         };
 
@@ -618,16 +602,14 @@ impl TokensCollection {
                 old_token_next_id,
                 old_token_previous_id,
                 old_token_parent_id,
-                deep_last_referenced_child_id,
+                last_deep_child,
             )) => {
                 // Update the pointer on the child AFTER old_token that points to the final deep child
-                if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
-                   if let Some(last_deep_child) = self.get_by_id(*deep_last_referenced_child_id) {
-                        if let Some(token_after_old_token_id) = last_deep_child.next_id {
-                            self.get_by_id_mut(token_after_old_token_id, |token_after_old_token| {
-                                token_after_old_token.previous_id = old_token_previous_id;
-                            })
-                        }
+                if let Some(last_deep_child) = last_deep_child {
+                    if let Some(token_after_old_token_id) = last_deep_child.next_id {
+                        self.get_by_id_mut(token_after_old_token_id, |token_after_old_token| {
+                            token_after_old_token.previous_id = old_token_previous_id;
+                        })
                     }
                 }
 
