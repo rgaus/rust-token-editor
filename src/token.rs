@@ -466,10 +466,11 @@ impl TokensCollection {
                         },
                         _ => vec![],
                     };
-                    // for child_id in subtree_children_ids {
-                    //     println!("-> REMOVE TOKEN! {:?}", child_id);
-                    //     self.remove(child_id);
-                    // };
+                    for child_id in subtree_children_ids {
+                        println!("-> REMOVE TOKEN! {:?}", child_id);
+                        self.remove(child_id);
+                    };
+
                     println!("REMOVE TOKEN! {:?}", working_token.id);
                     self.remove(working_token.id);
 
