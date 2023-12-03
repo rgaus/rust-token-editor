@@ -513,29 +513,38 @@ impl TokensCollection {
                     //                                                /  \
                     //                                               4    |
                     //                                                    |
-                    //                           deep_last_referenced_child_id -- C --> (old next)
+                    //                           deep_last_referenced_child_id -- C --> (old's deep last child's next)
                     //                                                         <-- D --
 
                     // A:
                     if let Some(working_token_previous_id) = working_token.previous_id {
                         self.get_by_id_mut(working_token_previous_id, |working_token_previous| {
+                            println!("A: {}.next_id = {:?}", working_token_previous.abbreviated_id(), Some(first_child_id));
                             working_token_previous.next_id = Some(first_child_id);
                         });
                     }
                     // B:
                     self.get_by_id_mut(first_child_id, |first_child| {
+                        println!("B: {}.previous_id = {:?}", first_child.abbreviated_id(), working_token.previous_id);
                         first_child.previous_id = working_token.previous_id;
                     });
 
                     if let Some(deep_last_referenced_child_id) = deep_last_referenced_child_id {
+                        let working_token_deep_last_child_next_id = working_token
+                            .deep_last_child(self)
+                            .map(|n| n.next_id)
+                            .unwrap_or(None);
+
                         // C:
                         self.get_by_id_mut(deep_last_referenced_child_id, |deep_last_child| {
-                            deep_last_child.next_id = working_token.next_id;
+                            println!("C: {}.next_id = {:?}", deep_last_child.abbreviated_id(), working_token_deep_last_child_next_id);
+                            deep_last_child.next_id = working_token_deep_last_child_next_id;
                         });
                         // D:
-                        if let Some(working_token_next_id) = working_token.next_id {
-                            self.get_by_id_mut(working_token_next_id, |working_token_next| {
-                                working_token_next.previous_id = Some(deep_last_referenced_child_id);
+                        if let Some(working_token_deep_last_child_next_id) = working_token_deep_last_child_next_id {
+                            self.get_by_id_mut(working_token_deep_last_child_next_id, |working_token_deep_last_child| {
+                                println!("D: {}.previous_id = {:?}", working_token_deep_last_child.abbreviated_id(), Some(deep_last_referenced_child_id));
+                                working_token_deep_last_child.previous_id = Some(deep_last_referenced_child_id);
                             });
                         }
                     }
@@ -543,6 +552,7 @@ impl TokensCollection {
                     // E:
                     for child_id in &child_ids {
                         self.get_by_id_mut(*child_id, |child| {
+                            println!("E: {}.parent_id = {:?}", child.abbreviated_id(), working_token.parent_id);
                             child.parent_id = working_token.parent_id;
                         });
                     };
@@ -550,7 +560,8 @@ impl TokensCollection {
                     if let Some(working_token_parent_id) = working_token.parent_id {
                         self.get_by_id_mut(working_token_parent_id, |working_token_parent| {
                             for child_id in &child_ids {
-                                working_token_parent.children_ids.retain(|parent_child_id| *parent_child_id != *child_id);
+                                println!("F: {}.children_ids.push({:?})", working_token_parent.abbreviated_id(), *child_id);
+                                working_token_parent.children_ids.push(*child_id);
                             }
                         });
                     }
