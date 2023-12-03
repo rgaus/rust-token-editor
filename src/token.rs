@@ -240,7 +240,8 @@ impl TokensCollection {
             };
 
             // Once the offset gets to the offset that the user was looking for, we're done
-            if offset != 0 && (offset + pointer_length) >= input_offset {
+            // if offset != 0 && (offset + pointer_length) >= input_offset {
+            if (offset + pointer_length) >= input_offset {
                 // println!("FOUND: {} + {} >= {}", offset, pointer_length, input_offset);
                 break;
             };
