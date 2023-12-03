@@ -1041,7 +1041,7 @@ impl Token {
 
         tokens_collection.get_by_id(next_id)
     }
-    pub fn previous<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> Option<&Box<Token>> {
+    pub fn previous<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<&Box<Token>> {
         let Some(previous_id) = self.previous_id else {
             return None;
         };
