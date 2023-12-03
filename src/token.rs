@@ -1235,4 +1235,42 @@ impl Token {
 
         result
     }
+
+    // Computes the "deep last child" of a token. This is defined as the last child's last child's
+    // last child (and so on). In diagram form:
+    //     self
+    //      / \
+    //     a   b
+    //    /\   /\
+    //   c  d e  f <-- `f` is the "deep last child"
+    pub fn deep_last_child_id(&self, token_collection: &TokensCollection) -> Option<uuid::Uuid> {
+        let mut deep_last_referenced_child_id = if let Some(n) = self.children_ids.last() {
+            Some(*n)
+        } else { None };
+
+        loop {
+            let Some(deep_last_referenced_child_id_unwrapped) = deep_last_referenced_child_id else {
+                break;
+            };
+            let Some(child_token) = token_collection.get_by_id(
+                deep_last_referenced_child_id_unwrapped
+            ) else {
+                break;
+            };
+            if let Some(result) = child_token.children_ids.last() {
+                deep_last_referenced_child_id = Some(*result);
+            } else {
+                break;
+            }
+        }
+
+        deep_last_referenced_child_id
+    }
+    pub fn deep_last_child<'a>(&self, token_collection: &'a TokensCollection) -> Option<&'a Box<Token>> {
+        if let Some(token_id) = self.deep_last_child_id(token_collection) {
+            token_collection.get_by_id(token_id)
+        } else {
+            None
+        }
+    }
 }
