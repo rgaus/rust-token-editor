@@ -853,36 +853,151 @@ impl TokensCollection {
     }
 
     pub fn debug_token_tree_string(&self) -> String {
-        let mut acc = String::from("Token Tree:\nN P Details\n");
+        let mut lines: Vec<(String, &Token)> = vec![];
+
+        // Generate each line in the diagram
         let mut expected_next_token_id: Option<uuid::Uuid> = None;
         let mut expected_previous_token_id: Option<uuid::Uuid> = None;
         for token in &self.tokens {
             if token.parent_id.is_none() {
                 // parent_id_count += 1;
-                acc = format!(
-                    "{acc}{}",
-                    self.debug_token_tree_string_recurse_into_level(
-                        &token,
-                        0,
-                        String::from(""),
-                        &mut expected_next_token_id,
-                        &mut expected_previous_token_id,
-                    ),
-                );
+                lines.extend(self.debug_token_tree_string_recurse_into_level(
+                    &token,
+                    0,
+                    String::from(""),
+                    &mut expected_next_token_id,
+                    &mut expected_previous_token_id,
+                ));
             }
         }
+
+        // Generate arrows that should be rendered
+        let mut arrows: Vec<(usize, usize)> = vec![];
+        for (index, (line, token)) in lines.iter().enumerate() {
+            let Some(next) = token.next(&self) else {
+                continue;
+            };
+            let Some(next_index) = lines.iter().position(|(_, search_token)| search_token.id == next.id) else {
+                continue;
+            };
+
+            if index+1 != next_index {
+                arrows.push((index, next_index));
+            }
+        }
+
+        // Draw the arrows
+        let mut prefixes: Vec<String> = lines.iter().map(|_| String::from("")).collect();
+        let min_arrow_space_chars = String::from("  ");
+        for (start_index, end_index) in arrows {
+            let smaller_index = std::cmp::min(start_index, end_index);
+            let larger_index = std::cmp::max(start_index, end_index);
+
+            // Within the prefixes start_index..end_index, are two spaces free at the same
+            // index in each line?
+            let first_free_index_result = prefixes[smaller_index].chars().enumerate().find(|(index, _)| {
+                for p in smaller_index..larger_index {
+                    let prefix = prefixes[p].clone();
+                    println!("FOO: {}", index);
+
+                    let start_index = *index;
+                    let mut end_index = index+(min_arrow_space_chars.len()-1);
+                    if end_index > prefix.len()-1 {
+                        end_index = prefix.len();
+                    }
+
+                    let range_contains_non_whitespace_chars = prefix[start_index..end_index].chars().find(
+                        |c| *c != ' '
+                    ).is_none();
+                    if range_contains_non_whitespace_chars {
+                        return false;
+                    }
+                }
+
+                true
+            });
+
+            // Add space to front if needed so that a new arrow can be drawn in "empty space"
+            let first_free_index = if let Some((index, _)) = first_free_index_result {
+                index
+            } else {
+                prefixes = prefixes.iter().map(|l| format!("{min_arrow_space_chars}{l}")).collect();
+                0
+            };
+
+            // Draw a "*----" on the start_index
+            for char_index in first_free_index..prefixes[start_index].len() {
+                let char_at_index = prefixes[start_index].chars().nth(char_index).unwrap();
+                if char_at_index == '>' {
+                    continue;
+                }
+                prefixes[start_index].replace_range(
+                    char_index..char_index+1,
+                    if char_index == first_free_index {
+                        if start_index == smaller_index { "," } else { "`" }
+                    } else { "-" }
+                );
+            }
+
+            // Draw a "|" on all index between the start_index and end_index
+            for index in smaller_index+1..larger_index {
+                prefixes[index].replace_range(first_free_index..first_free_index+1, "|");
+            }
+
+            // Draw a "*--->" on the end_index
+            for char_index in first_free_index..prefixes[end_index].len() {
+                let char_at_index = prefixes[start_index].chars().nth(char_index).unwrap();
+                if char_at_index == '>' {
+                    continue;
+                }
+                let new_char = if char_index == prefixes[end_index].len()-1 {
+                    ">"
+                } else if char_index == first_free_index {
+                    if end_index == smaller_index { "," } else { "`" }
+                } else {
+                    "-"
+                };
+                prefixes[end_index].replace_range(char_index..char_index+1, new_char);
+            }
+        }
+
+        // Put everything together
+
+        // NOTE: Add whitespace before the header row equal to the prefix length to align the
+        // headers properly
+        let mut whitespace_before_header_row = (
+            0..prefixes[0].len()
+        ).map(|_| String::from(" ")).collect::<Vec<String>>().join("");
+        if whitespace_before_header_row.len() > 0 {
+            // Add a space between the arrows and each line if arrows are being drawn
+            whitespace_before_header_row = format!("{whitespace_before_header_row} ");
+            prefixes = prefixes.iter().map(|l| format!("{l} ")).collect();
+        }
+
+        let acc = format!(
+            "Token Tree:\n{whitespace_before_header_row}N P Details\n{}",
+            lines
+                .iter()
+                .enumerate()
+                .map(|(index, (line, _))| format!("{}{}",
+                    prefixes[index],
+                    // prefixes[index].replace("-", "═").replace("|", "║").replace("`", "╚").replace(",", "╔"),
+                    line
+                )).collect::<Vec<String>>().join("\n"),
+        );
+
         // acc = format!("{acc}\nNumber of top level nodes: {}", parent_id_count);
         acc
     }
-    fn debug_token_tree_string_recurse_into_level(
-        &self,
-        token: &Box<Token>,
+    fn debug_token_tree_string_recurse_into_level<'a>(
+        &'a self,
+        token: &'a Box<Token>,
         depth: usize,
         prefix: String,
         expected_next_token_id: &mut Option<uuid::Uuid>,
         expected_previous_token_id: &mut Option<uuid::Uuid>,
-    ) -> String {
-        let mut acc = String::from("");
+    ) -> Vec<(String, &Token)> {
+        let mut lines: Vec<(String, &Token)> = vec![];
         let colored_star = if depth % 2 == 0 { "*".red() } else { "*".blue() };
         let colored_pipe = if depth % 2 == 0 { "|".red() } else { "|".blue() };
 
@@ -907,27 +1022,27 @@ impl TokensCollection {
         *expected_next_token_id = token.next_id;
         *expected_previous_token_id = Some(token.id);
 
-        acc = format!("{acc}{row}\t{:?}\n", token.literal);
+        lines.push((
+            format!("{row}\t{:?}", token.literal),
+            &token,
+        ));
 
         let Some(children) = token.children(&self) else {
-            return acc;
+            return lines;
         };
         for child in children {
             let next_depth = depth + 1;
             let next_prefix = format!("{prefix}{} ", colored_pipe);
-            acc = format!(
-                "{acc}{}",
-                self.debug_token_tree_string_recurse_into_level(
-                    child,
-                    next_depth,
-                    next_prefix,
-                    expected_next_token_id,
-                    expected_previous_token_id,
-                ),
-            );
+            lines.extend(self.debug_token_tree_string_recurse_into_level(
+                child,
+                next_depth,
+                next_prefix,
+                expected_next_token_id,
+                expected_previous_token_id,
+            ));
         }
 
-        acc
+        lines
     }
 }
 
