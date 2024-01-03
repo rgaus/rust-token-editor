@@ -280,7 +280,7 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
     ], TokenEvents {
         on_enter: None,
         on_leave: Some(|token, tokens_collection| {
-            let entries = token.find_deep_children(tokens_collection, 4, |token| match token.template {
+            let entries = token.find_deep_children(tokens_collection, Some(4), |token| match token.template {
                 TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry", None) => true,
                 _ => false,
             });
@@ -384,9 +384,12 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
 }
 
 fn main() {
-    // let mut document = Document::new_from_literal(
+    // let mut document = Document::new_from_literal_with_token_lengths(
     //     // "#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif"
-    //     "{\n  let a = ['a', ['cc', 'bbb']]\n}"
+    //     // "{let a = ['a', ['cc', 'bbb']]}",
+    //     // vec![1, 1, 1, 1, 1],
+    //     "foo bar.baz quux",
+    //     vec![2, 2, 2, 2, 2, 2],
     // );
 
     let token_match_templates_map = make_token_template_map();
@@ -394,7 +397,8 @@ fn main() {
     let Some(all_template) = token_match_templates_map_cloned.get("All") else {
         panic!("No 'All' template found!");
     };
-    let input = "{ 'foo' let abc = ['a', ['cc', 'bbb']]}";
+    // let input = "{ 'foo' let abc = ['a', ['cc', 'bbb']]}";
+    let input = "[1,]";
     let Ok((
         _match_status,
         _offset,

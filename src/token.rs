@@ -374,21 +374,48 @@ impl TokensCollection {
         token_id: uuid::Uuid,
         new_text: String,
     ) -> Result<Option<uuid::Uuid>, String> {
-        self.get_by_id_mut(token_id, |token| {
-            token.literal = Some(new_text.clone());
-        });
-
-        let Some(old_token) = self.get_by_id(token_id) else {
-            return Err(format!("Cannot find token with id {}", token_id));
-        };
         let token_offset = 0;
 
-        println!("\n\nCHANGE_TOKEN_LITERAL_TEXT({old_token:?}, '{new_text}') : ----\n{}\n-------", self.stringify());
+        println!("\n\nCHANGE_TOKEN_LITERAL_TEXT({token_id:?}, '{new_text}') : ----\n{}\n-------", self.stringify());
+        let mut pointer_id = token_id;
+        loop {
+            let Some(pointer) = self.get_by_id(pointer_id) else {
+                return Err(format!("Cannot find token with id {}", token_id));
+            };
+
+            if pointer.literal.is_some() {
+                break;
+            }
+
+            if let Some(next_id) = pointer.next_id {
+                pointer_id = next_id;
+            } else {
+                return Err(format!("Attempted to change token {token_id}, but this token has a literal of None and no token afterwards has text contents!"));
+            }
+        }
+
+        self.get_by_id_mut(pointer_id, |token| {
+            if pointer_id == token_id {
+                // If the token selected was the token with literal text contents, then swap the
+                // token literal for the new data
+                token.literal = Some(new_text.clone());
+            } else {
+                // If a token with text contents was selected AFTER the token specified, then
+                // prepend the literal text in front of the new token
+                token.literal = Some(format!(
+                    "{new_text}{}",
+                    if let Some(literal) = &token.literal { literal.clone() } else { String::from("") },
+                ));
+            }
+        });
+
+        let old_token = self.get_by_id(pointer_id).unwrap();
+        println!("FOUND NEXT TOKEN WITH CONTENTS: {old_token:?}");
 
         // Create a clone of the token to modify in-memory
         let mut working_token = old_token.clone();
 
-        let mut working_new_text = new_text.clone();
+        let mut working_new_text = old_token.literal.clone().unwrap();
 
         // Clear all caches of data at or after this token
         self.reset_caches_for_and_after(working_token.id);
@@ -396,6 +423,7 @@ impl TokensCollection {
         let mut working_template = TokenMatchTemplate::new(
             vec![working_token.template.clone()],
         );
+        println!("WORKING TOKEN ID: {}", working_token.id);
 
         //  1. attempt to parse
         //  2. If it won't fully parse, go up a level, and parse again
@@ -406,6 +434,7 @@ impl TokensCollection {
         let mut match_iterations = 0;
         loop {
             println!("offset {}", token_offset);
+            println!("parsing text: '{working_new_text}'");
             match working_template.consume_from_offset(
                 &working_new_text,
                 token_offset,
@@ -416,6 +445,7 @@ impl TokensCollection {
             ) {
                 Ok((match_status, _offset, last_token_id, child_ids, new_tokens)) => {
                     println!("MATCHED STATUS: {:?} => {:?} ({:?})", working_token.template, match_status, last_token_id);
+                    println!("PARSED RESULT: {}", new_tokens.debug_token_tree_string());
 
                     if match_status != TokenParseStatus::FullParse {
                         if let Some(value) = regular_parse_max_upward_traverals {
@@ -459,21 +489,6 @@ impl TokensCollection {
                         }
                     };
                     println!("DEEP LAST REFERENCED CHILD ID: {deep_last_referenced_child_id:?}");
-
-                    // Remove all tokens in the subtree underneath the matching working token
-                    let subtree_children_ids = match working_token.deep_children(self, match_iterations) {
-                        Some(subtree_children) => {
-                            subtree_children.iter().map(|t| t.id).collect()
-                        },
-                        _ => vec![],
-                    };
-                    for child_id in subtree_children_ids {
-                        println!("-> REMOVE TOKEN! {:?}", child_id);
-                        self.remove(child_id);
-                    };
-
-                    println!("REMOVE TOKEN! {:?}", working_token.id);
-                    self.remove(working_token.id);
 
                     // Substitute in the new subtree into where the old subtree went
                     for new_token in new_tokens.tokens {
@@ -540,7 +555,13 @@ impl TokensCollection {
                         // C:
                         self.get_by_id_mut(deep_last_referenced_child_id, |deep_last_child| {
                             println!("C: {}.next_id = {:?}", deep_last_child.abbreviated_id(), working_token_deep_last_child_next_id);
-                            deep_last_child.next_id = working_token_deep_last_child_next_id;
+                            // If at the deep last child doesn't exist (ie, maybe this token
+                            // doesn't have children), then use the next of the working token
+                            // instead
+                            let next_id = working_token_deep_last_child_next_id;//.or(working_token.next_id);
+                            println!("{:?} {:?}", working_token.next_id, next_id);
+
+                            deep_last_child.next_id = next_id;
                         });
                         // D:
                         if let Some(working_token_deep_last_child_next_id) = working_token_deep_last_child_next_id {
@@ -568,6 +589,26 @@ impl TokensCollection {
                         });
                     }
 
+
+                    // Remove all tokens in the subtree underneath the matching working token
+                    let subtree_children_ids = match working_token.deep_children(self, Some(match_iterations)) {
+                        Some(subtree_children) => {
+                            subtree_children.iter().map(|t| t.id).collect()
+                        },
+                        _ => vec![],
+                    };
+                    for child_id in subtree_children_ids {
+                        println!("-> REMOVE TOKEN! {:?}", child_id);
+                        self.remove(child_id);
+                    };
+
+                    println!("REMOVE TOKEN! {:?}", working_token.id);
+                    self.remove(working_token.id);
+
+
+
+                    // println!("AFTER INSERT: ----\n{}\n-------\n\n", self.stringify());
+                    // println!("AFTER INSERT: ----\n{}\n-------\n\n", self.debug_stringify_highlight(0, 0));
                     println!("AFTER INSERT: ----\n{}\n-------\n\n", self.debug_token_tree_string());
                     return Ok(Some(first_child_id))
                 }
@@ -820,6 +861,8 @@ impl TokensCollection {
             let Some(pointer) = self.get_by_id(pointer_id) else {
                 break;
             };
+            // println!("{:?}\t{:?} -> {:?} -> {:?}", pointer.literal, pointer.previous_id, pointer.id, pointer.next_id);
+            // println!("{}", count);
             if let Some(literal_text) = &pointer.literal {
                 count += 1;
                 for character in literal_text.chars() {
@@ -1294,7 +1337,7 @@ impl Token {
         };
         matches
     }
-    pub fn deep_children<'a>(&'a self, tokens_collection: &'a TokensCollection, max_depth: usize) -> Option<Vec<&Box<Token>>> {
+    pub fn deep_children<'a>(&'a self, tokens_collection: &'a TokensCollection, max_depth: Option<usize>) -> Option<Vec<&Box<Token>>> {
         let mut children: Vec<&Box<Token>> = vec![];
         for child_id in &self.children_ids {
             let Some(child) = tokens_collection.get_by_id(*child_id) else {
@@ -1302,11 +1345,16 @@ impl Token {
             };
             children.push(&child);
 
-            if max_depth == 0 {
+            if max_depth == Some(0) {
                 continue;
             };
 
-            let Some(deep_children) = child.deep_children(tokens_collection, max_depth-1) else {
+            let next_max_depth = if let Some(max_depth) = max_depth {
+                Some(max_depth - 1)
+            } else {
+                None
+            };
+            let Some(deep_children) = child.deep_children(tokens_collection, next_max_depth) else {
                 continue;
             };
             children.extend(&deep_children);
@@ -1316,7 +1364,7 @@ impl Token {
     pub fn find_deep_child<'a, F>(
         &'a self,
         tokens_collection: &'a TokensCollection,
-        max_depth: usize,
+        max_depth: Option<usize>,
         mut matcher: F
     ) -> Option<&Box<Token>> where F: FnMut(&Token) -> bool {
         let Some(children) = &self.deep_children(tokens_collection, max_depth) else {
@@ -1333,7 +1381,7 @@ impl Token {
     pub fn find_deep_children<'a, F>(
         &'a self,
         tokens_collection: &'a TokensCollection,
-        max_depth: usize,
+        max_depth: Option<usize>,
         mut matcher: F
     ) -> Vec<&Box<Token>> where F: FnMut(&Token) -> bool {
         let Some(children) = &self.deep_children(tokens_collection, max_depth) else {
