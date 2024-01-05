@@ -225,34 +225,6 @@ impl TokenMatchTemplate {
                         return Err(format!("Unknown reference name {} found!", reference_name))
                     };
 
-                    let Ok((
-                        referenced_parse_status,
-                        referenced_template_offset,
-                        _referenced_last_token_id,
-                        referenced_child_ids,
-                        referenced_template_tokens,
-                    )) = referenced_template.consume_from_offset(
-                        input,
-                        offset,
-                        last_token_id,
-                        store_non_parsable_chars,
-                        depth + 1,
-                        token_match_templates_map.clone(),
-                    ) else {
-                        break;
-                    };
-                    println!("{}`-- (referenced_parse_status={:?})", depth_spaces, referenced_parse_status);
-                    if referenced_parse_status == TokenParseStatus::Failed {
-                        break;
-                    };
-                    // If this reference matched partially, then this next match also is partial
-                    if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = referenced_parse_status {
-                        if let Some(value) = first_non_parsable_char_index_temp {
-                            first_non_parsable_char_index = Some(value);
-                        }
-                        matched_partial = true;
-                    };
-
                     let mut new_token = Box::new(Token {
                         id: Uuid::new_v4(),
                         template: template_matcher.clone(),
@@ -271,6 +243,34 @@ impl TokenMatchTemplate {
                     if let Some(on_enter) = new_token.events.on_enter {
                         on_enter(&mut new_token);
                     }
+
+                    let Ok((
+                        referenced_parse_status,
+                        referenced_template_offset,
+                        _referenced_last_token_id,
+                        referenced_child_ids,
+                        referenced_template_tokens,
+                    )) = referenced_template.consume_from_offset(
+                        input,
+                        offset,
+                        Some(new_token.id),
+                        store_non_parsable_chars,
+                        depth + 1,
+                        token_match_templates_map.clone(),
+                    ) else {
+                        break;
+                    };
+                    println!("{}`-- (referenced_parse_status={:?})", depth_spaces, referenced_parse_status);
+                    if referenced_parse_status == TokenParseStatus::Failed {
+                        break;
+                    };
+                    // If this reference matched partially, then this next match also is partial
+                    if let TokenParseStatus::PartialParse(_, first_non_parsable_char_index_temp) = referenced_parse_status {
+                        if let Some(value) = first_non_parsable_char_index_temp {
+                            first_non_parsable_char_index = Some(value);
+                        }
+                        matched_partial = true;
+                    };
 
                     // Link the new token's next_id to the first child
                     if let Some(first_referenced_child_id) = referenced_child_ids.first() {
