@@ -1478,22 +1478,21 @@ impl Token {
                 .map(|n| n.next_id)
                 .unwrap_or(None);
 
+            // If at the deep last child doesn't exist (ie, maybe this token
+            // doesn't have children), then use the next of the working token
+            // instead
+            let working_token_next_value_id = working_token_deep_last_child_next_id.or(self.next_id);
             // C:
             token_collection.get_by_id_mut(deep_last_referenced_child_id, |deep_last_child| {
-                println!("C: {}.next_id = {:?}", deep_last_child.abbreviated_id(), working_token_deep_last_child_next_id);
-                // If at the deep last child doesn't exist (ie, maybe this token
-                // doesn't have children), then use the next of the working token
-                // instead
-                let next_id = working_token_deep_last_child_next_id.or(self.next_id);
-                println!("{:?} {:?}", self.next_id, next_id);
-
-                deep_last_child.next_id = next_id;
+                // println!("{:?} {:?}", self.next_id, next_id);
+                println!("C: {}.next_id = {:?}", deep_last_child.abbreviated_id(), working_token_next_value_id);
+                deep_last_child.next_id = working_token_next_value_id;
             });
             // D:
-            if let Some(working_token_deep_last_child_next_id) = working_token_deep_last_child_next_id {
-                token_collection.get_by_id_mut(working_token_deep_last_child_next_id, |working_token_deep_last_child| {
-                    println!("D: {}.previous_id = {:?}", working_token_deep_last_child.abbreviated_id(), Some(deep_last_referenced_child_id));
-                    working_token_deep_last_child.previous_id = Some(deep_last_referenced_child_id);
+            if let Some(working_token_next_value_id) = working_token_next_value_id {
+                token_collection.get_by_id_mut(working_token_next_value_id, |working_token_next_value| {
+                    println!("D: {}.previous_id = {:?}", working_token_next_value.abbreviated_id(), Some(deep_last_referenced_child_id));
+                    working_token_next_value.previous_id = Some(deep_last_referenced_child_id);
                 });
             }
         }
