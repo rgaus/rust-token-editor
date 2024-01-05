@@ -966,7 +966,7 @@ mod test_parsing {
 
             // Make sure that there is a String somewhere in the token collection
             let root_node = result.4.get_first_root_node().unwrap();
-            let matching_node = root_node.find_deep_child(&result.4, 100, |token| match token {
+            let matching_node = root_node.find_deep_child(&result.4, Some(100), |token| match token {
                 Token { template: TokenMatchTemplateMatcher::Reference("String", _), .. } => true,
                 _ => false,
             });

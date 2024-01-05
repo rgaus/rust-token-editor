@@ -120,6 +120,9 @@ impl Document {
     pub fn tokens_mut(&mut self) -> &mut Box<TokensCollection> {
         &mut self.tokens_collection
     }
+    pub fn tokens_owned(self) -> TokensCollection {
+        *self.tokens_collection
+    }
 
     pub fn seek_push(&mut self, offset: usize) {
         self.offset_stack.push(offset);

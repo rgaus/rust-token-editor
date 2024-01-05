@@ -1415,6 +1415,7 @@ impl Token {
     ) -> Result<Option<uuid::Uuid>, String> {
         // Clear all caches of data at or after this token
         token_collection.reset_caches_for_and_after(self.id);
+        println!("SELF ID: {:?}", self.id);
 
         let first_child_id = if let Some(first_root_node_id) = child_ids.first() {
             Some(*first_root_node_id)
@@ -1483,7 +1484,7 @@ impl Token {
                 // If at the deep last child doesn't exist (ie, maybe this token
                 // doesn't have children), then use the next of the working token
                 // instead
-                let next_id = working_token_deep_last_child_next_id;//.or(self.next_id);
+                let next_id = working_token_deep_last_child_next_id.or(self.next_id);
                 println!("{:?} {:?}", self.next_id, next_id);
 
                 deep_last_child.next_id = next_id;
@@ -1536,5 +1537,119 @@ impl Token {
         // println!("AFTER INSERT: ----\n{}\n-------\n\n", token_collection.debug_stringify_highlight(0, 0));
         println!("AFTER INSERT: ----\n{}\n-------\n\n", token_collection.debug_token_tree_string());
         Ok(Some(first_child_id))
+    }
+}
+
+#[cfg(test)]
+mod test_token {
+    use crate::{TokenMatchTemplate, TokenMatchTemplateMap};
+    use crate::TokenParseStatus;
+    use crate::Document;
+    use regex::Regex;
+    use std::rc::Rc; 
+    use super::*;
+
+    mod test_token_replace_with_subtree {
+        use super::*;
+
+        // This mini language is either:
+        // - A single `1`
+        // - Between 1 to 3 `1`s, followed by a `2`
+        fn initialize_mini_language_twelve() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
+            let mut token_match_templates_map = HashMap::new();
+            token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::any(vec![
+                    TokenMatchTemplateMatcher::reference("Twelve"),
+                    TokenMatchTemplateMatcher::reference("One"),
+                ]),
+            ]));
+            token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::repeat_count(
+                    Box::new(TokenMatchTemplateMatcher::reference("One")),
+                    1, 3
+                ),
+                TokenMatchTemplateMatcher::raw("2"),
+            ]));
+            token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
+                TokenMatchTemplateMatcher::regex(
+                    Regex::new(r"^(?<one>1)").unwrap(),
+                ),
+            ]));
+
+            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
+        }
+
+        #[test]
+        fn is_able_to_replace_flat_subtree_with_flat_tokencollection() {
+            let mut document = Document::new_from_literal_with_token_lengths(
+                "123456",
+                vec![1, 1, 1, 1, 1, 1],
+            );
+            let token_collection = document.tokens_mut();
+
+            let Some((token, _)) = token_collection.get_by_offset(3) else {
+                panic!("Unable to call get_by_offset in is_able_to_replace_flat_subtree_with_flat_tokencollection!");
+            };
+
+            let mut new_document = Document::new_from_literal_with_token_lengths(
+                "abcdef",
+                vec![1, 1, 1, 1, 1, 1],
+            );
+            let new_token_collection = new_document.tokens_owned();
+            // NOTE: because this tokencollection is flat, all tokens are children
+            let top_level_child_ids = new_token_collection.tokens.iter().map(|t| t.id).collect();
+
+            println!("PRE: {}", token_collection.debug_token_tree_string());
+
+            let result = token.clone().replace_with_subtree(
+                token_collection,
+                new_token_collection,
+                top_level_child_ids,
+            );
+
+            println!("RESULT: {result:?}");
+
+            // Make sure the new token subtree contains the right data
+            assert_eq!(token_collection.stringify(), "12abcdef456");
+        }
+
+        #[test]
+        fn is_able_to_replace_deep_subtree_with_flat_tokencollection() {
+            let (template_map, all_template) = initialize_mini_language_twelve();
+            let template_map_rc = Rc::new(template_map);
+
+            // Get a few subranges to make sure they generate the right data
+            let mut document = {
+                let result = all_template.consume_from_start("1112", false, template_map_rc.clone()).unwrap();
+                Document::new_from_tokenscollection(Box::new(result.4))
+            };
+            let token_collection = document.tokens_mut();
+
+            let Some((token, _)) = token_collection.get_by_offset(2) else {
+                panic!("Unable to call get_by_offset in is_able_to_replace_deep_subtree_with_flat_tokencollection!");
+            };
+
+            let mut new_document = Document::new_from_literal_with_token_lengths(
+                "abcdef",
+                vec![1, 1, 1, 1, 1, 1],
+            );
+            let new_token_collection = new_document.tokens_owned();
+            // NOTE: because this tokencollection is flat, all tokens are children
+            let top_level_child_ids = new_token_collection.tokens.iter().map(|t| t.id).collect();
+
+            println!("PRE: {}", token_collection.debug_token_tree_string());
+
+            let result = token.clone().replace_with_subtree(
+                token_collection,
+                new_token_collection,
+                top_level_child_ids,
+            );
+
+            println!("RESULT: {result:?}");
+            assert_eq!(1, 2);
+
+            // Make sure the new token subtree contains the right data
+            assert_eq!(token_collection.stringify(), "1abcdef12");
+        }
     }
 }
