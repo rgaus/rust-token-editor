@@ -418,9 +418,8 @@ impl TokensCollection {
         // Clear all caches of data at or after this token
         self.reset_caches_for_and_after(working_token.id);
 
+        // Reparse the token, to try to convert it into something now that it has been modified
         working_token.reparse(self)
-
-        // Ok(Some(working_token.id))
     }
 
     // When called, removes a token from the token tree. When removed, all token links are updated
