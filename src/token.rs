@@ -1262,20 +1262,21 @@ impl Token {
     pub fn stringify(&self, tokens_collection: &TokensCollection) -> String {
         let mut result = String::from("");
         let mut pointer_id = self.id;
-
-        let starting_depth = self.depth(tokens_collection);
         loop {
             let Some(pointer) = tokens_collection.get_by_id(pointer_id) else {
                 break;
             };
-            // Once the depth is back at the start, we're done
-            if pointer.depth(tokens_collection) < starting_depth {
-                break;
-            }
             if let Some(literal_text) = &pointer.literal {
                 result = format!("{}{}", result, literal_text);
             };
             if let Some(next_pointer_id) = pointer.next_id {
+                // Only keep going if the next token is a CHILD of the token being stringified!
+                if self.find_deep_child(tokens_collection, None, |child| {
+                    child.id == next_pointer_id
+                }).is_none() {
+                    break;
+                }
+
                 pointer_id = next_pointer_id;
             } else {
                 break;
