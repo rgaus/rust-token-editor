@@ -1898,7 +1898,8 @@ pub struct ViewDumpedData {
 }
 
 impl Buffer {
-    pub fn new(document: Box<Document>) -> Self {
+    pub fn new(mut document: Box<Document>) -> Self {
+        let position = document.convert_offset_to_rows_cols(document.get_offset());
         Self {
             document: document,
             mode: Mode::Normal,
@@ -1910,7 +1911,7 @@ impl Buffer {
             replaced_chars: vec![],
             replaced_chars_insert_after_count: 0,
             options: BufferOptions::new_with_defaults(),
-            position: (1, 1),
+            position: position,
             preferred_column: 1,
             state: ViewState::Initial,
             command_count: String::from(""),
