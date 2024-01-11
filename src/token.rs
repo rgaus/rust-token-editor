@@ -998,9 +998,11 @@ pub struct TokenMatch {
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum TokenEffect {
-    DeclareExpression(String),
+    // A DeclareAssignmentContainer indicates an identifier is being assigned
+    // It should contain within it one DeclareIdentifier and one DeclareExpression
+    DeclareAssignmentContainer,
     DeclareIdentifier(String),
-    // DeclareContainer,
+    DeclareExpression(String),
     DeclareMember { name: String, value: String },
     DeclareLexicalScope,
 }
@@ -1215,33 +1217,185 @@ impl Token {
         }
     }
 
-    pub fn child_effects<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Option<Vec<&TokenEffect>> {
-        let mut child_effects: Vec<&TokenEffect> = vec![];
-        let Some(children) = &self.children(tokens_collection) else {
-            return Some(child_effects);
-        };
-        for child in children {
+    // When called, returns a list of all effects that are on tokens that is a direct or indirect
+    // child of the given token, an ALSO are the first of a given type down any particular tree
+    // leg.
+    //
+    // For example:
+    // - Token 1 (effects=[])
+    //   - Token 2 (effects=[A(1)])
+    //     - Token 4 (effects=[A(9)])
+    //   - Token 3 (effects=[A(5)])
+    //
+    // When called on Token 1, this function should only return A(1) and A(5), NOT A(9)!
+    pub fn child_effects<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Vec<(&TokenEffect, Vec<&Box<Token>>)> {
+        println!("=====\nCHILD EFFECTS\n=====");
+        let mut child_effects_at_depths: Vec<(&TokenEffect, Vec<&Box<Token>>)> = vec![];
+
+        let mut child_paths_to_traverse: Vec<Vec<&Box<Token>>> = self.children(tokens_collection)
+            .unwrap()
+            .iter()
+            .map(|t| vec![*t])
+            .collect();
+
+        while let Some(child_path) = child_paths_to_traverse.pop() {
+            let Some(&child) = child_path.last() else {
+                break;
+            };
+            println!("-> CHILD PATH: {:?} effects={:?}", child_path.iter().map(|c| c.abbreviated_id()).collect::<Vec<String>>(), child.effects);
+            let depth = child_path.len();
+
             for effect in &child.effects {
-                child_effects.push(effect);
+                // FIXME: this is a bad `.clone()`, I should be able to get away without doing this
+                let child_effects_at_depths_clone = child_effects_at_depths.clone();
+
+                // Look for any pre-existing effects that match the current effect
+                let similar_pre_existing_effects: Vec<(usize, &(&TokenEffect, Vec<&Box<Token>>))> = child_effects_at_depths_clone
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (child_effect, _))| {
+                        std::mem::discriminant(effect) == std::mem::discriminant(child_effect)
+                    })
+                    // .map(|(child_effect_index, (child_effect, child_path))| {
+                    //     (*child_effect, child_effect_index, child_path.len())
+                    // })
+                    .collect();
+
+                println!("\tSIMILAR ALREADY STORED EFFECTS: {}", similar_pre_existing_effects.len());
+                // If there are no pre existing similar effects, then definitely add this effect
+                if similar_pre_existing_effects.len() == 0 {
+                    child_effects_at_depths.push((effect, child_path.clone()));
+                    continue;
+                }
+
+                let similar_pre_existing_effects_below: Vec<
+                    &(usize, &(&TokenEffect, Vec<&Box<Token>>))
+                > = similar_pre_existing_effects
+                    .iter()
+                    .filter(|(_, (_, pre_existing_effect_path))| {
+                        println!(
+                            "\tCOMPUTE IS EFFECT BELOW? pre_existing_effect_path={:?} child_path={:?}",
+                            pre_existing_effect_path.iter().map(|t| t.abbreviated_id()).collect::<Vec<String>>(),
+                            child_path.iter().map(|t| t.abbreviated_id()).collect::<Vec<String>>(),
+                        );
+                        for i in 0..std::cmp::min(pre_existing_effect_path.len(), child_path.len()) {
+                            let pre_existing_effect_path_prefix = &pre_existing_effect_path[..i];
+                            let child_path_prefix = &child_path[..i];
+
+                            let vecs_non_equal = pre_existing_effect_path
+                                .iter()
+                                .zip(child_path_prefix.iter())
+                                .find(|&(a, b)| a.id != b.id);
+                            if vecs_non_equal.is_some() {
+                                println!("\nEFFECT BELOW!");
+                                return true;
+                            }
+                        }
+
+                        let effect_is_below = pre_existing_effect_path.len() >= child_path.len();
+                        println!("\nEFFECT BELOW? {}", effect_is_below);
+                        effect_is_below
+                    })
+                    .collect();
+                if similar_pre_existing_effects_below.len() > 0 {
+                    let mut sorted_indexes = similar_pre_existing_effects_below
+                        .iter()
+                        .map(|(index, _)| index)
+                        .collect::<Vec<&usize>>();
+                    sorted_indexes.sort();
+
+                    for index in sorted_indexes {
+                        child_effects_at_depths.remove(*index);
+                    }
+                    child_effects_at_depths.push((effect, child_path.clone()));
+                }
+            }
+
+            let Some(children) = child.children(tokens_collection) else {
+                break;
+            };
+            for child in children {
+                let mut next_path = child_path.clone();
+                next_path.push(child);
+                child_paths_to_traverse.push(next_path);
             }
         }
-        Some(child_effects)
+
+        child_effects_at_depths
     }
-    pub fn find_child_effect<'a>(
+    pub fn find_child_effect<'a, F>(
         &'a self,
         tokens_collection: &'a TokensCollection,
-        matcher: fn(e: &TokenEffect) -> bool,
-    ) -> Option<&TokenEffect> {
-        let Some(effects) = &self.child_effects(tokens_collection) else {
-            return None;
+        mut matcher: F,
+    ) -> Option<(&TokenEffect, &Token)> where F: FnMut(&TokenEffect, &Token) -> bool {
+        let effects = &self.child_effects(tokens_collection);
+        println!("CHILD EFFECTS: {}", effects.len());
+        for effect in effects {
+            println!("-> {effect:?}");
+        }
+        let mut shallowest_matching_effect: Option<(&TokenEffect, &Token, usize)> = None;
+        for (effect, token_path) in effects {
+            let Some(token) = token_path.last() else {
+                continue;
+            };
+            let depth = token_path.len();
+
+            if !matcher(effect, token) {
+                continue;
+            }
+
+            if shallowest_matching_effect.is_none() || matches!(shallowest_matching_effect, Some((_, _, old_depth)) if old_depth > depth) {
+                shallowest_matching_effect = Some((effect, token, depth));
+            }
         };
 
-        for effect in effects {
-            if matcher(effect) {
-                return Some(effect);
+        match shallowest_matching_effect {
+            Some((effect, token, _depth)) => Some((effect, token)),
+            None => None,
+        }
+    }
+
+    pub fn parent_effects<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Vec<(&TokenEffect, &Box<Token>)> {
+        let mut pointer = Box::new(self);
+        let mut parent_effects: Vec<(&TokenEffect, &Box<Token>)> = vec![];
+        loop {
+            let Some(parent_id) = pointer.parent_id else {
+                return parent_effects;
+            };
+            let Some(parent) = tokens_collection.get_by_id(parent_id) else {
+                return parent_effects;
+            };
+            for effect in &parent.effects {
+                parent_effects.push((effect, parent));
+            }
+            *pointer = parent;
+        }
+    }
+    pub fn find_parent_effect<'a>(
+        &'a self,
+        tokens_collection: &'a TokensCollection,
+        matcher: fn(e: &TokenEffect, t: &Token) -> bool,
+    ) -> Option<(&TokenEffect, &Token)> {
+        let effects = &self.parent_effects(tokens_collection);
+
+        for (effect, token) in effects {
+            if matcher(effect, token) {
+                return Some((effect, token));
             };
         };
         None
+    }
+
+    pub fn find_current_or_parent_effect<'a>(
+        &'a self,
+        tokens_collection: &'a TokensCollection,
+        matcher: fn(e: &TokenEffect, t: &Token) -> bool,
+    ) -> Option<(&TokenEffect, &Token)> {
+        if let Some(effect) = self.effects.iter().find(|e| matcher(e, self)) {
+            Some((effect, self))
+        } else {
+            self.find_parent_effect(tokens_collection, matcher)
+        }
     }
 
     pub fn compute_offset<'a>(&'a self, tokens_collection: &'a mut TokensCollection) -> usize {
@@ -1551,6 +1705,94 @@ impl Token {
         // println!("AFTER INSERT: ----\n{}\n-------\n\n", token_collection.debug_stringify_highlight(0, 0));
         println!("AFTER INSERT: ----\n{}\n-------\n\n", token_collection.debug_token_tree_string());
         Ok(Some(first_child_id))
+    }
+
+    // When called, locates the containing lexical scope, and returns a reference to the effect
+    // that defines the scope and token that effect is on, or None if this token is not in a scope
+    pub fn get_containing_lexical_scope<'a>(
+        &'a self,
+        token_collection: &'a TokensCollection,
+    ) -> Option<(&TokenEffect, &Token)> {
+        self.find_current_or_parent_effect(
+            token_collection,
+            |e, _| matches!(e, TokenEffect::DeclareLexicalScope),
+        )
+    }
+
+    // When called on a token that contains a DeclareIdentifier effect, work up scope
+    // by scope until a `DeclareExpression` containing the same `DeclareIdentifier` is found.
+    pub fn go_to_definition<'a>(
+        &'a self,
+        token_collection: &'a TokensCollection,
+    ) -> Result<Option<((&TokenEffect, &Token), (TokenEffect, Token))>, String> {
+        let Some((declare_identifier_effect, _)) = self.find_current_or_parent_effect(
+            token_collection,
+            |e, _| matches!(e, TokenEffect::DeclareIdentifier(_)),
+        ) else {
+            return Err(format!("Cannot find DeclareIdentifier effect in current or any parent token of {}!", self.id));
+        };
+
+        // 1. Find the containing lexical scope
+        // 2. Look for `DeclareAssignmentContainer`s in this lexical scope
+        // 3. Go up a lexical scope and repeat
+
+        let mut working_token = self;
+        let mut last_working_scope_token_id: Option<uuid::Uuid> = None;
+        while let Some((working_scope, working_scope_token)) = working_token.get_containing_lexical_scope(token_collection) {
+            println!("SCOPE: {working_scope:?}");
+
+            if last_working_scope_token_id == Some(working_scope_token.id) {
+                break;
+            }
+            last_working_scope_token_id = Some(working_scope_token.id);
+
+            // TODO: api idea:
+            // self.find_effect_pattern(
+            //     token_collection,
+            //     TokenEffectSelector::find_children("foo", TokenEffectSelector::DeclareAssignmentContainer, vec![
+            //         TokenEffectSelector::find("bar", TokenEffect::DeclareIdentifier("myvar"))
+            //         TokenEffectSelector::find("baz", TokenEffect::DeclareExpression(_))
+            //     ]),
+            // );
+
+            // NOTE: The pattern that is being searched for is a DeclareAssignmentContainer with a
+            // DeclareIdentifier inside of it
+            let mut identifier_effect_result: Option<(TokenEffect, Token)> = None;
+            let Some(assignment_container_result) = working_scope_token.find_child_effect(token_collection, |effect, token| {
+                // println!("ASSIGNMENT? {effect:?} {}", token.id);
+                // Prune legs of the search where DeclareAssignmentContainer doesn't even exist
+                if !matches!(effect, TokenEffect::DeclareAssignmentContainer) {
+                    return false;
+                }
+                // println!("FOUND DeclareAssignmentContainer: {token:?}");
+
+                let Some((identifier_effect, identifier_token)) = token.find_child_effect(
+                    token_collection,
+                    |effect, _| {
+                        println!("EFFECT? {effect:?} {declare_identifier_effect:?}");
+                        matches!(effect, declare_identifier_effect)
+                    }
+                ) else {
+                    return false;
+                };
+
+                identifier_effect_result = Some((identifier_effect.clone(), identifier_token.clone()));
+                return true;
+            }) else {
+                // Nothing was found in this scope, so move up to the previous scope and try again!
+                let Some(parent_token) = working_scope_token.parent(token_collection) else {
+                    return Ok(None);
+                };
+                working_token = parent_token;
+                continue;
+            };
+
+            // 
+            return Ok(Some(
+                (assignment_container_result, identifier_effect_result.unwrap())
+            ))
+        }
+        Ok(None)
     }
 }
 
