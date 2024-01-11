@@ -1333,7 +1333,9 @@ impl Token {
 
         // Create a clone of the token to modify in-memory
         let mut working_token = self.clone();
-        let mut working_new_text = self.literal.clone().unwrap();
+        let Some(mut working_new_text) = self.literal.clone() else {
+            return Err(format!("Cannot reparse token {:?}, token.literal is None!", self.id));
+        };
         let mut working_template = TokenMatchTemplate::new(
             vec![working_token.template.clone()],
         );
@@ -1363,24 +1365,37 @@ impl Token {
 
                     if match_status != TokenParseStatus::FullParse {
                         if let Some(value) = regular_parse_max_upward_traverals {
-                            // Once we've traversed as high up as we have to, then be a little more
-                            // flexible in what we can accept. Be willing to accept a partial parse to get
-                            // this operation over with
-                            if value > 0 {
-                                // Make sure there is a parent to traverse upwards to:
-                                if let Some(parent) = working_token.parent(token_collection) {
-                                    // Still at least one more iteration to go!
-                                    regular_parse_max_upward_traverals = Some(value-1);
+                            // Once we've traversed as high up as we have to, then give up.
+                            // This update must not yet be valid syntax and maybe will make more
+                            // sense once it is further updated.
+                            //
+                            // NOTE: in theis case also, maybe take the part of the PartialParse
+                            // that does match and replace that rather than just giving up
+                            // outright?
+                            if value == 0 {
+                                println!("COULD NOT FIND FULL PARSE, APPLYING PARTIAL PARSE!");
+                                token_collection.reset_caches_for_and_after(working_token.id);
 
-                                    match_iterations += 1;
-                                    working_template = TokenMatchTemplate::new(
-                                        vec![parent.template.clone()],
-                                    );
-                                    working_token = *parent.clone();
-                                    working_new_text = working_token.stringify(token_collection);
-                                    continue;
-                                };
+                                return working_token.replace_with_subtree(
+                                    token_collection,
+                                    new_tokens,
+                                    child_ids,
+                                );
                             }
+
+                            // Make sure there is a parent to traverse upwards to:
+                            if let Some(parent) = working_token.parent(token_collection) {
+                                // Still at least one more iteration to go!
+                                regular_parse_max_upward_traverals = Some(value-1);
+
+                                match_iterations += 1;
+                                working_template = TokenMatchTemplate::new(
+                                    vec![parent.template.clone()],
+                                );
+                                working_token = *parent.clone();
+                                working_new_text = working_token.stringify(token_collection);
+                                continue;
+                            };
                         }
                     }
 
@@ -1645,10 +1660,170 @@ mod test_token {
             );
 
             println!("RESULT: {result:?}");
-            assert_eq!(1, 2);
 
             // Make sure the new token subtree contains the right data
             assert_eq!(token_collection.stringify(), "1abcdef12");
+        }
+
+        #[test]
+        fn is_able_to_replace_deep_subtree_with_deep_tokencollection() {
+            let (template_map, all_template) = initialize_mini_language_twelve();
+            let template_map_rc = Rc::new(template_map);
+
+            let mut document = {
+                let result = all_template.consume_from_start("1112", false, template_map_rc.clone()).unwrap();
+                Document::new_from_tokenscollection(Box::new(result.4))
+            };
+            let token_collection = document.tokens_mut();
+
+            let Some((token, _)) = token_collection.get_by_offset(2) else {
+                panic!("Unable to call get_by_offset in is_able_to_replace_deep_subtree_with_flat_tokencollection!");
+            };
+
+            let result = all_template.consume_from_start("12", false, template_map_rc.clone()).unwrap();
+            let new_token_collection = result.4;
+            let top_level_child_ids = result.3;
+
+            println!("PRE: {}", token_collection.debug_token_tree_string());
+
+            let result = token.clone().replace_with_subtree(
+                token_collection,
+                new_token_collection,
+                top_level_child_ids,
+            );
+
+            println!("RESULT: {result:?}");
+
+            // Make sure the new token subtree contains the right data
+            assert_eq!(token_collection.stringify(), "11212");
+        }
+    }
+
+    mod test_token_reparse {
+        use super::*;
+
+        #[test]
+        fn is_able_to_noop_reparse_a_changed_token() {
+            let mut document = Document::new_from_literal_with_token_lengths(
+                "123456",
+                vec![1, 1, 1, 1, 1, 1],
+            );
+            let token_collection = document.tokens_mut();
+
+            let token_id = {
+                let Some((token, _)) = token_collection.get_by_offset(3) else {
+                    panic!("Unable to call get_by_offset in is_able_to_noop_reparse_a_changed_token!");
+                };
+                token.id
+            };
+
+            // Change the token literal value
+            token_collection.get_by_id_mut(token_id, |token| {
+                token.literal = Some(String::from("XX"));
+            });
+
+            let Some(token) = token_collection.get_by_id(token_id) else {
+                panic!("Cannot get token with id {token_id} in is_able_to_noop_reparse_a_changed_token!");
+            };
+
+            println!("PRE: {}", token_collection.debug_token_tree_string());
+
+            // Before reparsing, make sure that the token collection 
+            assert_eq!(token_collection.stringify(), "12XX456");
+
+            // Force reparse the token - this shouldn't do anything, since the token template is
+            // TokenMatchTemplateMatcher::Skipped
+            token.clone().reparse(token_collection).unwrap();
+
+            println!("POST: {}", token_collection.debug_token_tree_string());
+
+            // Make sure the updated token collection still parses correctly
+            assert_eq!(token_collection.stringify(), "12XX456");
+        }
+
+        #[test]
+        fn is_able_to_reparse_token_in_deep_document() {
+            let (template_map, all_template) = initialize_mini_language_math();
+            let template_map_rc = Rc::new(template_map);
+
+            let mut document = {
+                let result = all_template.consume_from_start("(1+1)*5", false, template_map_rc.clone()).unwrap();
+                Document::new_from_tokenscollection(Box::new(result.4))
+            };
+            let token_collection = document.tokens_mut();
+
+            let token_id = {
+                let Some((token, _)) = token_collection.get_by_offset(4) else {
+                    panic!("Unable to call get_by_offset in is_able_to_reparse_token_in_deep_document!");
+                };
+                token.id
+            };
+
+            // Change the token literal value
+            token_collection.get_by_id_mut(token_id, |token| {
+                token.literal = Some(String::from("(4/3)"));
+            });
+
+            let Some(token) = token_collection.get_by_id(token_id) else {
+                panic!("Cannot get token with id {token_id} in is_able_to_reparse_token_in_deep_document!");
+            };
+
+            println!("PRE: {}", token_collection.debug_token_tree_string());
+
+            // Before reparsing, make sure that the token collection 
+            assert_eq!(token_collection.stringify(), "(1+(4/3))*5");
+
+            // Force reparse the token - this shouldn't do anything, since the token template is
+            // TokenMatchTemplateMatcher::Skipped
+            token.clone().reparse(token_collection).unwrap();
+
+            println!("POST: {}", token_collection.debug_token_tree_string());
+
+            // Make sure the updated token collection still parses correctly
+            assert_eq!(token_collection.stringify(), "(1+(4/3))*5");
+        }
+
+        #[test]
+        fn is_able_to_append_bogus_char_and_parsing_not_fail() {
+            let (template_map, all_template) = initialize_mini_language_math();
+            let template_map_rc = Rc::new(template_map);
+
+            let mut document = {
+                let result = all_template.consume_from_start("(1+1)*5", false, template_map_rc.clone()).unwrap();
+                Document::new_from_tokenscollection(Box::new(result.4))
+            };
+            let token_collection = document.tokens_mut();
+
+            let token_id = {
+                let Some((token, _)) = token_collection.get_by_offset(3) else {
+                    panic!("Unable to call get_by_offset in is_able_to_append_bogus_char_and_parsing_not_fail!");
+                };
+                token.id
+            };
+
+            // Change the token literal value - add an X in there, which the math language doesn't
+            // know how to parse
+            token_collection.get_by_id_mut(token_id, |token| {
+                token.literal = Some(String::from("+X"));
+            });
+
+            let Some(token) = token_collection.get_by_id(token_id) else {
+                panic!("Cannot get token with id {token_id} in is_able_to_append_bogus_char_and_parsing_not_fail!");
+            };
+
+            println!("PRE: {}", token_collection.debug_token_tree_string());
+
+            // Before reparsing, make sure that the token collection 
+            assert_eq!(token_collection.stringify(), "(1+X1)*5");
+
+            // Force reparse the token - this shouldn't do anything, since the token template is
+            // TokenMatchTemplateMatcher::Skipped
+            token.clone().reparse(token_collection).unwrap();
+
+            println!("POST: {}", token_collection.debug_token_tree_string());
+
+            // Make sure the updated token collection still parses correctly
+            assert_eq!(token_collection.stringify(), "(1+X1)*5");
         }
     }
 }
