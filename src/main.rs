@@ -191,21 +191,24 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
         TokenMatchTemplateMatcher::reference("OptionalWhitespace"),
         TokenMatchTemplateMatcher::reference("Expression"),
     ], TokenEvents {
-        on_enter: None,
-        on_leave: Some(|token, tokens_collection| {
-            let Some(TokenEffect::DeclareIdentifier(identifier)) = token.find_child_effect(tokens_collection, |e| {
-                if let TokenEffect::DeclareIdentifier(_) = e { true } else { false }
-            }) else { return; };
-
-            let Some(TokenEffect::DeclareExpression(expression)) = token.find_child_effect(tokens_collection, |e| {
-                if let TokenEffect::DeclareExpression(_) = e { true } else { false }
-            }) else { return; };
-
-            token.effects.push(TokenEffect::DeclareMember {
-                name: identifier.clone(),
-                value: expression.clone(),
-            });
+        on_enter: Some(|token| {
+            token.effects.push(TokenEffect::DeclareAssignmentContainer);
         }),
+        on_leave: None,
+        // on_leave: Some(|token, tokens_collection| {
+        //     // let Some(TokenEffect::DeclareIdentifier(identifier)) = token.find_child_effect(tokens_collection, |e| {
+        //     //     if let TokenEffect::DeclareIdentifier(_) = e { true } else { false }
+        //     // }) else { return; };
+        //     //
+        //     // let Some(TokenEffect::DeclareExpression(expression)) = token.find_child_effect(tokens_collection, |e| {
+        //     //     if let TokenEffect::DeclareExpression(_) = e { true } else { false }
+        //     // }) else { return; };
+        //     //
+        //     // token.effects.push(TokenEffect::DeclareMember {
+        //     //     name: identifier.clone(),
+        //     //     value: expression.clone(),
+        //     // });
+        // }),
     }));
 
     token_match_templates_map.insert("StringLiteral", TokenMatchTemplate::new(vec![
@@ -227,8 +230,21 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
         ),
     ]));
     token_match_templates_map.insert("NumberLiteral", TokenMatchTemplate::new(vec![
-        TokenMatchTemplateMatcher::regex(
+        TokenMatchTemplateMatcher::regex_with_events(
             Regex::new(r"^(?<literal>[0-9]+)").unwrap(),
+            TokenEvents {
+                on_enter: None,
+                on_leave: Some(|token, tokens_collection| {
+                    let Some(parent_id) = token.parent_id else {
+                        return;
+                    };
+                    tokens_collection.get_by_id_mut(parent_id, |parent| {
+                        parent.effects.push(TokenEffect::DeclareExpression(
+                            token.matches.get("literal").unwrap().string.clone(),
+                        ));
+                    });
+                }),
+            },
         ),
     ]));
     token_match_templates_map.insert("HashLiteral", TokenMatchTemplate::new(vec![
@@ -280,10 +296,10 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
     ], TokenEvents {
         on_enter: None,
         on_leave: Some(|token, tokens_collection| {
-            let entries = token.find_deep_children(tokens_collection, Some(4), |token| match token.template {
-                TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry", None) => true,
-                _ => false,
-            });
+            let entries = token.find_deep_children(tokens_collection, Some(4), |token| matches!(
+                token.template,
+                TokenMatchTemplateMatcher::Reference("ArrayLiteralEntry", None)
+            ));
 
             let mut expression_literals = vec![];
             for entry in entries {
@@ -304,10 +320,10 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
     ], TokenEvents {
         on_enter: None,
         on_leave: Some(|token, tokens_collection| {
-            let Some(expression) = token.find_child_effect(tokens_collection, |e| match e {
-                TokenEffect::DeclareExpression(_) => true,
-                _ => false,
-            }) else { return; };
+            let Some((expression, _)) = token.find_child_effect(tokens_collection, |e, _| matches!(
+                e,
+                TokenEffect::DeclareExpression(_),
+            )) else { return; };
 
             token.effects.push(expression.clone());
         }),
@@ -333,15 +349,16 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
                 return;
             };
 
-            let Some(expression) = next.find_child_effect(tokens_collection, |e| {
-                if let TokenEffect::DeclareExpression(_) = e { true } else { false }
-            }) else { return; };
+            let Some((expression, _)) = next.find_child_effect(tokens_collection, |e, _| matches!(
+                e,
+                TokenEffect::DeclareExpression(_),
+            )) else { return; };
 
             token.effects.push(expression.clone());
         }),
     }));
 
-    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new_with_events(vec![
+    token_match_templates_map.insert("Identifier", TokenMatchTemplate::new(vec![
         // TokenMatchTemplateMatcher::regex_and_negation(
         //     Regex::new(r"^(?<value>[a-zA-Z](?:[a-zA-Z0-9_\$])*)").unwrap(),
         //     Regex::new(r"^(let)$").unwrap(),
@@ -353,18 +370,13 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
             TokenEvents {
                 on_enter: None,
                 on_leave: Some(|token, tokens_collection| {
-                    let Some(parent_id) = token.parent_id else {
-                        return;
-                    };
-                    tokens_collection.get_by_id_mut(parent_id, |parent| {
-                        parent.effects.push(TokenEffect::DeclareIdentifier(
-                            token.matches.get("value").unwrap().string.clone(),
-                        ));
-                    });
+                    token.effects.push(TokenEffect::DeclareIdentifier(
+                        token.matches.get("value").unwrap().string.clone(),
+                    ));
                 }),
             },
         ),
-    ], TokenEvents { on_enter: None, on_leave: None }));
+    ]));
 
     token_match_templates_map.insert("OptionalWhitespace", TokenMatchTemplate::new(vec![
         TokenMatchTemplateMatcher::repeat_count(Box::new(
@@ -397,8 +409,8 @@ fn main() {
     let Some(all_template) = token_match_templates_map_cloned.get("All") else {
         panic!("No 'All' template found!");
     };
-    // let input = "{ 'foo' let abc = ['a', ['cc', 'bbb']]}";
-    let input = "[1,]";
+    let input = "{\n  let myvar = 234\n  'foo'\n  let abc = ['a', [myvar, 'bbb']]\n}";
+    // let input = "[1,]";
     let Ok((
         _match_status,
         _offset,
@@ -410,7 +422,12 @@ fn main() {
     };
     println!("AFTER INSERT: ----\n{}\n-------\n\n", tokens_collection.debug_token_tree_string());
 
-    let document = Document::new_from_tokenscollection(Box::new(tokens_collection));
+    let mut document = Document::new_from_tokenscollection(Box::new(tokens_collection));
+
+    let myvar_token = document.tokens().get_by_offset(48).unwrap().0;
+    let ((_, assignment_container), (_, _)) = myvar_token.go_to_definition(document.tokens()).unwrap().unwrap();
+    let seek_index = document.tokens().compute_offset(assignment_container.id);
+    document.seek(seek_index);
 
     let mut buffer = document.create_buffer();
     buffer.dump_string();
