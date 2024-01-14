@@ -1809,35 +1809,94 @@ mod test_token {
     use std::rc::Rc; 
     use super::*;
 
+    // This mini language is either:
+    // - A single `1`
+    // - Between 1 to 3 `1`s, followed by a `2`
+    fn initialize_mini_language_twelve() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
+        let mut token_match_templates_map = HashMap::new();
+        token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Twelve"),
+                TokenMatchTemplateMatcher::reference("One"),
+            ]),
+        ]));
+        token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::repeat_count(
+                Box::new(TokenMatchTemplateMatcher::reference("One")),
+                1, 3
+            ),
+            TokenMatchTemplateMatcher::raw("2"),
+        ]));
+        token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::regex(
+                Regex::new(r"^(?<one>1)").unwrap(),
+            ),
+        ]));
+
+        (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
+    }
+
+    // This mini language implements a four function math expression parser with parenthesis
+    // for grouping.
+    fn initialize_mini_language_math() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
+        let mut token_match_templates_map = HashMap::new();
+        token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Addition"),
+                TokenMatchTemplateMatcher::reference("Subtraction"),
+                TokenMatchTemplateMatcher::reference("Multiplication"),
+                TokenMatchTemplateMatcher::reference("Division"),
+                TokenMatchTemplateMatcher::reference("Integer"),
+            ]),
+        ]));
+        token_match_templates_map.insert("Expression", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Integer"),
+                TokenMatchTemplateMatcher::reference("Group"),
+            ]),
+        ]));
+        token_match_templates_map.insert("Group", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::raw("("),
+            TokenMatchTemplateMatcher::any(vec![
+                TokenMatchTemplateMatcher::reference("Addition"),
+                TokenMatchTemplateMatcher::reference("Subtraction"),
+                TokenMatchTemplateMatcher::reference("Multiplication"),
+                TokenMatchTemplateMatcher::reference("Division"),
+                TokenMatchTemplateMatcher::reference("Integer"),
+            ]),
+            TokenMatchTemplateMatcher::raw(")"),
+        ]));
+        token_match_templates_map.insert("Addition", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::reference("Expression"),
+            TokenMatchTemplateMatcher::raw("+"),
+            TokenMatchTemplateMatcher::reference("Expression"),
+        ]));
+        token_match_templates_map.insert("Subtraction", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::reference("Expression"),
+            TokenMatchTemplateMatcher::raw("-"),
+            TokenMatchTemplateMatcher::reference("Expression"),
+        ]));
+        token_match_templates_map.insert("Multiplication", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::reference("Expression"),
+            TokenMatchTemplateMatcher::raw("*"),
+            TokenMatchTemplateMatcher::reference("Expression"),
+        ]));
+        token_match_templates_map.insert("Division", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::reference("Expression"),
+            TokenMatchTemplateMatcher::raw("/"),
+            TokenMatchTemplateMatcher::reference("Expression"),
+        ]));
+        token_match_templates_map.insert("Integer", TokenMatchTemplate::new(vec![
+            TokenMatchTemplateMatcher::regex(
+                Regex::new(r"^(?<value>-?[0-9]+)").unwrap(),
+            ),
+        ]));
+
+        (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
+    }
+
     mod test_token_replace_with_subtree {
         use super::*;
-
-        // This mini language is either:
-        // - A single `1`
-        // - Between 1 to 3 `1`s, followed by a `2`
-        fn initialize_mini_language_twelve() -> (TokenMatchTemplateMap, TokenMatchTemplate) {
-            let mut token_match_templates_map = HashMap::new();
-            token_match_templates_map.insert("All", TokenMatchTemplate::new(vec![
-                TokenMatchTemplateMatcher::any(vec![
-                    TokenMatchTemplateMatcher::reference("Twelve"),
-                    TokenMatchTemplateMatcher::reference("One"),
-                ]),
-            ]));
-            token_match_templates_map.insert("Twelve", TokenMatchTemplate::new(vec![
-                TokenMatchTemplateMatcher::repeat_count(
-                    Box::new(TokenMatchTemplateMatcher::reference("One")),
-                    1, 3
-                ),
-                TokenMatchTemplateMatcher::raw("2"),
-            ]));
-            token_match_templates_map.insert("One", TokenMatchTemplate::new(vec![
-                TokenMatchTemplateMatcher::regex(
-                    Regex::new(r"^(?<one>1)").unwrap(),
-                ),
-            ]));
-
-            (token_match_templates_map.clone(), token_match_templates_map.get("All").unwrap().clone())
-        }
 
         #[test]
         fn is_able_to_replace_flat_subtree_with_flat_tokencollection() {
