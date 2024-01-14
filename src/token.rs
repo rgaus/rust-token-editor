@@ -1446,6 +1446,8 @@ impl Token {
     //     a   b
     //    /\   /\
     //   c  d e  f <-- `f` is the "deep last child"
+    //
+    // If the specified token doesn't have any children, this function returns `None`.
     pub fn deep_last_child_id(&self, token_collection: &TokensCollection) -> Option<uuid::Uuid> {
         let mut deep_last_referenced_child_id = if let Some(n) = self.children_ids.last() {
             Some(*n)
