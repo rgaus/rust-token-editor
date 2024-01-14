@@ -851,7 +851,7 @@ impl TokensCollection {
         let colored_previous_indicator = if *expected_previous_token_id == token.previous_id { "↑".white() } else { "•".red() };
 
         let row = format!(
-            "{colored_next_indicator} {colored_previous_indicator} {prefix}{colored_star} {}\t(children={}, next={}, prev={})",
+            "{colored_next_indicator} {colored_previous_indicator} {prefix}{colored_star} {}\t(children={}, next={}, prev={})\t {} {:?}",
             token.abbreviated_id(),
             token.children_ids.len(),
             token.next(&self).map(|n| n.abbreviated_id().cyan()).unwrap_or(
@@ -864,6 +864,8 @@ impl TokensCollection {
                     format!( "<missing: {}>", &format!("{prev_id}")[..3]).red()
                 } else { "<empty>".red() }
             ),
+            &(String::from(format!("{:?}", token.template))[..7]),
+            token.effects,
         );
         *expected_next_token_id = token.next_id;
         *expected_previous_token_id = Some(token.id);
