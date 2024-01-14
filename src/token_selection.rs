@@ -176,7 +176,7 @@ impl SequentialTokenSelection {
             tokens_collection.remove_leaf(*token_id)?;
         }
 
-        document.tokens_mut().reset_caches_for_and_after(forwards_range.starting_token_id);
+        document.tokens_mut().reset_caches_for_and_after(forwards_range_start_offset);
         document.clear_newline_cache_at(forwards_range_start_offset);
 
         // Clear out the char count now that all tokens inside have been removed

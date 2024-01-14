@@ -108,6 +108,8 @@ impl TokensCollection {
     }
 
     pub fn remove(&mut self, id: uuid::Uuid) -> bool {
+        let original_offset = self.compute_offset(id);
+
         let index_or_none = {
             let mut found = false;
             let mut index = 0;
@@ -128,6 +130,9 @@ impl TokensCollection {
         let Some(index) = index_or_none else {
             return false;
         };
+
+        // Clear all caches of data at or after this token
+        self.reset_caches_for_and_after(original_offset);
 
         self.tokens.remove(index);
         true
@@ -302,58 +307,64 @@ impl TokensCollection {
         offset
     }
 
-    pub fn reset_caches_for_and_after(&mut self, token_id: uuid::Uuid) -> bool {
+    pub fn reset_caches_for_and_after(&mut self, original_offset: usize) -> bool {
         // Walk through the token collection, removing all cached elements at and after `token_id`
         // from `self.offset_cache`
         // self.offset_cache.borrow_mut().clear();
 
-        let mut pointer_id = token_id;
-        loop {
-            let Some(pointer) = self.get_by_id(pointer_id) else {
-                break;
-            };
+        self.offset_cache.borrow_mut().retain(|_id, (start_offset, end_offset)| {
+            *start_offset >= original_offset || *end_offset >= original_offset
+        });
 
-            self.offset_cache.borrow_mut().remove(&pointer_id);
+        // let mut pointer_id = token_id;
+        // loop {
+        //     let Some(pointer) = self.get_by_id(pointer_id) else {
+        //         break;
+        //     };
 
-            let mut should_break = true;
-            if let Some(next_pointer_id) = pointer.next_id {
-                pointer_id = next_pointer_id;
-                should_break = false;
-            };
+        //     self.offset_cache.borrow_mut().remove(&pointer_id);
 
-            if should_break {
-                break;
-            };
-        };
+        //     let mut should_break = true;
+        //     if let Some(next_pointer_id) = pointer.next_id {
+        //         pointer_id = next_pointer_id;
+        //         should_break = false;
+        //     };
+
+        //     if should_break {
+        //         break;
+        //     };
+        // };
 
         // Delete the whole range of data starting at `offset` and going all the way to the end of
         // `tokens_by_start_offset_cache`.
-        self.tokens_by_start_offset_cache.borrow_mut().clear();
-        // {
-        //     let offset = self.compute_offset(token_id);
-        //     let maximum_cached_offset = {
-        //         let result_range = self.tokens_by_start_offset_cache
-        //             .borrow()
-        //             .iter()
-        //             .map(|(range, _)| range)
-        //             .fold(
-        //                 0..offset,
-        //                 |rangea, rangeb| {
-        //                     let rangea_end = rangea.end;
-        //                     if rangea_end.max(rangeb.end) == rangea_end {
-        //                         rangea
-        //                     } else {
-        //                         rangeb.clone()
-        //                     }
-        //                 },
-        //             );
-        //         result_range.end
-        //     };
-        //
-        //     if maximum_cached_offset > offset {
-        //         self.tokens_by_start_offset_cache.borrow_mut().remove(offset..maximum_cached_offset);
-        //     }
-        // };
+        // self.tokens_by_start_offset_cache.borrow_mut().clear();
+        {
+            // let offset = self.compute_offset(token_id);
+            println!("CLEARING tokens_by_start_offset_cache: {:?}", self.tokens_by_start_offset_cache);
+            let maximum_cached_offset = {
+                let result_range = self.tokens_by_start_offset_cache
+                    .borrow()
+                    .iter()
+                    .map(|(range, _)| range)
+                    .fold(0..original_offset, |rangea, rangeb| {
+                        println!("{rangea:?} -> {rangeb:?}");
+                        if rangea.end > rangeb.end {
+                            rangea
+                        } else {
+                            rangeb.clone()
+                        }
+                    });
+                result_range.end
+            };
+
+            println!("\t range={original_offset}..{maximum_cached_offset}");
+
+            if maximum_cached_offset > original_offset {
+                self.tokens_by_start_offset_cache.borrow_mut().remove(original_offset..maximum_cached_offset);
+            }
+        };
+
+        println!("RESET_CACHES_FOR_AND_AFTER({original_offset}) => {:?}", self.offset_cache.borrow());
 
         true
     }
@@ -374,7 +385,7 @@ impl TokensCollection {
         token_id: uuid::Uuid,
         new_text: String,
     ) -> Result<Option<uuid::Uuid>, String> {
-        let token_offset = 0;
+        let original_offset = self.compute_offset(token_id);
 
         println!("\n\nCHANGE_TOKEN_LITERAL_TEXT({token_id:?}, '{new_text}') : ----\n{}\n-------", self.stringify());
         let mut pointer_id = token_id;
@@ -410,13 +421,13 @@ impl TokensCollection {
         });
 
         let old_token = self.get_by_id(pointer_id).unwrap();
-        println!("FOUND NEXT TOKEN WITH CONTENTS: {old_token:?}");
+        // println!("FOUND NEXT TOKEN WITH CONTENTS: {old_token:?}");
 
         // Create a clone of the token to modify in-memory
         let mut working_token = old_token.clone();
 
         // Clear all caches of data at or after this token
-        self.reset_caches_for_and_after(working_token.id);
+        self.reset_caches_for_and_after(original_offset);
 
         // Reparse the token, to try to convert it into something now that it has been modified
         working_token.reparse(self)
@@ -427,6 +438,8 @@ impl TokensCollection {
     //
     // If one attempts to remove a non-leaf token, this function returns an `Err`
     pub fn remove_leaf(&mut self, token_id: uuid::Uuid) -> Result<bool, String> {
+        let original_offset = self.compute_offset(token_id);
+
         let old_token_data = {
             let Some(old_token) = self.get_by_id(token_id) else {
                 return Err(format!("Cannot find token {}", token_id));
@@ -479,7 +492,7 @@ impl TokensCollection {
                 self.remove(token_id);
 
                 // Clear all caches of data at or after this token
-                self.reset_caches_for_and_after(token_id);
+                self.reset_caches_for_and_after(original_offset);
 
                 Ok(true)
             },
@@ -1487,6 +1500,8 @@ impl Token {
     // This consumes the token to reparse as once it it reparsed, the token is removed from the
     // token collection
     pub fn reparse<'a>(self, token_collection: &'a mut TokensCollection) -> Result<Option<uuid::Uuid>, String> {
+        let original_offset = self.compute_offset(token_collection);
+
         let token_offset = 0;
 
         // Create a clone of the token to modify in-memory
@@ -1532,7 +1547,7 @@ impl Token {
                             // outright?
                             if value == 0 {
                                 println!("COULD NOT FIND FULL PARSE, APPLYING PARTIAL PARSE!");
-                                token_collection.reset_caches_for_and_after(working_token.id);
+                                token_collection.reset_caches_for_and_after(original_offset);
 
                                 return working_token.replace_with_subtree(
                                     token_collection,
@@ -1557,7 +1572,7 @@ impl Token {
                         }
                     }
 
-                    token_collection.reset_caches_for_and_after(working_token.id);
+                    token_collection.reset_caches_for_and_after(original_offset);
 
                     // Once the parse has completed successfully, replace the working token with
                     // the new tokens that were the result of the parse
@@ -1587,15 +1602,16 @@ impl Token {
         child_ids: Vec<uuid::Uuid>,
     ) -> Result<Option<uuid::Uuid>, String> {
         // Clear all caches of data at or after this token
-        token_collection.reset_caches_for_and_after(self.id);
-        println!("SELF ID: {:?}", self.id);
+        let original_offset = self.compute_offset(token_collection);
+        token_collection.reset_caches_for_and_after(original_offset);
+        // println!("SELF ID: {:?}", self.id);
 
         let first_child_id = if let Some(first_root_node_id) = child_ids.first() {
             Some(*first_root_node_id)
         } else {
             None
         };
-        println!("FIRST CHILD ID: {first_child_id:?}");
+        // println!("FIRST CHILD ID: {first_child_id:?}");
         let Some(first_child_id) = first_child_id else {
             return Ok(None);
         };
@@ -1611,7 +1627,7 @@ impl Token {
 
         // Substitute in the new subtree into where the old subtree went
         for new_token in new_tokens.tokens {
-            println!("ADD NEW TOKEN! {:?}", new_token);
+            // println!("ADD NEW TOKEN! {:?}", new_token);
             token_collection.push(new_token);
         };
 
@@ -1635,13 +1651,13 @@ impl Token {
         // A:
         if let Some(working_token_previous_id) = self.previous_id {
             token_collection.get_by_id_mut(working_token_previous_id, |working_token_previous| {
-                println!("A: {}.next_id = {:?}", working_token_previous.abbreviated_id(), Some(first_child_id));
+                // println!("A: {}.next_id = {:?}", working_token_previous.abbreviated_id(), Some(first_child_id));
                 working_token_previous.next_id = Some(first_child_id);
             });
         }
         // B:
         token_collection.get_by_id_mut(first_child_id, |first_child| {
-            println!("B: {}.previous_id = {:?}", first_child.abbreviated_id(), self.previous_id);
+            // println!("B: {}.previous_id = {:?}", first_child.abbreviated_id(), self.previous_id);
             first_child.previous_id = self.previous_id;
         });
 
@@ -1658,13 +1674,13 @@ impl Token {
             // C:
             token_collection.get_by_id_mut(deep_last_referenced_child_id, |deep_last_child| {
                 // println!("{:?} {:?}", self.next_id, next_id);
-                println!("C: {}.next_id = {:?}", deep_last_child.abbreviated_id(), working_token_next_value_id);
+                // println!("C: {}.next_id = {:?}", deep_last_child.abbreviated_id(), working_token_next_value_id);
                 deep_last_child.next_id = working_token_next_value_id;
             });
             // D:
             if let Some(working_token_next_value_id) = working_token_next_value_id {
                 token_collection.get_by_id_mut(working_token_next_value_id, |working_token_next_value| {
-                    println!("D: {}.previous_id = {:?}", working_token_next_value.abbreviated_id(), Some(deep_last_referenced_child_id));
+                    // println!("D: {}.previous_id = {:?}", working_token_next_value.abbreviated_id(), Some(deep_last_referenced_child_id));
                     working_token_next_value.previous_id = Some(deep_last_referenced_child_id);
                 });
             }
@@ -1673,7 +1689,7 @@ impl Token {
         // E:
         for child_id in &child_ids {
             token_collection.get_by_id_mut(*child_id, |child| {
-                println!("E: {}.parent_id = {:?}", child.abbreviated_id(), self.parent_id);
+                // println!("E: {}.parent_id = {:?}", child.abbreviated_id(), self.parent_id);
                 child.parent_id = self.parent_id;
             });
         };
@@ -1681,7 +1697,7 @@ impl Token {
         if let Some(working_token_parent_id) = self.parent_id {
             token_collection.get_by_id_mut(working_token_parent_id, |working_token_parent| {
                 for child_id in &child_ids {
-                    println!("F: {}.children_ids.push({:?})", working_token_parent.abbreviated_id(), *child_id);
+                    // println!("F: {}.children_ids.push({:?})", working_token_parent.abbreviated_id(), *child_id);
                     working_token_parent.children_ids.push(*child_id);
                 }
             });
@@ -1696,14 +1712,12 @@ impl Token {
             _ => vec![],
         };
         for child_id in subtree_children_ids {
-            println!("-> REMOVE TOKEN! {:?}", child_id);
+            // println!("-> REMOVE TOKEN! {:?}", child_id);
             token_collection.remove(child_id);
         };
 
-        println!("REMOVE TOKEN! {:?}", self.id);
+        // println!("REMOVE TOKEN! {:?}", self.id);
         token_collection.remove(self.id);
-
-
 
         // println!("AFTER INSERT: ----\n{}\n-------\n\n", token_collection.stringify());
         // println!("AFTER INSERT: ----\n{}\n-------\n\n", token_collection.debug_stringify_highlight(0, 0));
