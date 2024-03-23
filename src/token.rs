@@ -1244,7 +1244,7 @@ impl Token {
     //
     // When called on Token 1, this function should only return A(1) and A(5), NOT A(9)!
     pub fn child_effects<'a>(&'a self, tokens_collection: &'a TokensCollection) -> Vec<(&TokenEffect, Vec<&Box<Token>>)> {
-        println!("=====\nCHILD EFFECTS\n=====");
+        // println!("=====\nCHILD EFFECTS\n=====");
         let mut child_effects_at_depths: Vec<(&TokenEffect, Vec<&Box<Token>>)> = vec![];
 
         let mut child_paths_to_traverse: Vec<Vec<&Box<Token>>> = self.children(tokens_collection)
@@ -1257,7 +1257,7 @@ impl Token {
             let Some(&child) = child_path.last() else {
                 break;
             };
-            println!("-> CHILD PATH: {:?} effects={:?}", child_path.iter().map(|c| c.abbreviated_id()).collect::<Vec<String>>(), child.effects);
+            // println!("-> CHILD PATH: {:?} effects={:?}", child_path.iter().map(|c| c.abbreviated_id()).collect::<Vec<String>>(), child.effects);
             let depth = child_path.len();
 
             for effect in &child.effects {
@@ -1276,7 +1276,7 @@ impl Token {
                     // })
                     .collect();
 
-                println!("\tSIMILAR ALREADY STORED EFFECTS: {}", similar_pre_existing_effects.len());
+                // println!("\tSIMILAR ALREADY STORED EFFECTS: {}", similar_pre_existing_effects.len());
                 // If there are no pre existing similar effects, then definitely add this effect
                 if similar_pre_existing_effects.len() == 0 {
                     child_effects_at_depths.push((effect, child_path.clone()));
@@ -1288,11 +1288,11 @@ impl Token {
                 > = similar_pre_existing_effects
                     .iter()
                     .filter(|(_, (_, pre_existing_effect_path))| {
-                        println!(
-                            "\tCOMPUTE IS EFFECT BELOW? pre_existing_effect_path={:?} child_path={:?}",
-                            pre_existing_effect_path.iter().map(|t| t.abbreviated_id()).collect::<Vec<String>>(),
-                            child_path.iter().map(|t| t.abbreviated_id()).collect::<Vec<String>>(),
-                        );
+                        // println!(
+                        //     "\tCOMPUTE IS EFFECT BELOW? pre_existing_effect_path={:?} child_path={:?}",
+                        //     pre_existing_effect_path.iter().map(|t| t.abbreviated_id()).collect::<Vec<String>>(),
+                        //     child_path.iter().map(|t| t.abbreviated_id()).collect::<Vec<String>>(),
+                        // );
                         for i in 0..std::cmp::min(pre_existing_effect_path.len(), child_path.len()) {
                             let pre_existing_effect_path_prefix = &pre_existing_effect_path[..i];
                             let child_path_prefix = &child_path[..i];
@@ -1302,13 +1302,13 @@ impl Token {
                                 .zip(child_path_prefix.iter())
                                 .find(|&(a, b)| a.id != b.id);
                             if vecs_non_equal.is_some() {
-                                println!("\nEFFECT BELOW!");
+                                // println!("\nEFFECT BELOW!");
                                 return true;
                             }
                         }
 
                         let effect_is_below = pre_existing_effect_path.len() >= child_path.len();
-                        println!("\nEFFECT BELOW? {}", effect_is_below);
+                        // println!("\nEFFECT BELOW? {}", effect_is_below);
                         effect_is_below
                     })
                     .collect();
@@ -1344,10 +1344,10 @@ impl Token {
         mut matcher: F,
     ) -> Option<(&TokenEffect, &Token)> where F: FnMut(&TokenEffect, &Token) -> bool {
         let effects = &self.child_effects(tokens_collection);
-        println!("CHILD EFFECTS: {}", effects.len());
-        for effect in effects {
-            println!("-> {effect:?}");
-        }
+        // println!("CHILD EFFECTS: {}", effects.len());
+        // for effect in effects {
+        //     println!("-> {effect:?}");
+        // }
         let mut shallowest_matching_effect: Option<(&TokenEffect, &Token, usize)> = None;
         for (effect, token_path) in effects {
             let Some(token) = token_path.last() else {
@@ -1512,7 +1512,7 @@ impl Token {
         let mut working_template = TokenMatchTemplate::new(
             vec![working_token.template.clone()],
         );
-        println!("WORKING TOKEN ID: {}", working_token.id);
+        // println!("WORKING TOKEN ID: {}", working_token.id);
 
         //  1. attempt to parse
         //  2. If it won't fully parse, go up a level, and parse again
@@ -1522,8 +1522,8 @@ impl Token {
 
         let mut match_iterations = 0;
         loop {
-            println!("offset {}", token_offset);
-            println!("parsing text: '{working_new_text}'");
+            // println!("offset {}", token_offset);
+            // println!("parsing text: '{working_new_text}'");
             match working_template.consume_from_offset(
                 &working_new_text,
                 token_offset,
@@ -1533,8 +1533,8 @@ impl Token {
                 token_collection.token_match_templates_map.clone(),
             ) {
                 Ok((match_status, _offset, last_token_id, child_ids, new_tokens)) => {
-                    println!("MATCHED STATUS: {:?} => {:?} ({:?})", working_token.template, match_status, last_token_id);
-                    println!("PARSED RESULT: {}", new_tokens.debug_token_tree_string());
+                    // println!("MATCHED STATUS: {:?} => {:?} ({:?})", working_token.template, match_status, last_token_id);
+                    // println!("PARSED RESULT: {}", new_tokens.debug_token_tree_string());
 
                     if match_status != TokenParseStatus::FullParse {
                         if let Some(value) = regular_parse_max_upward_traverals {
@@ -1546,7 +1546,7 @@ impl Token {
                             // that does match and replace that rather than just giving up
                             // outright?
                             if value == 0 {
-                                println!("COULD NOT FIND FULL PARSE, APPLYING PARTIAL PARSE!");
+                                // println!("COULD NOT FIND FULL PARSE, APPLYING PARTIAL PARSE!");
                                 token_collection.reset_caches_for_and_after(original_offset);
 
                                 return working_token.replace_with_subtree(
@@ -1757,7 +1757,7 @@ impl Token {
         let mut working_token = self;
         let mut last_working_scope_token_id: Option<uuid::Uuid> = None;
         while let Some((working_scope, working_scope_token)) = working_token.get_containing_lexical_scope(token_collection) {
-            println!("SCOPE: {working_scope:?}");
+            // println!("SCOPE: {working_scope:?}");
 
             if last_working_scope_token_id == Some(working_scope_token.id) {
                 break;
@@ -1787,7 +1787,7 @@ impl Token {
                 let Some((identifier_effect, identifier_token)) = token.find_child_effect(
                     token_collection,
                     |effect, _| {
-                        println!("EFFECT? {effect:?} {declare_identifier_effect:?}");
+                        // println!("EFFECT? {effect:?} {declare_identifier_effect:?}");
                         matches!(effect, declare_identifier_effect)
                     }
                 ) else {

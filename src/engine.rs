@@ -227,7 +227,7 @@ impl Document {
             backslash_count += 1;
         }
 
-        println!("BACKSLASH COUNT: {} offset={}", backslash_count, self.get_offset());
+        // println!("BACKSLASH COUNT: {} offset={}", backslash_count, self.get_offset());
         backslash_count
     }
 
@@ -377,7 +377,7 @@ impl Document {
         } else {
             // self.seek(final_offset);
             self.seek(final_offset+1);
-            println!("SEEK: {} => {}", initial_offset, final_offset);
+            // println!("SEEK: {} => {}", initial_offset, final_offset);
             Ok(Some((
                 initial_offset..final_offset+1,
                 result,
@@ -421,7 +421,7 @@ impl Document {
             return Err(format!("Error in Document::read_backwards_until: Cannot get token at offset {} in tokens collection!", initial_offset));
         };
         let token_id = token.id;
-        println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
+        // println!("TOK: {} -> {:?} {}", initial_offset, token, token_offset);
 
         let mut is_first = true;
         let mut is_done = false;
@@ -447,7 +447,7 @@ impl Document {
                         0
                     };
                     if needle_func(character, index) {
-                        println!("NEEDLE DONE!");
+                        // println!("NEEDLE DONE!");
                         is_done = true;
                         break;
                     }
@@ -473,7 +473,7 @@ impl Document {
         } else {
             0
         };
-        println!("BACK: '{}' {} - ({}-1)", result, initial_offset, result_length);
+        // println!("BACK: '{}' {} - ({}-1)", result, initial_offset, result_length);
 
         if !is_done {
             // println!("DONE!");
@@ -555,7 +555,7 @@ impl Document {
 
         for index in 0..repeat_count {
             let is_not_last_iteration = index < repeat_count-1;
-            println!("INDEX: {index}");
+            // println!("INDEX: {index}");
             let mut hit_line_bounds_left_or_right = false;
             let result = match pattern {
                 TraversalPattern::Left => {
@@ -615,7 +615,7 @@ impl Document {
                             false
 
                         } else if let Some(started_in_word) = started_in_word {
-                            println!("{started_in_word} != {is_current_word_char}");
+                            // println!("{started_in_word} != {is_current_word_char}");
                             // Keep matching characters until whether it is a word char or not
                             // changes
                             started_in_word != is_current_word_char
@@ -645,7 +645,7 @@ impl Document {
                             }
                             let char_count_change = modified_selection.char_count - selection.char_count;
                             self.seek(self.get_offset() + char_count_change + seek_offset);
-                            println!("SELECTION? {modified_selection:?}");
+                            // println!("SELECTION? {modified_selection:?}");
 
                             Ok(Some((
                                 modified_selection.range(self),
@@ -702,10 +702,10 @@ impl Document {
                         }
 
                         if first_char_was_other {
-                            println!("IS OTHER {:?}", first_char_was_other);
+                            // println!("IS OTHER {:?}", first_char_was_other);
                             !is_other_char(c)
                         } else if first_char_was_whitespace && is_whitespace_char(c) {
-                            println!("IS WHITESPACE {:?}", first_char_was_whitespace);
+                            // println!("IS WHITESPACE {:?}", first_char_was_whitespace);
                             false
 
                         // First, if there is immediately whitespace, scan through all of that
@@ -731,7 +731,7 @@ impl Document {
                             true
 
                         } else if let Some(started_in_word) = started_in_word {
-                            println!("------- {} != {}", started_in_word, is_current_word_char);
+                            // println!("------- {} != {}", started_in_word, is_current_word_char);
                             // Keep matching characters until whether it is a word char or not
                             // changes
                             started_in_word != is_current_word_char
@@ -761,7 +761,7 @@ impl Document {
                         }
 
                         if first_char_was_whitespace && is_whitespace_char(c) {
-                            println!("IS WHITESPACE {:?}", first_char_was_whitespace);
+                            // println!("IS WHITESPACE {:?}", first_char_was_whitespace);
                             false
 
                         // First, if there is immediately whitespace, scan through all of that
@@ -813,7 +813,7 @@ impl Document {
                         } else if is_second {
                             is_second = false;
                             is_second_whitespace_char = is_whitespace_char(c);
-                            println!("Is second whitespace? {}", is_second_whitespace_char);
+                            // println!("Is second whitespace? {}", is_second_whitespace_char);
                             if !is_second_whitespace_char {
                                 finished_leading_space = true;
                                 is_second_word_char = is_word_char(c);
@@ -1138,14 +1138,14 @@ impl Document {
 
                         // Advance forward by a character until we're at the end
                         let result = self.read(1)?;
-                        println!(">>>>> {result:?}");
+                        // println!(">>>>> {result:?}");
                         if let Some((range, text, _)) = result {
                             if text == "\n" || range.is_empty() { // FIXME: NEWLINE_CHAR
                                 break;
                             }
                         }
                     }
-                    println!("MATCH DELIMITER: {:?} {}", result, original_is_backslash_escaped);
+                    // println!("MATCH DELIMITER: {:?} {}", result, original_is_backslash_escaped);
 
                     if let Some(DelimeterSet{
                         search_forwards,
@@ -1210,7 +1210,7 @@ impl Document {
                                     false,
                                 )
                             }?;
-                            println!("READ RESULT: {read_result:?}");
+                            // println!("READ RESULT: {read_result:?}");
 
                             // Was the end of the document was reached with no match?
                             if read_result.is_none() {
@@ -1244,13 +1244,13 @@ impl Document {
                                 self.seek_pop();
 
                                 if found_start_delimeter.is_some() && start_backslashes_match {
-                                    println!("o---- {:?} {:?}", open_delimeter_list_string, found_start_delimeter);
+                                    // println!("o---- {:?} {:?}", open_delimeter_list_string, found_start_delimeter);
                                     if search_forwards {
                                         depth += 1;
-                                        println!("+1 -> depth={depth}");
+                                        // println!("+1 -> depth={depth}");
                                     } else {
                                         depth -= 1;
-                                        println!("-1 -> depth={depth}");
+                                        // println!("-1 -> depth={depth}");
                                         if depth == 0 {
                                             // Found the matching delimeter!
                                             break;
@@ -1280,7 +1280,7 @@ impl Document {
                                 });
                                 self.seek_pop();
                                 if found_end_delimeter.is_some() && end_backslashes_match {
-                                    println!("e---- {:?} {:?}", end_delimeter_list_string, found_end_delimeter);
+                                    // println!("e---- {:?} {:?}", end_delimeter_list_string, found_end_delimeter);
                                     if search_forwards {
                                         if depth == 1 {
                                             // Found the matching delimeter!
@@ -1311,17 +1311,17 @@ impl Document {
                                 });
                                 self.seek_pop();
                                 if found_close_delimeter.is_some() && close_backslashes_match {
-                                    println!("c---- {:?} {:?}", close_delimeter_list_string, found_close_delimeter);
+                                    // println!("c---- {:?} {:?}", close_delimeter_list_string, found_close_delimeter);
                                     if search_forwards {
                                         depth -= 1;
-                                        println!("-1 -> depth={depth}");
+                                        // println!("-1 -> depth={depth}");
                                         if depth == 0 {
                                             // Found the matching delimeter!
                                             break;
                                         }
                                     } else {
                                         depth += 1;
-                                        println!("+1 -> depth={depth}");
+                                        // println!("+1 -> depth={depth}");
                                     }
                                     continue;
                                 }
@@ -1438,7 +1438,7 @@ impl Document {
             match result {
                 Ok(Some((range, result, selection))) => {
                     final_offset = range.end;
-                    println!("range={:?} result='{}' initial_offset={} final_offset={}", range, result, initial_offset, final_offset);
+                    // println!("range={:?} result='{}' initial_offset={} final_offset={}", range, result, initial_offset, final_offset);
 
                     if final_offset > initial_offset {
                         combined_result = format!("{}{}", combined_result, result);
@@ -1446,7 +1446,7 @@ impl Document {
                         combined_result = format!("{}{}", result, combined_result);
                     }
                     if let Some(value) = combined_selection {
-                        println!("{:?}.EXTEND({:?})", value, selection);
+                        // println!("{:?}.EXTEND({:?})", value, selection);
                         combined_selection = Some(value.extend(self, selection)?);
                     } else {
                         // println!("BACKWARDS: {:?}", selection);
@@ -2043,7 +2043,7 @@ impl Buffer {
 
         self.command_count_pre_verb = self.command_count.clone();
         self.command_count = String::from("");
-        println!("  SET VERB: {:?}", self.verb);
+        // println!("  SET VERB: {:?}", self.verb);
         Ok(())
     }
 
@@ -2055,7 +2055,7 @@ impl Buffer {
         } else {
             self.noun = Some(noun);
         }
-        println!("  SET NOUN: {:?}", self.noun);
+        // println!("  SET NOUN: {:?}", self.noun);
         self.state = ViewState::Complete;
         Ok(())
     }
@@ -2788,7 +2788,7 @@ impl Buffer {
                 // If an unknown character was specified for this part in a command, reset back to
                 // the start
                 _ => {
-                    println!("RESET!");
+                    // println!("RESET!");
                     self.reset();
                     Ok(())
                 },
@@ -2859,10 +2859,10 @@ impl Buffer {
                     rows,
                 )?;
                 cols = number_of_chars_in_next_row;
-                println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
+                // println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
 
                 let final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
-                println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
+                // println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
                 self.document.seek(final_offset);
 
                 if initial_offset == final_offset {
@@ -2886,7 +2886,7 @@ impl Buffer {
                         // FIXME: conditionally DO NOT run the below if on the last line:
                         selection.char_count += 1;
                     }
-                    println!("END: {selection:?}");
+                    // println!("END: {selection:?}");
 
                     Ok(Some((
                         selection.range(&mut self.document),
@@ -2958,9 +2958,9 @@ impl Buffer {
                         }
 
                         // Compute the final offset and generate the output selection!
-                        println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
+                        // println!("LINEWISE ROW COL: {:?} => {:?}", (initial_rows, initial_cols), (rows, cols));
                         let final_offset = self.document.convert_rows_cols_to_offset((rows, cols));
-                        println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
+                        // println!("LINEWISE OFFSETS: {:?} => {:?}", initial_offset, final_offset);
                         self.document.seek(final_offset);
 
                         if initial_offset == final_offset {
@@ -2979,7 +2979,7 @@ impl Buffer {
                                     .select_whitespace_before(&mut self.document)?
                                     .select_whitespace_after(&mut self.document)?;
                             }
-                            println!("END: {selection:?}");
+                            // println!("END: {selection:?}");
 
                             Ok(Some((
                                 selection.range(&mut self.document),
@@ -3168,7 +3168,7 @@ impl Buffer {
                 let number_of_chars = self.document.compute_max_offset()?;
                 // NOTE: the below math formula is from `:h N%` in the vim help pages
                 let final_offset = (percentage * number_of_chars + 99) / 100;
-                println!("FINAL: {number_of_chars} {final_offset}");
+                // println!("FINAL: {number_of_chars} {final_offset}");
 
 
                 self.document.seek(final_offset);
@@ -3420,7 +3420,7 @@ impl Buffer {
                     selection_without_whitespace.char_count -= 1;
                 }
 
-                println!("SELECTION: {selection_without_whitespace:?}");
+                // println!("SELECTION: {selection_without_whitespace:?}");
                 let deleted_selection = selection_without_whitespace
                     .remove_deep(&mut self.document, false)
                     .unwrap();
@@ -3513,7 +3513,7 @@ impl Buffer {
                 }
             }
         }
-        println!("FINAL OFFSET: {offset}");
+        // println!("FINAL OFFSET: {offset}");
         self.position = self.document.convert_offset_to_rows_cols(offset);
 
         Ok(true)

@@ -149,7 +149,7 @@ impl SequentialTokenSelection {
                                     pointer.literal = Some(String::from(result_literal));
                                 } else {
                                     let number_of_chars_to_keep = forwards_range.char_count - chars_removed;
-                                    println!("KEEP: {}", number_of_chars_to_keep);
+                                    // println!("KEEP: {}", number_of_chars_to_keep);
                                     pointer.literal = Some(String::from(&literal_text[number_of_chars_to_keep..]));
                                 }
                             });
@@ -332,7 +332,7 @@ impl SequentialTokenSelection {
             new_start_offset,
             new_end_offset,
         ];
-        println!("OFFSETS: {:?}", offsets);
+        // println!("OFFSETS: {:?}", offsets);
         let Some(smallest_offset) = offsets.iter().min() else {
             return Err(format!("Error in SequentialTokenSelection.extend: Cannot get smallest offset in vec: {:?}", offsets));
         };
@@ -340,7 +340,7 @@ impl SequentialTokenSelection {
             return Err(format!("Error in SequentialTokenSelection.extend: Cannot get smallest offset in vec: {:?}", offsets));
         };
         let char_count = largest_offset - smallest_offset;
-        println!("CHAR COUNT? {} - {} = {}", largest_offset, smallest_offset, char_count);
+        // println!("CHAR COUNT? {} - {} = {}", largest_offset, smallest_offset, char_count);
 
         // NOTE: the direction of the resulting range is based off `range` so that if ranges of
         // different directions are put in, the most recent range is the one that dictates
@@ -349,13 +349,13 @@ impl SequentialTokenSelection {
             let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*largest_offset) else {
                 return Err(format!("Error in SequentialTokenSelection.extend: Cannot get token at offset {} in tokens collection!", largest_offset));
             };
-            println!("EXTEND RESULT: is_backwards=true char_count={char_count}");
+            // println!("EXTEND RESULT: is_backwards=true char_count={char_count}");
             Ok(Self::new_backwards(start_token.id, start_token_offset, char_count))
         } else {
             let Some((start_token, start_token_offset)) = tokens_collection.get_by_offset(*smallest_offset) else {
                 return Err(format!("Error in SequentialTokenSelection.extend: Cannot get token at offset {} in tokens collection!", smallest_offset));
             };
-            println!("EXTEND RESULT: is_backwards=false char_count={char_count}");
+            // println!("EXTEND RESULT: is_backwards=false char_count={char_count}");
             Ok(Self::new(start_token.id, start_token_offset, char_count))
         }
     }
@@ -367,7 +367,7 @@ impl SequentialTokenSelection {
         document: &mut Document,
     ) -> Result<Self, String> {
         let range = self.as_normalized_forwards_selection(document)?;
-        println!("REMOVING SELECTION: {:?}", range);
+        // println!("REMOVING SELECTION: {:?}", range);
         let tokens_collection = document.tokens_mut();
 
         // Start seeking from the end of the token forwards, looking for whitespace
@@ -387,7 +387,7 @@ impl SequentialTokenSelection {
 
         let result = match document.read_forwards_until(|c, _| !is_whitespace_char(c), false, false) {
             Ok(Some((_range, _, selection))) => {
-                println!("NEW SELECTION: {:?}", selection);
+                // println!("NEW SELECTION: {:?}", selection);
                 self.extend(document, selection)
             },
             // If the range cannot be extended (maybe we're at the end of the file?) then
@@ -528,7 +528,7 @@ impl SequentialTokenSelection {
             false,
         ) {
             Ok(Some((_, matched_chars, _))) => {
-                println!("MATCHED CHARS: {}", matched_chars);
+                // println!("MATCHED CHARS: {}", matched_chars);
                 let mut new_sequence = range.clone();
                 new_sequence.char_count -= matched_chars.len();
                 Ok(new_sequence)
