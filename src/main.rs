@@ -7,6 +7,9 @@ use std::rc::Rc;
 mod token;
 use token::*;
 
+mod db_token;
+use db_token::*;
+
 mod token_match_template;
 use token_match_template::*;
 
@@ -396,6 +399,39 @@ fn make_token_template_map() -> TokenMatchTemplateMap {
 }
 
 fn main() {
+
+    {
+        // Step 1: parse
+        let token_match_templates_map = make_token_template_map();
+        let token_match_templates_map_cloned = token_match_templates_map.clone();
+        let token_match_templates_map_cloned_2 = token_match_templates_map.clone();
+        let Some(all_template) = token_match_templates_map_cloned.get("All") else {
+            panic!("No 'All' template found!");
+        };
+        let input = "{\n  let myvar = 234\n  'foo'\n  let abc = ['a', [myvar, 'bbb']]\n}";
+        let Ok((
+            _match_status,
+            _offset,
+            _last_token_id,
+            _child_ids,
+            tokens_collection
+        )) = all_template.consume_from_start(input, true, Rc::new(token_match_templates_map)) else {
+            panic!("Error parsing initial tokens!");
+        };
+
+        // Step 2: add to db token collection
+        let db = db_token::DbTokenCollection::new(
+            tokens_collection.tokens,
+            Rc::new(token_match_templates_map_cloned_2),
+        ).unwrap();
+
+        println!("dump:");
+        for i in db.dump().unwrap() {
+            println!("-> {i:?}");
+        }
+        // println!("dump:{:?}", db.get_by_id(1));
+    }
+
     // let mut document = Document::new_from_literal_with_token_lengths(
     //     // "#if foo\n  #ifdef bar\n    quux\n  #else\n  bla\n#elif 123\n#endif\n#else\n baz\n#endif"
     //     // "{let a = ['a', ['cc', 'bbb']]}",
