@@ -216,6 +216,105 @@ impl DbTokenCollection {
         }
     }
 
-    // TODO: get_by_offset
-    // TODO: compute_offset
+    /// Queries the token collection and returns the Box<Token> that covers the `input_offset` specified,
+    /// or None. If a token is found, the offset from the start of the token that `input_offset`
+    /// refers to is also returned.`
+    pub fn get_by_offset(&self, input_offset: usize) -> Result<Option<(Box<DbToken>, usize)>, Box<dyn Error>> {
+        match self.connection.query_row(
+            r#"
+                with recursive walk(tok_id, acc_len, result_order) as (
+                  select
+                    id as tok_id,
+                    coalesce(length(literal), 0) as acc_len,
+                    1 as result_order
+                  from tokens
+                    where previous_id is null
+                  union all
+                  select
+                    id as tok_id,
+                    (walk.acc_len + coalesce(length(literal), 0)) as acc_len,
+                    (walk.result_order+1) as result_order
+                  from tokens, walk
+                    where previous_id = walk.tok_id
+                ) select
+                  acc_len,
+                  tok_id,
+                  tokens.literal,
+                  tokens.next_id,
+                  tokens.previous_id,
+                  tokens.parent_id
+                from walk
+                  left join tokens on tokens.id = walk.tok_id
+                  /* find the token that is right before the passed `input_offset` */
+                  where tokens.literal is not null and acc_len < ?1
+                  order by result_order desc
+                  limit 1
+            "#,
+            [input_offset],
+            |row| {
+                let token_start_offset: usize = row.get(0)?;
+                Ok((token_start_offset, DbToken::new(
+                    Rc::new(self),
+
+                    row.get(1)?, // id
+                    row.get(2)?, // literal
+                    HashMap::new(), // matches
+                    row.get(3)?, // next_id
+                    row.get(4)?, // previous_id
+                    row.get(5)?, // parent_id
+                    vec![], // children_ids
+
+                    // effects: vec![],
+                    // events: vec![],
+                )))
+            },
+        ) {
+            Ok((token_start_offset, dbtoken)) => {
+                println!("{} {}", input_offset, token_start_offset);
+                Ok(Some((Box::new(dbtoken), input_offset - token_start_offset)))
+            },
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(err) => Err(Box::new(RusqliteRealError::new_from_rusqlite(err))),
+        }
+    }
+
+    // Given a token id, returns the offset within the final output text for the start of the token
+    pub fn compute_offset(&self, id: i64) -> Result<usize, Box<dyn Error>> {
+        match self.connection.query_row(
+            r#"
+                with recursive walk(tok_id, acc_len) as (
+                  select
+                    id as tok_id,
+                    coalesce(length(literal), 0) as acc_len
+                  from tokens
+                    where previous_id is null
+                  union all
+                  select
+                    id as tok_id,
+                    (walk.acc_len + coalesce(length(literal), 0)) as acc_len
+                  from tokens, walk
+                    where previous_id = walk.tok_id
+                ) select acc_len from walk where tok_id = ?1;
+            "#,
+            [id],
+            |row| row.get(0),
+        ) {
+            Ok(token_offset) => Ok(token_offset),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
+            Err(err) => Err(Box::new(RusqliteRealError::new_from_rusqlite(err))),
+        }
+    }
+
+    // TODO: change_token_literal_text
+    // TODO: remove_leaf
+    // TODO: stringify_to_end
+    // TODO: stringify_for_offset
+    // TODO: stringify_for_selection
+    // TODO: stringify
+    // TODO: debug_stringify_highlight
+    // TODO: debug_token_tree_string
+
+    // TODO: add_bookmark
+    // TODO: get_bookmark_offset
+    // TODO: remove_bookmark
 }
