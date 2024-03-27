@@ -1,18 +1,15 @@
 use std::error::Error;
-use std::fmt;
-use std::rc::Rc;
-use std::collections::HashMap;
+use std::cmp::PartialEq;
+use rusqlite::Result;
 
-use rusqlite::{Connection, Result};
-
-use crate::token::*;
-use crate::token_match_template::*;
-
-pub trait Tokenable: Clone {
+pub trait Tokenable<Id: PartialEq>: Clone {
     fn next(&self) -> Result<Option<Box<Self>>, Box<dyn Error>>;
     fn previous(&self) -> Result<Option<Box<Self>>, Box<dyn Error>>;
     fn parent(&self) -> Result<Option<Box<Self>>, Box<dyn Error>>;
     fn children(&self) -> Result<Vec<Box<Self>>, Box<dyn Error>>;
+
+    fn id(&self) -> Id;
+    fn literal(&self) -> &Option<String>;
 
     fn depth(&self) -> Result<usize, Box<dyn Error>> {
         let mut pointer: Box<Self> = Box::new(self.clone());
@@ -26,10 +23,6 @@ pub trait Tokenable: Clone {
             depth += 1;
         }
     }
-
-    // fn compute_offset(&self) -> usize {
-    //     self.token_collection.compute_offset(self.id)
-    // }
 
     /// When called on a token, finds a direct child that matches the given predicate function.
     fn find_child<'a, F>(
@@ -103,5 +96,62 @@ pub trait Tokenable: Clone {
             };
         };
         Ok(matches)
+    }
+
+    // When called, gets the literal text of this token and all of its decendants.
+    fn stringify(&self) -> Result<String, Box<dyn Error>> {
+        let mut result = String::from("");
+        let mut pointer: Box<Self> = Box::new(self.clone());
+        loop {
+            if let Some(literal_text) = pointer.literal() {
+                result = format!("{}{}", result, literal_text);
+            };
+            if let Some(next_pointer) = pointer.next()? {
+                // Only keep going if the next token is a CHILD of the token being stringified!
+                if self.find_deep_child(None, |child| child.id() == next_pointer.id())?.is_none() {
+                    break;
+                }
+
+                pointer = next_pointer;
+            } else {
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Computes the "deep last child" of a token. This is defined as the last child's last child's
+    /// last child (and so on). In diagram form:
+    ///.    self
+    ///.     / \
+    ///.    a   b
+    ///.   /\   /\
+    ///.  c  d e  f <-- `f` is the "deep last child"
+    ///
+    /// If the specified token doesn't have any children, this function returns `None`.
+    fn deep_last_child(&self) -> Result<Option<Box<Self>>, Box<dyn Error>> {
+        let children = self.children()?;
+        let mut last_child_token = if let Some(last_child_token) = children.last() {
+            Some(last_child_token.clone())
+        } else {
+            None
+        };
+
+        loop {
+            let Some(last_child_token_unwrapped) = last_child_token else {
+                break;
+            };
+            last_child_token = Some(last_child_token_unwrapped.clone());
+        }
+
+        Ok(last_child_token)
+    }
+    fn deep_last_child_id(&self) -> Result<Option<Id>, Box<dyn Error>> {
+        if let Some(child) = self.deep_last_child()? {
+            Ok(Some(child.id()))
+        } else {
+            Ok(None)
+        }
     }
 }

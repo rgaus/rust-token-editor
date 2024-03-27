@@ -50,7 +50,7 @@ impl<'a> DbToken<'a> {
     }
 }
 
-impl<'a> Tokenable for DbToken<'a> {
+impl<'a> Tokenable<i64> for DbToken<'a> {
     fn next(&self) -> Result<Option<Box<Self>>, Box<dyn Error>> {
         match self.next_id {
             Some(next_id) => self.token_collection.get_by_id(next_id).map(|token| match token {
@@ -86,5 +86,11 @@ impl<'a> Tokenable for DbToken<'a> {
             }
         }
         Ok(children)
+    }
+    fn id(&self) -> i64 {
+        self.id
+    }
+    fn literal(&self) -> &Option<String> {
+        &self.literal
     }
 }
