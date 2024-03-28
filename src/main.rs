@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::io;
 use std::rc::Rc;
 
+mod custom_serde;
+
 mod token;
 use token::*;
 

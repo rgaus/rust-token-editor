@@ -1,10 +1,30 @@
 use std::error::Error;
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::token::*;
+use crate::token_match_template::*;
 use crate::Tokenable;
 use crate::DbTokenCollection;
+
+#[derive(Debug)]
+struct DbTokenReparseError {
+    text: String,
+}
+impl DbTokenReparseError {
+    fn new(text: String) -> Self {
+        Self { text }
+    }
+}
+
+impl fmt::Display for DbTokenReparseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.text)
+    }
+}
+
+impl Error for DbTokenReparseError {}
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -12,7 +32,7 @@ pub struct DbToken<'a> {
     token_collection: Rc<&'a DbTokenCollection>,
 
     pub id: i64,
-    // pub template: TokenMatchTemplateMatcher,
+    pub template: TokenMatchTemplateMatcher,
     pub literal: Option<String>,
     pub matches: HashMap<String, TokenMatch>,
 
@@ -31,6 +51,7 @@ impl<'a> DbToken<'a> {
         token_collection: Rc<&'a DbTokenCollection>,
         id: i64,
         literal: Option<String>,
+        template: TokenMatchTemplateMatcher,
         matches: HashMap<String, TokenMatch>,
         next_id: Option<i64>,
         previous_id: Option<i64>,
@@ -40,6 +61,7 @@ impl<'a> DbToken<'a> {
         Self {
             token_collection,
             id,
+            template,
             literal,
             matches,
             next_id,

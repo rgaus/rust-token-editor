@@ -3,7 +3,9 @@ use std::fmt;
 use std::rc::Rc;
 use std::collections::HashMap;
 
+use rusqlite::Row;
 use rusqlite::{Connection, Result};
+use serde::de::DeserializeOwned;
 
 use crate::token::*;
 use crate::token_match_template::*;
@@ -47,8 +49,8 @@ impl DbTokenCollection {
         token_match_templates_map: Rc<TokenMatchTemplateMap>,
     ) -> Result<Self, Box<dyn Error>> {
         let token_collection = Self {
-            connection: Connection::open_in_memory()?,
-            // connection: Connection::open("./db.sqlite3")?,
+            // connection: Connection::open_in_memory()?,
+            connection: Connection::open("./db.sqlite3")?,
             token_match_templates_map,
         };
 
@@ -88,7 +90,8 @@ impl DbTokenCollection {
     pub fn new_unparsed_literal(literal: &str) -> Result<Self, Box<dyn Error>> {
         let token_collection = Self::new_empty()?;
         token_collection.push_raw(
-            &Some(String::from(literal)),
+            &Some(String::from(literal)), // literal
+            &TokenMatchTemplateMatcher::Skipped, // template
             None, // next_id
             None, // previous_id
             None, // parent_id
@@ -115,6 +118,7 @@ impl DbTokenCollection {
 
                     let id = self.push_raw(
                         &cursor_token.literal,
+                        &cursor_token.template,
                         None,
                         converted_previous_id,
                         converted_parent_id,
@@ -153,56 +157,139 @@ impl DbTokenCollection {
     pub fn push_raw(
         &self,
         literal: &Option<String>,
+        template: &TokenMatchTemplateMatcher,
         next_id: Option<&i64>,
         previous_id: Option<&i64>,
         parent_id: Option<&i64>,
     ) -> Result<i64, Box<dyn Error>> {
+        let serialized_template = serde_json::to_string(template)?;
         self.connection.execute(
-            "insert into tokens (next_id, previous_id, parent_id, literal, template, matches, events, effects) values (?2, ?2, ?3, ?4, \"\", \"\", \"\", \"\")",
-            (&next_id, &previous_id, &parent_id, &literal),
+            "insert into tokens (next_id, previous_id, parent_id, literal, template, matches, events, effects) values (?2, ?2, ?3, ?4, ?5, \"\", \"\", \"\")",
+            (&next_id, &previous_id, &parent_id, &literal, &serialized_template),
         ).or_else(|err| Err(Box::new(RusqliteRealError::new_from_rusqlite(err)) as Box<dyn Error>))?;
 
         Ok(self.connection.last_insert_rowid())
     }
 
+    fn parse_row(&self, row: &Row) -> Result<DbToken> {
+        let raw_template: String = row.get(2)?;
+        // let cursor = Cursor::new(raw_template);
+        // let foo = "foo";
+        // let template: TokenMatchTemplateMatcher = serde_json::from_str(
+        //     foo
+        // ).expect("Failed to parse template from token db row!");
+        //let foo = serde_json::from_str::<TokenMatchTemplateMatcher>(
+        //    &raw_template
+        //);//.expect("Failed to parse template from token db row!");
+        //println!("Foo? {foo:?}");
+
+        // let file = std::fs::File::open("/tmp/foo").expect("Could not open file!");
+        // let reader = std::io::BufReader::new(file);
+
+        // let template: TokenMatchTemplateMatcher = serde_json::from_reader(
+        //     reader
+        // ).expect("Failed to parse template from token db row!");
+        // FIXME FIXME FIXME
+        let template = TokenMatchTemplateMatcher::Skipped;
+
+        Ok(DbToken::new(
+            Rc::new(self),
+
+            row.get(0)?, // id
+            row.get(1)?, // literal
+            template,
+            HashMap::new(), // matches
+            row.get(3)?, // next_id
+            row.get(4)?, // previous_id
+            row.get(5)?, // parent_id
+            vec![], // children_ids
+
+            // effects: vec![],
+            // events: vec![],
+        ))
+    }
+
     // For debugging, dump out the whole table
     pub fn dump(&self) -> Result<Vec<DbToken>, Box<dyn Error>> {
         Ok(self.connection
-            .prepare("select id, literal, next_id, previous_id, parent_id from tokens")?
-            .query_map([], |row| {
-                Ok(DbToken::new(
-                    Rc::new(self),
-
-                    row.get(0)?, // id
-                    row.get(1)?, // literal
-                    HashMap::new(), // matches
-                    row.get(2)?, // next_id
-                    row.get(3)?, // previous_id
-                    row.get(4)?, // parent_id
-                    vec![], // children_ids
-
-                    // effects: vec![],
-                    // events: vec![],
-                ))
-            })?
+            .prepare("select id, literal, template, next_id, previous_id, parent_id from tokens")?
+            .query_map([], |row| self.parse_row(row))?
             .map(|wrapped_token| wrapped_token.unwrap())
             .collect::<Vec<DbToken>>())
+
+        // Ok(self.connection
+        //     .prepare("select id, literal, template, next_id, previous_id, parent_id from tokens")?
+        //     .query_map([], |row| {
+        //         Ok((
+        //             row.get(0)?, // id
+        //             row.get(1)?, // literal
+        //             row.get::<usize, String>(2)?, // template_raw
+        //             HashMap::new(), // matches
+        //             row.get(3)?, // next_id
+        //             row.get(4)?, // previous_id
+        //             row.get(5)?, // parent_id
+        //             vec![], // children_ids
+        //             // vec![], // effects
+        //             // vec![], // events
+        //         ))
+        //     })?
+        //     .map(|wrapped_row| {
+        //         let (
+        //             id,
+        //             literal,
+        //             template_raw,
+        //             matches,
+        //             next_id,
+        //             previous_id,
+        //             parent_id,
+        //             children_ids,
+        //             // _effects,
+        //             // _events,
+        //         ) = wrapped_row.unwrap();
+
+        //         let template = serde_json::from_str(
+        //             &template_raw
+        //         ).expect("Failed to parse template from token db row!");
+        //         // FIXME FIXME FIXME
+        //         // let template = TokenMatchTemplateMatcher::Skipped;
+
+        //         DbToken::new(
+        //             Rc::new(self),
+        //             id,
+        //             literal,
+        //             template,
+        //             matches,
+        //             next_id,
+        //             previous_id,
+        //             parent_id,
+        //             children_ids,
+        //         )
+        //     })
+        //     .collect::<Vec<DbToken>>())
     }
 
-    pub fn get_by_id<'a>(&'a self, id: i64) -> Result<Option<Box<DbToken>>, Box<dyn Error>> {
+    pub fn get_by_id(&self, id: i64) -> Result<Option<Box<DbToken>>, Box<dyn Error>> {
         match self.connection.query_row(
-            "select id, literal, next_id, previous_id, parent_id from tokens where id = ?1",
+            "select id, literal, template, next_id, previous_id, parent_id from tokens where id = ?1",
             [id],
             |row| {
+                // let raw_template: String = row.get(2)?;
+                // let template: TokenMatchTemplateMatcher = serde_json::from_str(
+                //     raw_template.as_str()
+                // ).expect("Failed to parse template from token db row!");
+                // FIXME FIXME FIXME
+                let template = TokenMatchTemplateMatcher::Skipped;
+
                 Ok(DbToken::new(
                     Rc::new(self),
 
                     row.get(0)?, // id
                     row.get(1)?, // literal
+                    template,
                     HashMap::new(), // matches
-                    row.get(2)?, // next_id
-                    row.get(3)?, // previous_id
-                    row.get(4)?, // parent_id
+                    row.get(3)?, // next_id
+                    row.get(4)?, // previous_id
+                    row.get(5)?, // parent_id
                     vec![], // children_ids
 
                     // effects: vec![],
@@ -240,6 +327,7 @@ impl DbTokenCollection {
                   acc_len,
                   tok_id,
                   tokens.literal,
+                  tokens.template,
                   tokens.next_id,
                   tokens.previous_id,
                   tokens.parent_id
@@ -253,15 +341,24 @@ impl DbTokenCollection {
             [input_offset],
             |row| {
                 let token_start_offset: usize = row.get(0)?;
+
+                // let raw_template: String = row.get(3)?;
+                // let template: TokenMatchTemplateMatcher = serde_json::from_str(
+                //     raw_template.as_str()
+                // ).expect("Failed to parse template from token db row!");
+                // FIXME FIXME FIXME
+                let template = TokenMatchTemplateMatcher::Skipped;
+
                 Ok((token_start_offset, DbToken::new(
                     Rc::new(self),
 
                     row.get(1)?, // id
                     row.get(2)?, // literal
+                    template, // template
                     HashMap::new(), // matches
-                    row.get(3)?, // next_id
-                    row.get(4)?, // previous_id
-                    row.get(5)?, // parent_id
+                    row.get(4)?, // next_id
+                    row.get(5)?, // previous_id
+                    row.get(6)?, // parent_id
                     vec![], // children_ids
 
                     // effects: vec![],

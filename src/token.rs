@@ -4,8 +4,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use uuid::Uuid;
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
 use crate::token_match_template::*;
+use crate::custom_serde::Serde;
 
 
 #[derive(Debug)]
@@ -907,13 +909,11 @@ impl TokensCollection {
     }
 }
 
-
-#[derive(Debug)]
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TokenMatchTemplateMatcher {
     Raw(&'static str, Option<TokenEvents>),
     Reference(&'static str, Option<TokenEvents>),
-    Regex(regex::Regex, Option<regex::Regex>, Option<TokenEvents>),
+    Regex(Serde<regex::Regex>, Option<Serde<regex::Regex>>, Option<TokenEvents>),
     Any(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
     Sequence(Vec<TokenMatchTemplateMatcher>, Option<TokenEvents>),
     RepeatCount(Box<TokenMatchTemplateMatcher>, usize, usize, Option<TokenEvents>),
@@ -939,23 +939,23 @@ impl TokenMatchTemplateMatcher {
     }
 
     pub fn regex(regex: regex::Regex) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, None, None)
+        TokenMatchTemplateMatcher::Regex(Serde(regex), None, None)
     }
     pub fn regex_and_negation(regex: regex::Regex, negated_regex: regex::Regex) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, Some(negated_regex), None)
+        TokenMatchTemplateMatcher::Regex(Serde(regex), Some(Serde(negated_regex)), None)
     }
     pub fn regex_with_events(
         regex: regex::Regex,
         events: TokenEvents,
     ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, None, Some(events))
+        TokenMatchTemplateMatcher::Regex(Serde(regex), None, Some(events))
     }
     pub fn regex_and_negation_with_events(
         regex: regex::Regex,
         negated_regex: regex::Regex,
         events: TokenEvents,
     ) -> TokenMatchTemplateMatcher {
-        TokenMatchTemplateMatcher::Regex(regex, Some(negated_regex), Some(events))
+        TokenMatchTemplateMatcher::Regex(Serde(regex), Some(Serde(negated_regex)), Some(events))
     }
 
     pub fn any(tokens: Vec<TokenMatchTemplateMatcher>) -> TokenMatchTemplateMatcher {
@@ -1030,6 +1030,23 @@ pub struct TokenEvents {
         token: &mut Box<Token>,
         tokens_collection: &mut TokensCollection,
     )>,
+}
+
+impl Serialize for TokenEvents {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_none()
+    }
+}
+impl<'de> Deserialize<'de> for TokenEvents {
+    fn deserialize<D>(d: D) -> Result<TokenEvents, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(TokenEvents { on_enter: None, on_leave: None })
+    }
 }
 
 impl TokenEvents {

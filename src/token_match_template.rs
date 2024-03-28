@@ -344,7 +344,7 @@ impl TokenMatchTemplate {
                     let mut matched_captures: Option<regex::Captures> = None;
 
                     // ref: https://stackoverflow.com/a/39239614/4115328
-                    if let Some(captures) = re.captures(offsetted_input) {
+                    if let Some(captures) = re.0.captures(offsetted_input) {
                         matched_captures = Some(captures);
                     }
 
@@ -354,7 +354,7 @@ impl TokenMatchTemplate {
                         let mut matched_at_index = None;
                         for index in offset..input.len() {
                             // ref: https://stackoverflow.com/a/39239614/4115328
-                            if let Some(captures) = re.captures(&input[index..]) {
+                            if let Some(captures) = re.0.captures(&input[index..]) {
                                 matched_captures = Some(captures);
                                 matched_at_index = Some(index);
                                 // println!("MATCHED AT INDEX: {}", index);
@@ -430,13 +430,13 @@ impl TokenMatchTemplate {
                     // on the match of the first regex, and if it matches, it fails the
                     // match
                     if let Some(negated_re_unwrapped) = negated_re {
-                        if let Some(_) = negated_re_unwrapped.captures(literal) {
+                        if let Some(_) = negated_re_unwrapped.0.captures(literal) {
                             break;
                         }
                     }
 
                     let mut matches = HashMap::new();
-                    for name in re.capture_names() {
+                    for name in re.0.capture_names() {
                         let Some(name) = name else {
                             continue;
                         };
